@@ -84,6 +84,11 @@ Patterns reconnus dans le nom de fichier (dans l'ordre de priorité) :
 
 Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`) sont expansés.
 
+Un `vN` isolé (`v2`, `V2`, `v.2`) est un **marqueur de version de série**, pas un tome
+(issue #215) : le tome réel est le nombre qui suit (`v2 01` → 1, `V2#14` → 14, `v2 T03` → 3,
+`v2 HS 03` → HS 3 via `extract_hs_info`). Le `[V2]` entre crochets est ignoré, et un `vN`
+zéro-paddé (`v07`) garde son sens historique de tome.
+
 ### Nombre de pages / extraction
 
 | Format | Implémentation |

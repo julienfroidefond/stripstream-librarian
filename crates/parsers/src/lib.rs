@@ -363,6 +363,55 @@ mod tests {
         assert_eq!(extract_volume(""), None);
     }
 
+    #[test]
+    fn extract_volume_ignores_series_version_marker() {
+        // Issue #215: `v2`/`V2` is a series version, not a tome. The real
+        // number is the one that follows it.
+        assert_eq!(
+            extract_volume("Ultimate Spider-Man v2 01 - Le nouveau monde selon parker (1)"),
+            Some(1)
+        );
+        assert_eq!(
+            extract_volume("Ultimate Spider-Man v2 09 - Fatalite ultime"),
+            Some(9)
+        );
+        assert_eq!(extract_volume("X-Force V2#14"), Some(14));
+        assert_eq!(extract_volume("Saga v2 T03"), Some(3));
+        // `V2-14` must not be expanded as the range 2..=14.
+        assert_eq!(extract_volume("X-Force V2-14"), Some(14));
+        assert_eq!(
+            extract_volumes("Ultimate Spider-Man v2 01 - Le nouveau monde selon parker (1)"),
+            vec![1]
+        );
+
+        // A lone version marker is not a tome.
+        assert_eq!(extract_volume("Series v2"), None);
+        assert_eq!(extract_volume("Series v2.cbz"), None);
+        assert_eq!(extract_volume("Series v.2"), None);
+
+        // Zero-padded `vNN` keeps the historic tome meaning.
+        assert_eq!(extract_volume("Series v07"), Some(7));
+        assert_eq!(extract_volume("Series v03 [1080p]"), Some(3));
+    }
+
+    #[test]
+    fn extract_hs_info_wins_over_series_version_marker() {
+        let (volume, _) = extract_hs_info("Ultimate Spider-Man v2 HS 03 - L'ennemi")
+            .expect("HS marker should be detected");
+        assert_eq!(volume, Some(3));
+    }
+
+    #[test]
+    fn parse_metadata_fast_keeps_hs_type_after_series_version_marker() {
+        let path = Path::new(
+            "/libraries/bd/Ultimate Spider-Man/Ultimate Spider-Man v2 HS 03 - L'ennemi.cbz",
+        );
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume, Some(3));
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+    }
+
     // ─── extract_volumes ─────────────────────────────────────────────────
 
     fn sorted(mut v: Vec<i32>) -> Vec<i32> {

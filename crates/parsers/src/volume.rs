@@ -33,6 +33,9 @@ pub struct ParsedVolumeMarkers<'a> {
 /// Handles individual volumes (T01, Tome 01, Vol. 01, v01, #01) and also
 /// **range packs** like `T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`
 /// — the range is expanded so every volume in [start..=end] is returned.
+///
+/// A bare `vN` marker is a **series version**, not a tome (issue #215): the
+/// real volume is the number that follows it (`v2 01`, `V2#14`, `v2 T03`).
 pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
     let lower = title.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
@@ -42,7 +45,13 @@ pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
     // Separator: '.' | '-' | 'à'
     let mut i = 0;
     while i < chars.len() {
-        if let Some((n1, after1)) = read_vol_prefix_number(&chars, i) {
+        if let Some((prefix, n1, after1)) = match_vol_prefix(&chars, i) {
+            // A bare `vN` version marker must not expand `V2-14` / `v2-01`
+            // as a range.
+            if prefix == "v" && is_series_version_marker(&chars, i) {
+                i += 1;
+                continue;
+            }
             let mut j = after1;
             while j < chars.len() && chars[j] == ' ' {
                 j += 1;
@@ -92,13 +101,15 @@ pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
     // Pass 2 — individual volumes not already captured by range expansion
     // Note: work entirely with char indices (not byte offsets) to avoid
     // mismatches when the title contains multi-byte UTF-8 characters.
+    //
+    // `v` is deliberately absent: a bare `vN` is a series version, handled by
+    // `collect_series_version_volumes` below (issue #215).
     let prefixes: &[(&[char], bool)] = &[
         (&['v', 'o', 'l', 'u', 'm', 'e'], false),
         (&['t', 'o', 'm', 'e'], false),
         (&['v', 'o', 'l', '.'], false),
         (&['v', 'o', 'l', ' '], false),
         (&['t'], true),
-        (&['v'], true),
         (&['#'], false),
     ];
     let len = chars.len();
@@ -112,7 +123,7 @@ pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
                 continue;
             }
 
-            // For single-char prefixes (t, v): word boundary check.
+            // For single-char prefixes (t): word boundary check.
             // Standard boundary = previous char is non-alphanumeric.
             // Exception: alphabetic-then-digit "glued" form like "FrontierT01" is
             // also valid, BUT only when the prefix is directly followed by digits
@@ -121,7 +132,8 @@ pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
             let prev_is_alpha = ci > 0 && chars[ci - 1].is_alphabetic();
             let prev_is_alphanumeric = ci > 0 && chars[ci - 1].is_alphanumeric();
 
-            // Skip "v" inside brackets like [V2] — that's a version, not a volume
+            // Skip bracketed markers like [V2] / [T05]: bracketed numbers are
+            // release tags, not tomes.
             if needs_boundary && ci > 0 && chars[ci - 1] == '[' {
                 ci += plen;
                 continue;
@@ -181,6 +193,9 @@ pub fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
             ci += plen;
         }
     }
+
+    // Pass 2b — bare `vN` series versions (never a tome themselves)
+    collect_series_version_volumes(&chars, &mut volumes);
 
     // Pass 3 — bare number patterns (only if passes 1 & 2 found nothing)
     // Handles:
@@ -372,11 +387,21 @@ pub fn read_bare_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
     Some((n, i))
 }
 
-/// Try to read a vol-prefixed number starting at `pos` in the `chars` slice.
-/// Returns `(number, position_after_last_digit)` or `None`.
-/// Prefixes recognised (longest first to avoid "t" matching "tome"):
-/// `tome`, `vol.`, `vol `, `t`, `v`, `#`.
-pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
+/// Prefixes recognised as volume markers (longest first to avoid "t" matching
+/// "tome"). The boolean marks single-char prefixes that need a word boundary.
+const VOL_PREFIXES: &[(&str, bool)] = &[
+    ("volume", false),
+    ("tome", false),
+    ("vol.", false),
+    ("vol ", false),
+    ("t", true),
+    ("v", true),
+    ("#", false),
+];
+
+/// Match a volume marker starting at `pos`.
+/// Returns `(prefix, number, position_after_last_digit)` or `None`.
+fn match_vol_prefix(chars: &[char], pos: usize) -> Option<(&'static str, i32, usize)> {
     if pos >= chars.len() {
         return None;
     }
@@ -384,22 +409,14 @@ pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)
     // Build a look-ahead string from `pos` (at most 6 chars is enough for the longest prefix "tome ")
     let suffix: String = chars[pos..].iter().collect();
 
-    const PREFIXES: &[(&str, bool)] = &[
-        ("volume", false),
-        ("tome", false),
-        ("vol.", false),
-        ("vol ", false),
-        ("t", true),
-        ("v", true),
-        ("#", false),
-    ];
-
     let mut prefix_char_count = 0usize;
-    for (p, needs_boundary) in PREFIXES {
+    let mut matched = "";
+    for (p, needs_boundary) in VOL_PREFIXES {
         if suffix.starts_with(p) {
             if *needs_boundary && pos > 0 && chars[pos - 1].is_alphanumeric() {
                 continue;
             }
+            matched = p;
             prefix_char_count = p.chars().count();
             break;
         }
@@ -428,7 +445,120 @@ pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)
         .collect::<String>()
         .parse()
         .ok()?;
-    Some((n, i))
+    Some((matched, n, i))
+}
+
+/// Try to read a vol-prefixed number starting at `pos` in the `chars` slice.
+/// Returns `(number, position_after_last_digit)` or `None`.
+/// Prefixes recognised (longest first to avoid "t" matching "tome"):
+/// `tome`, `vol.`, `vol `, `t`, `v`, `#`.
+pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
+    match_vol_prefix(chars, pos).map(|(_, number, end)| (number, end))
+}
+
+/// Read a bare `v` version marker (`v2`, `v.2`) at `pos`.
+///
+/// Returns `(number, position_after_last_digit, is_zero_padded)`. Unlike
+/// [`match_vol_prefix`], this is never a tome by itself (issue #215).
+fn read_version_marker(chars: &[char], pos: usize) -> Option<(i32, usize, bool)> {
+    if chars.get(pos) != Some(&'v') {
+        return None;
+    }
+    // Not glued to a word (`Av2`) and not a longer prefix (`vol`, `volume`).
+    if pos > 0 && chars[pos - 1].is_alphanumeric() {
+        return None;
+    }
+
+    let mut i = pos + 1;
+    while i < chars.len() && (chars[i] == '.' || chars[i] == ' ' || chars[i] == '_') {
+        i += 1;
+    }
+
+    let digit_start = i;
+    while i < chars.len() && chars[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == digit_start {
+        return None;
+    }
+
+    let digits = &chars[digit_start..i];
+    let number: i32 = digits.iter().collect::<String>().parse().ok()?;
+    // `v07` keeps the historic tome meaning; `v2` is a version.
+    let padded = digits.len() >= 2 && digits[0] == '0';
+    Some((number, i, padded))
+}
+
+/// First plausible tome number after a series version marker.
+///
+/// Resolves `v2 01`, `V2#14`, `v2 T03` and `v2 HS 03`: the version marker must
+/// not win over the real number that follows it. Digit runs glued to a word
+/// (`T03`), too long for a tome (years, `1080p`) or equal to zero (`v2.0`) are
+/// ignored.
+fn number_after_version_marker(chars: &[char], pos: usize) -> Option<i32> {
+    let mut i = pos;
+    while i < chars.len() {
+        let at_boundary = i == 0 || !chars[i - 1].is_alphanumeric();
+        if chars[i].is_ascii_digit() && at_boundary {
+            let mut end = i;
+            while end < chars.len() && chars[end].is_ascii_digit() {
+                end += 1;
+            }
+            let digits = &chars[i..end];
+            if (1..=3).contains(&digits.len()) {
+                if let Ok(value) = digits.iter().collect::<String>().parse::<i32>() {
+                    if (1..=999).contains(&value) {
+                        return Some(value);
+                    }
+                }
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Whether the `vN` marker at `pos` is a series version rather than a tome.
+///
+/// An unpadded marker (`v2`) is always a version; a zero-padded one (`v07`)
+/// keeps the historic tome meaning unless another number follows it.
+fn is_series_version_marker(chars: &[char], pos: usize) -> bool {
+    match read_version_marker(chars, pos) {
+        Some((_, after, padded)) => !padded || number_after_version_marker(chars, after).is_some(),
+        None => false,
+    }
+}
+
+/// Push a volume only when it is not already known.
+fn push_unique(volumes: &mut Vec<i32>, volume: i32) {
+    if !volumes.contains(&volume) {
+        volumes.push(volume);
+    }
+}
+
+/// Collect tomes implied by bare `vN` series-version markers (issue #215).
+///
+/// A `vN` is a version, never a tome: the real tome is the next plausible
+/// number (`v2 01`, `V2#14`, `v2 HS 03`). Zero-padded `v07` remains a tome
+/// when nothing follows it.
+fn collect_series_version_volumes(chars: &[char], volumes: &mut Vec<i32>) {
+    let mut ci = 0usize;
+    while ci < chars.len() {
+        // `[V2]` is a version too, but it is already ignored elsewhere.
+        let bracketed = ci > 0 && chars[ci - 1] == '[';
+        if !bracketed {
+            if let Some((number, after, padded)) = read_version_marker(chars, ci) {
+                match number_after_version_marker(chars, after) {
+                    Some(volume) => push_unique(volumes, volume),
+                    None if padded => push_unique(volumes, number),
+                    None => {}
+                }
+            }
+        }
+        ci += 1;
+    }
 }
 
 /// Extract the first volume number from a filename (convenience wrapper).
