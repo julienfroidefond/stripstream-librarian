@@ -272,8 +272,8 @@ export type OrphanSeriesItemDto = {
   external_url: string | null;
   created_at: string;
   age_days: number;
-  has_available_download: boolean;
-  books_count: number;
+  /** A wishlist release was detected for this series (not an in-progress download). */
+  has_wishlist_release: boolean;
 };
 
 export type OrphanSeriesPageDto = {
@@ -281,6 +281,15 @@ export type OrphanSeriesPageDto = {
   total: number;
   page: number;
   limit: number;
+};
+
+export type OrphanDeleteResultDto = {
+  /** Series actually deleted. */
+  deleted: number;
+  /** Series that were already gone (`404`), treated as deleted. */
+  skipped: number;
+  /** Ids whose deletion failed for another reason. */
+  failed: string[];
 };
 
 export async function listOrphanSeries(page = 1, limit = 50): Promise<OrphanSeriesPageDto> {

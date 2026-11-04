@@ -420,6 +420,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/series/orphans", get(series::list_orphan_series))
         .route(
+            "/admin/series/orphans/{series_id}",
+            delete(series::delete_orphan_series),
+        )
+        .route(
             "/admin/series/{series_id}/activity",
             get(series::get_series_user_activity),
         )

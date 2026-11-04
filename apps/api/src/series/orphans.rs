@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -8,6 +8,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::update::delete_series_core;
 use crate::{error::ApiError, state::AppState};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -29,10 +30,9 @@ pub struct OrphanSeriesItem {
     pub created_at: DateTime<Utc>,
     /// Whole days elapsed since the series row was created.
     pub age_days: i64,
-    /// A wishlist download is in progress for this series (deletion discouraged).
-    pub has_available_download: bool,
-    /// Always `0`: orphans have no book by definition.
-    pub books_count: i64,
+    /// A release for this series was detected on the wishlist. This is not an
+    /// in-progress download: it is only a match that could be downloaded later.
+    pub has_wishlist_release: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -55,7 +55,7 @@ pub struct OrphanSeriesQuery {
 
 const ORPHAN_FILTER: &str = "NOT EXISTS (SELECT 1 FROM books b WHERE b.series_id = s.id)";
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
+// ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// List series that have no book at all, oldest first.
 #[utoipa::path(
@@ -78,7 +78,7 @@ pub async fn list_orphan_series(
 ) -> Result<Json<OrphanSeriesPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let page = query.page.unwrap_or(1).max(1);
-    let offset = (page - 1) * limit;
+    let offset = (page - 1).saturating_mul(limit);
 
     let count_sql = format!("SELECT COUNT(*) FROM series s WHERE {ORPHAN_FILTER}");
     let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
@@ -101,19 +101,20 @@ pub async fn list_orphan_series(
             ) AS age_days,
             EXISTS (
                 SELECT 1 FROM available_downloads ad WHERE ad.series_id = s.id
-            ) AS has_available_download,
-            0::bigint AS books_count
+            ) AS has_wishlist_release
         FROM series s
         LEFT JOIN libraries l ON l.id = s.library_id
         LEFT JOIN LATERAL (
             SELECT eml.provider, eml.external_url
             FROM external_metadata_links eml
-            WHERE eml.series_id = s.id AND eml.status = 'approved'
+            WHERE eml.series_id = s.id
+              AND eml.library_id = s.library_id
+              AND eml.status = 'approved'
             ORDER BY eml.is_primary DESC, eml.created_at DESC
             LIMIT 1
         ) ml ON TRUE
         WHERE {ORPHAN_FILTER}
-        ORDER BY s.created_at ASC, lower(s.name) ASC
+        ORDER BY s.created_at ASC, lower(s.name) ASC, s.id ASC
         LIMIT $1 OFFSET $2
         "#
     );
@@ -135,8 +136,7 @@ pub async fn list_orphan_series(
             external_url: row.get("external_url"),
             created_at: row.get("created_at"),
             age_days: row.get("age_days"),
-            has_available_download: row.get("has_available_download"),
-            books_count: row.get("books_count"),
+            has_wishlist_release: row.get("has_wishlist_release"),
         })
         .collect();
 
@@ -146,4 +146,56 @@ pub async fn list_orphan_series(
         page,
         limit,
     }))
+}
+
+/// Delete a series that still has no book, re-checking orphanhood under lock.
+///
+/// The check and the deletion share one transaction. `FOR UPDATE` conflicts
+/// with the `FOR KEY SHARE` lock PostgreSQL takes on the referenced series row
+/// when a book is inserted, so a concurrent import either completes before the
+/// check or fails once the series row is gone. A series that acquired a book
+/// since it was listed returns `409` instead of being deleted.
+#[utoipa::path(
+    delete,
+    path = "/admin/series/orphans/{series_id}",
+    tag = "series",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, description = "Orphan series deleted"),
+        (status = 404, description = "Series not found"),
+        (status = 409, description = "Series is no longer an orphan (it has books)"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_orphan_series(
+    State(state): State<AppState>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
+    let mut tx = state.pool.begin().await?;
+
+    let library_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT library_id FROM series WHERE id = $1 FOR UPDATE")
+            .bind(series_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let library_id = library_id.ok_or_else(|| ApiError::not_found("series not found"))?;
+
+    let has_books =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1)")
+            .bind(series_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if has_books {
+        return Err(ApiError::conflict(
+            "series is no longer an orphan: it has at least one book",
+        ));
+    }
+
+    delete_series_core(&mut tx, library_id, series_id).await?;
+    tx.commit().await?;
+
+    Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }

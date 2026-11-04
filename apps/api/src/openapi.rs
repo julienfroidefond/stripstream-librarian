@@ -151,6 +151,7 @@ pub struct ClientApiDoc;
         crate::series::list_archived_series,
         crate::series::get_archived_series,
         crate::series::list_orphan_series,
+        crate::series::delete_orphan_series,
         crate::series::get_series_ratings,
         crate::series::set_series_rating,
         crate::series::delete_series_rating,

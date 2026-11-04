@@ -9,7 +9,7 @@ use axum::Json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::super::{delete_series_by_id, list_orphan_series, OrphanSeriesQuery};
+use super::super::{delete_orphan_series, list_orphan_series, OrphanSeriesQuery};
 use crate::state::test_state;
 
 async fn create_library(pool: &PgPool, name: &str) -> Uuid {
@@ -118,7 +118,6 @@ async fn lists_only_series_without_books(pool: PgPool) {
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].id, orphan);
     assert_eq!(page.items[0].name, "Orphan");
-    assert_eq!(page.items[0].books_count, 0);
     assert_eq!(page.items[0].library_id, library);
     assert_eq!(
         page.items[0].library_name.as_deref(),
@@ -174,7 +173,7 @@ async fn exposes_approved_metadata_link_only(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn flags_series_with_available_download(pool: PgPool) {
+async fn flags_series_with_wishlist_release(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "orphans-download").await;
 
@@ -187,9 +186,9 @@ async fn flags_series_with_available_download(pool: PgPool) {
         .unwrap();
 
     let wishlisted_item = page.items.iter().find(|i| i.id == wishlisted).unwrap();
-    assert!(wishlisted_item.has_available_download);
+    assert!(wishlisted_item.has_wishlist_release);
     let plain_item = page.items.iter().find(|i| i.id == plain).unwrap();
-    assert!(!plain_item.has_available_download);
+    assert!(!plain_item.has_wishlist_release);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -241,7 +240,7 @@ async fn deleting_an_orphan_archives_it_and_cascades_links(pool: PgPool) {
     .await;
     create_available_download(&pool, library, series_id).await;
 
-    let _ = delete_series_by_id(State(state), None, Path(series_id))
+    let _ = delete_orphan_series(State(state), Path(series_id))
         .await
         .unwrap();
 
@@ -275,4 +274,72 @@ async fn deleting_an_orphan_archives_it_and_cascades_links(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!(downloads, 0, "available downloads must cascade");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn ignores_approved_link_from_another_library(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "orphans-link-home").await;
+    let other_library = create_library(&pool, "orphans-link-other").await;
+
+    let series_id = create_series(&pool, library, "Scoped").await;
+    create_link(
+        &pool,
+        other_library,
+        series_id,
+        "senscritique",
+        "approved",
+        Some("https://www.senscritique.com/bd/other-library"),
+    )
+    .await;
+
+    let Json(page) = list_orphan_series(State(state), query(None, None))
+        .await
+        .unwrap();
+
+    let item = page.items.iter().find(|i| i.id == series_id).unwrap();
+    assert!(item.metadata_provider.is_none());
+    assert!(item.external_url.is_none());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_orphan_series_rejects_series_that_gained_a_book(pool: PgPool) {
+    use axum::http::StatusCode;
+
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "orphans-delete-stale").await;
+
+    let series_id = create_series(&pool, library, "No longer orphan").await;
+    create_book(&pool, library, series_id, "Volume 1").await;
+
+    let error = delete_orphan_series(State(state), Path(series_id))
+        .await
+        .unwrap_err();
+    assert_eq!(error.status, StatusCode::CONFLICT);
+
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(exists, "a non-orphan series must never be deleted");
+
+    let books: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(books, 1, "the book must be preserved");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_orphan_series_returns_not_found_for_unknown_id(pool: PgPool) {
+    use axum::http::StatusCode;
+
+    let state = test_state(pool.clone());
+
+    let error = delete_orphan_series(State(state), Path(Uuid::new_v4()))
+        .await
+        .unwrap_err();
+    assert_eq!(error.status, StatusCode::NOT_FOUND);
 }

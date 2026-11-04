@@ -11,6 +11,7 @@ vi.mock("@/app/(app)/settings/orphans/OrphansTable", () => ({
   }) => (
     <div data-testid="orphans-table">
       <span>{series.length}</span>
+      <span data-testid="orphan-ids">{series.map((s) => s.id).join(",")}</span>
       <button type="button" onClick={() => onDeleted(series.map((s) => s.id))}>
         delete-all
       </button>
@@ -133,5 +134,34 @@ describe("OrphansTab", () => {
     await waitFor(() =>
       expect(screen.getByText('settings.orphans.pageInfo:{"page":1,"pages":2}')).toBeInTheDocument()
     );
+  });
+
+  it("only renders the current page so a bulk delete stays page-scoped", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        ok(
+          url.includes("page=2")
+            ? page({ items: [{ id: "s51" } as never], total: 51, page: 2 })
+            : page({
+                items: Array.from({ length: 50 }, (_, i) => ({ id: `s${i + 1}` }) as never),
+                total: 51,
+                page: 1,
+              })
+        )
+      )
+    );
+
+    render(<OrphansTab />);
+    await waitFor(() =>
+      expect(screen.getByText('settings.orphans.pageInfo:{"page":1,"pages":2}')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("orphan-ids")).toHaveTextContent("s1,s2,");
+
+    fireEvent.click(screen.getByText("common.next"));
+
+    await waitFor(() =>
+      expect(screen.getByText('settings.orphans.pageInfo:{"page":2,"pages":2}')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("orphan-ids")).toHaveTextContent(/^s51$/);
   });
 });

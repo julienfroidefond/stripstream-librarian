@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
@@ -110,49 +111,131 @@ describe("/api/series", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET orphans passthrough", async () => {
-    mockApi.mockResolvedValue({ items: [], total: 0, page: 1, limit: 50 });
-    const res = await listOrphans();
-    expect(mockApi).toHaveBeenCalledWith("/admin/series/orphans");
-    expect(await res.json()).toEqual({ items: [], total: 0, page: 1, limit: 50 });
+  it("GET orphans forwards pagination", async () => {
+    mockApi.mockResolvedValue({ items: [], total: 0, page: 2, limit: 10 });
+    const res = await listOrphans(jsonRequest("/api/series/orphans?page=2&limit=10"));
+    expect(mockApi).toHaveBeenCalledWith("/admin/series/orphans?page=2&limit=10");
+    expect(await res.json()).toEqual({ items: [], total: 0, page: 2, limit: 10 });
   });
 
   it("GET orphans returns 500 on error", async () => {
     mockApi.mockRejectedValue(new Error("boom"));
-    const res = await listOrphans();
+    const res = await listOrphans(jsonRequest("/api/series/orphans"));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "boom" });
   });
 
-  it("DELETE orphans forwards the explicit ids", async () => {
+  it.each([
+    ["no body", undefined],
+    ["empty object", {}],
+    ["null ids", { ids: null }],
+    ["empty ids", { ids: [] }],
+    ["all false", { all: false }],
+    ["non-string ids", { ids: ["a", 3] }],
+  ])("DELETE orphans rejects %s instead of deleting everything", async (_label, body) => {
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body })
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockApi).not.toHaveBeenCalled();
+  });
+
+  it("DELETE orphans rejects malformed JSON", async () => {
+    const request = new NextRequest("http://localhost:7082/api/series/orphans", {
+      method: "DELETE",
+      body: "{",
+      headers: { "content-type": "application/json" },
+    });
+
+    const res = await deleteOrphans(request);
+
+    expect(res.status).toBe(400);
+    expect(mockApi).not.toHaveBeenCalled();
+  });
+
+  it("DELETE orphans calls the dedicated endpoint for each explicit id", async () => {
     mockApi.mockResolvedValue({ deleted: true });
     const res = await deleteOrphans(
       jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["a", "b"] } })
     );
 
     expect(mockApi).toHaveBeenCalledTimes(2);
-    expect(mockApi).toHaveBeenNthCalledWith(1, "/series/a", { method: "DELETE" });
-    expect(mockApi).toHaveBeenNthCalledWith(2, "/series/b", { method: "DELETE" });
-    expect(await res.json()).toEqual({ deleted: 2 });
+    expect(mockApi).toHaveBeenNthCalledWith(1, "/admin/series/orphans/a", { method: "DELETE" });
+    expect(mockApi).toHaveBeenNthCalledWith(2, "/admin/series/orphans/b", { method: "DELETE" });
+    expect(await res.json()).toEqual({ deleted: 2, skipped: 0, failed: [] });
   });
 
-  it("DELETE orphans walks every page when no ids are given", async () => {
+  it("DELETE orphans treats 404 as already deleted", async () => {
+    mockApi.mockImplementation((path: string) => {
+      if (path === "/admin/series/orphans/gone") {
+        return Promise.reject(new Error("API /admin/series/orphans/gone failed (404): not found"));
+      }
+      return Promise.resolve({ deleted: true });
+    });
+
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["here", "gone"] } })
+    );
+
+    expect(await res.json()).toEqual({ deleted: 1, skipped: 1, failed: [] });
+  });
+
+  it("DELETE orphans keeps going after a partial failure", async () => {
+    mockApi.mockImplementation((path: string) => {
+      if (path === "/admin/series/orphans/b") {
+        return Promise.reject(new Error("API /admin/series/orphans/b failed (409): no longer an orphan"));
+      }
+      return Promise.resolve({ deleted: true });
+    });
+
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["a", "b", "c"] } })
+    );
+
+    expect(mockApi).toHaveBeenCalledTimes(3);
+    expect(await res.json()).toEqual({ deleted: 2, skipped: 0, failed: ["b"] });
+  });
+
+  it("DELETE orphans purges every orphan only when all is explicitly true", async () => {
     mockApi
       .mockResolvedValueOnce({ items: [{ id: "a" }, { id: "b" }], total: 2, page: 1, limit: 200 })
       .mockResolvedValue({ deleted: true });
 
-    const res = await deleteOrphans(jsonRequest("/api/series/orphans", { method: "DELETE" }));
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { all: true } })
+    );
 
     expect(mockApi).toHaveBeenNthCalledWith(1, "/admin/series/orphans?page=1&limit=200");
-    expect(mockApi).toHaveBeenNthCalledWith(2, "/series/a", { method: "DELETE" });
-    expect(mockApi).toHaveBeenNthCalledWith(3, "/series/b", { method: "DELETE" });
-    expect(await res.json()).toEqual({ deleted: 2 });
+    expect(mockApi).toHaveBeenNthCalledWith(2, "/admin/series/orphans/a", { method: "DELETE" });
+    expect(mockApi).toHaveBeenNthCalledWith(3, "/admin/series/orphans/b", { method: "DELETE" });
+    expect(await res.json()).toEqual({ deleted: 2, skipped: 0, failed: [] });
   });
 
-  it("DELETE orphans returns 500 on error", async () => {
+  it("DELETE orphans walks multiple pages for an all purge", async () => {
+    mockApi
+      .mockResolvedValueOnce({
+        items: Array.from({ length: 200 }, (_, i) => ({ id: `p1-${i}` })),
+        total: 201,
+        page: 1,
+        limit: 200,
+      })
+      .mockResolvedValueOnce({ items: [{ id: "p2-0" }], total: 201, page: 2, limit: 200 })
+      .mockResolvedValue({ deleted: true });
+
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { all: true } })
+    );
+
+    expect(mockApi).toHaveBeenNthCalledWith(2, "/admin/series/orphans?page=2&limit=200");
+    expect(mockApi).toHaveBeenCalledTimes(203);
+    expect(await res.json()).toEqual({ deleted: 201, skipped: 0, failed: [] });
+  });
+
+  it("DELETE orphans returns 500 when listing all orphans fails", async () => {
     mockApi.mockRejectedValue(new Error("nope"));
     const res = await deleteOrphans(
-      jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["a"] } })
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { all: true } })
     );
     expect(res.status).toBe(500);
   });
