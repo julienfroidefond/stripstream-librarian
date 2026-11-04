@@ -33,6 +33,10 @@ pub struct OrphanSeriesItem {
     /// A release for this series was detected on the wishlist. This is not an
     /// in-progress download: it is only a match that could be downloaded later.
     pub has_wishlist_release: bool,
+    /// A `torrent_downloads` row for this series is still downloading,
+    /// waiting for import, or importing. The series has no book yet, so it is
+    /// excluded from bulk purges to avoid racing the import.
+    pub has_active_download: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -101,7 +105,13 @@ pub async fn list_orphan_series(
             ) AS age_days,
             EXISTS (
                 SELECT 1 FROM available_downloads ad WHERE ad.series_id = s.id
-            ) AS has_wishlist_release
+            ) AS has_wishlist_release,
+            EXISTS (
+                SELECT 1 FROM torrent_downloads td
+                WHERE td.library_id = s.library_id
+                  AND LOWER(unaccent(td.series_name)) = LOWER(unaccent(s.name))
+                  AND td.status IN ('downloading', 'completed', 'importing')
+            ) AS has_active_download
         FROM series s
         LEFT JOIN libraries l ON l.id = s.library_id
         LEFT JOIN LATERAL (
@@ -114,7 +124,7 @@ pub async fn list_orphan_series(
             LIMIT 1
         ) ml ON TRUE
         WHERE {ORPHAN_FILTER}
-        ORDER BY s.created_at ASC, lower(s.name) ASC, s.id ASC
+        ORDER BY s.created_at ASC, LOWER(unaccent(s.name)) ASC, s.id ASC
         LIMIT $1 OFFSET $2
         "#
     );
@@ -137,6 +147,7 @@ pub async fn list_orphan_series(
             created_at: row.get("created_at"),
             age_days: row.get("age_days"),
             has_wishlist_release: row.get("has_wishlist_release"),
+            has_active_download: row.get("has_active_download"),
         })
         .collect();
 
@@ -164,6 +175,7 @@ pub async fn list_orphan_series(
     ),
     responses(
         (status = 200, description = "Orphan series deleted"),
+        (status = 400, description = "Series id is not a valid UUID"),
         (status = 404, description = "Series not found"),
         (status = 409, description = "Series is no longer an orphan (it has books)"),
         (status = 401, description = "Unauthorized"),
@@ -172,6 +184,8 @@ pub async fn list_orphan_series(
 )]
 pub async fn delete_orphan_series(
     State(state): State<AppState>,
+    // Typed extractor: any non-UUID segment (including path-traversal payloads
+    // relayed by a proxy) is rejected with 400 before the handler runs.
     Path(series_id): Path<Uuid>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let mut tx = state.pool.begin().await?;
@@ -194,7 +208,9 @@ pub async fn delete_orphan_series(
         ));
     }
 
-    delete_series_core(&mut tx, library_id, series_id).await?;
+    // An orphan has no book, so it has no files to delete: never let the shared
+    // deletion helper derive a directory from the series name.
+    delete_series_core(&mut tx, library_id, series_id, false).await?;
     tx.commit().await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))

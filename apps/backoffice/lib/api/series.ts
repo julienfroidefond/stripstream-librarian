@@ -274,6 +274,8 @@ export type OrphanSeriesItemDto = {
   age_days: number;
   /** A wishlist release was detected for this series (not an in-progress download). */
   has_wishlist_release: boolean;
+  /** A torrent download for this series is still downloading or importing. */
+  has_active_download: boolean;
 };
 
 export type OrphanSeriesPageDto = {
@@ -291,12 +293,6 @@ export type OrphanDeleteResultDto = {
   /** Ids whose deletion failed for another reason. */
   failed: string[];
 };
-
-export async function listOrphanSeries(page = 1, limit = 50): Promise<OrphanSeriesPageDto> {
-  return apiFetch<OrphanSeriesPageDto>(
-    `/admin/series/orphans?page=${page}&limit=${limit}`,
-  );
-}
 
 export async function mergeSeries(targetId: string, sourceId: string) {
   return apiFetch<{ books_moved: number; metadata_moved: number; downloads_moved: number }>(

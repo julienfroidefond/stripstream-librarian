@@ -21,9 +21,13 @@ export function OrphansTable({ series, onDeleted }: Props) {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const deletable = series.filter((s) => !s.has_active_download);
+  const activeDownloadCount = series.length - deletable.length;
   const hasWishlistWarning = series.some((s) => s.has_wishlist_release);
+  const hasActiveDownloadWarning = activeDownloadCount > 0;
 
   async function remove(ids: string[]) {
+    if (ids.length === 0) return;
     setBusy(true);
     try {
       const response = await fetch("/api/series/orphans", {
@@ -36,10 +40,15 @@ export function OrphansTable({ series, onDeleted }: Props) {
       const failedIds = new Set(result.failed);
       const removedIds = ids.filter((id) => !failedIds.has(id));
 
-      if (result.deleted > 0) {
+      if (result.deleted > 0 || result.skipped > 0) {
+        const key =
+          result.skipped > 0
+            ? "settings.orphans.deletedWithSkipped"
+            : "settings.orphans.deleted";
         toast(
-          t("settings.orphans.deleted", {
+          t(key, {
             count: result.deleted,
+            skipped: result.skipped,
             plural: result.deleted !== 1 ? "s" : "",
           }),
           "success",
@@ -73,7 +82,7 @@ export function OrphansTable({ series, onDeleted }: Props) {
           variant="destructive"
           size="sm"
           onClick={() => setBulkOpen(true)}
-          disabled={busy || series.length === 0}
+          disabled={busy || deletable.length === 0}
         >
           <Icon name="trash" size="sm" className="mr-2" />
           {t("settings.orphans.deletePage")}
@@ -116,6 +125,12 @@ export function OrphansTable({ series, onDeleted }: Props) {
                         {t("settings.orphans.wishlistRelease")}
                       </Badge>
                     )}
+                    {item.has_active_download && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Icon name="download" size="sm" />
+                        {t("settings.orphans.activeDownload")}
+                      </Badge>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
@@ -153,7 +168,12 @@ export function OrphansTable({ series, onDeleted }: Props) {
                     variant="outline"
                     size="xs"
                     onClick={() => setPendingDelete(item)}
-                    disabled={busy}
+                    disabled={busy || item.has_active_download}
+                    title={
+                      item.has_active_download
+                        ? t("settings.orphans.activeDownloadWarning")
+                        : undefined
+                    }
                   >
                     <Icon name="trash" size="sm" className="mr-1.5" />
                     {t("settings.orphans.delete")}
@@ -210,8 +230,8 @@ export function OrphansTable({ series, onDeleted }: Props) {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => remove(series.map((s) => s.id))}
-              disabled={busy}
+              onClick={() => remove(deletable.map((s) => s.id))}
+              disabled={busy || deletable.length === 0}
             >
               {t("settings.orphans.deletePage")}
             </Button>
@@ -219,7 +239,13 @@ export function OrphansTable({ series, onDeleted }: Props) {
         }
       >
         <div className="space-y-3 px-5 py-4 text-sm text-muted-foreground">
-          <p>{t("settings.orphans.deletePageConfirm", { count: series.length })}</p>
+          <p>{t("settings.orphans.deletePageConfirm", { count: deletable.length })}</p>
+          {hasActiveDownloadWarning && (
+            <p className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-warning">
+              <Icon name="warning" size="sm" mono className="mt-0.5 shrink-0" />
+              {t("settings.orphans.deletePageActiveWarning", { count: activeDownloadCount })}
+            </p>
+          )}
           {hasWishlistWarning && (
             <p className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-warning">
               <Icon name="warning" size="sm" mono className="mt-0.5 shrink-0" />

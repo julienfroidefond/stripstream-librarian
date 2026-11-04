@@ -27,6 +27,12 @@ wishlist de détection. Ce n'est **pas** un téléchargement en cours : rien n'e
 téléchargé. Supprimer la série retire simplement cette entrée de la wishlist, c'est pourquoi la
 suppression est déconseillée tant que la détection est utile.
 
+Un badge **Téléchargement en cours** signale qu'une ligne `torrent_downloads` de la même
+bibliothèque (nom de série comparé sans casse ni accents) est encore en cours de téléchargement,
+en attente d'import ou en cours d'import. Ces séries sont **exclues** de la suppression de page et
+leur bouton *Supprimer* est désactivé : supprimer la série pendant l'import le ferait échouer. Il
+faut d'abord supprimer ou terminer le téléchargement dans les files de téléchargement.
+
 ---
 
 ## Supprimer une série orpheline
@@ -40,13 +46,19 @@ transaction, l'API verrouille la ligne de la série (`FOR UPDATE`) puis vérifie
 aucun livre. Si un livre a été importé entre l'affichage de la liste et la suppression, l'API répond
 `409` et ne supprime rien. La série est ensuite **archivée** avant d'être retirée, ses liens de
 métadonnées externes et ses entrées de wishlist associées sont supprimés en cascade. Comme aucun
-livre n'existe, aucun fichier n'est touché sur le disque.
+livre n'existe, aucun fichier n'est touché sur le disque : l'endpoint orphelin n'exécute jamais la
+phase fichiers de la suppression générique, et ne dérive donc jamais un répertoire à partir du nom
+de la série (un nom `..` ou contenant `/` ne peut pas sortir de la racine de la bibliothèque).
 
 ---
 
 :::note[API]
 L'onglet s'appuie sur `GET /admin/series/orphans` (route admin, paginée, triée par date de création
 croissante) et sur `DELETE /admin/series/orphans/{series_id}` pour chaque suppression. Le backoffice
-expose le tout via `/api/series/orphans` : le corps doit contenir soit `{"ids": ["..."]}`, soit
-explicitement `{"all": true}` ; toute autre valeur est refusée en `400`.
+expose le tout via `/api/series/orphans` : le corps doit contenir soit `{"ids": ["<uuid>", ...]}`,
+soit explicitement `{"all": true}`. Les identifiants doivent être des UUID (toute autre valeur est
+refusée en `400`, ce qui empêche une injection de chemin dans l'URL amont), les doublons sont
+ignorés, `all` et `ids` sont mutuellement exclusifs, et le backoffice limite le nombre de
+suppressions simultanées. La purge `{"all": true}` ignore les séries dont un téléchargement est en
+cours.
 :::

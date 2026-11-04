@@ -97,6 +97,31 @@ async fn create_available_download(pool: &PgPool, library_id: Uuid, series_id: U
     .unwrap();
 }
 
+async fn create_torrent_download(pool: &PgPool, library_id: Uuid, series_name: &str, status: &str) {
+    sqlx::query(
+        "INSERT INTO torrent_downloads (id, library_id, series_name, status) \
+         VALUES (gen_random_uuid(), $1, $2, $3)",
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn create_library_at(pool: &PgPool, name: &str, root: &std::path::Path) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO libraries (id, name, root_path) \
+         VALUES (gen_random_uuid(), $1, $2) RETURNING id",
+    )
+    .bind(name)
+    .bind(root.to_string_lossy().to_string())
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 fn query(page: Option<i64>, limit: Option<i64>) -> Query<OrphanSeriesQuery> {
     Query(OrphanSeriesQuery { page, limit })
 }
@@ -189,6 +214,36 @@ async fn flags_series_with_wishlist_release(pool: PgPool) {
     assert!(wishlisted_item.has_wishlist_release);
     let plain_item = page.items.iter().find(|i| i.id == plain).unwrap();
     assert!(!plain_item.has_wishlist_release);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn flags_series_with_an_active_torrent_download(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "orphans-active").await;
+    let other_library = create_library(&pool, "orphans-active-other").await;
+
+    // Accented series name vs unaccented torrent name: matching is
+    // LOWER(unaccent(...)) on both sides.
+    let importing = create_series(&pool, library, "Astérix").await;
+    create_torrent_download(&pool, library, "asterix", "importing").await;
+
+    let finished = create_series(&pool, library, "Finished").await;
+    create_torrent_download(&pool, library, "Finished", "imported").await;
+
+    // Same name but another library: must not leak across libraries.
+    let foreign = create_series(&pool, library, "Foreign").await;
+    create_torrent_download(&pool, other_library, "Foreign", "downloading").await;
+
+    let Json(page) = list_orphan_series(State(state), query(None, None))
+        .await
+        .unwrap();
+
+    let importing_item = page.items.iter().find(|i| i.id == importing).unwrap();
+    assert!(importing_item.has_active_download);
+    let finished_item = page.items.iter().find(|i| i.id == finished).unwrap();
+    assert!(!finished_item.has_active_download);
+    let foreign_item = page.items.iter().find(|i| i.id == foreign).unwrap();
+    assert!(!foreign_item.has_active_download);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -342,4 +397,90 @@ async fn delete_orphan_series_returns_not_found_for_unknown_id(pool: PgPool) {
         .await
         .unwrap_err();
     assert_eq!(error.status, StatusCode::NOT_FOUND);
+}
+
+/// Regression: an orphan has no `series_dir` of its own, so the deletion must
+/// never derive `<library_root>/<series_name>` and remove it.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_orphan_series_keeps_the_directory_named_after_the_series(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let root = std::env::temp_dir().join(format!("stripstream-orphans-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let library = create_library_at(&pool, "orphans-fs", &root).await;
+
+    let series_id = create_series(&pool, library, "Stale Series").await;
+    let series_dir = root.join("Stale Series");
+    std::fs::create_dir_all(&series_dir).unwrap();
+    std::fs::write(series_dir.join("keep.txt"), b"keep").unwrap();
+
+    let _ = delete_orphan_series(State(state), Path(series_id))
+        .await
+        .unwrap();
+
+    assert!(
+        series_dir.exists(),
+        "orphan deletion must not touch the filesystem"
+    );
+    assert!(series_dir.join("keep.txt").exists());
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// A torrent/provider supplied name must never escape the library root: with a
+/// `..` segment, `<root>/<name>` resolves outside the root.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_orphan_series_rejects_a_traversing_name(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let root = std::env::temp_dir().join(format!("stripstream-orphans-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let library = create_library_at(&pool, "orphans-traversal", &root).await;
+
+    let escape_name = format!("../escape-{}", Uuid::new_v4());
+    let series_id = create_series(&pool, library, &escape_name).await;
+    let victim = root.join(&escape_name);
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join("keep.txt"), b"keep").unwrap();
+
+    let _ = delete_orphan_series(State(state), Path(series_id))
+        .await
+        .unwrap();
+
+    assert!(
+        victim.exists(),
+        "a traversing name must not delete anything"
+    );
+    assert!(victim.join("keep.txt").exists());
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// Defence in depth: the admin route only accepts a UUID path segment, so a
+/// proxy that forgot to validate its input cannot reach another endpoint.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_orphan_series_route_rejects_a_non_uuid_path(pool: PgPool) {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::delete;
+    use axum::Router;
+    use tower::ServiceExt;
+
+    let app = Router::new()
+        .route(
+            "/admin/series/orphans/{series_id}",
+            delete(delete_orphan_series),
+        )
+        .with_state(test_state(pool));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/admin/series/orphans/not-a-uuid")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

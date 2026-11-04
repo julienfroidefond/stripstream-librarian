@@ -6,6 +6,7 @@
  */
 
 export * from "./client";
+export * from "./errors";
 export * from "./libraries";
 export * from "./jobs";
 export * from "./tokens";

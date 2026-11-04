@@ -26,6 +26,7 @@ function makeOrphan(overrides: Partial<OrphanSeriesItemDto> = {}): OrphanSeriesI
     created_at: "2024-03-05T10:00:00.000Z",
     age_days: 12,
     has_wishlist_release: false,
+    has_active_download: false,
     ...overrides,
   };
 }
@@ -93,7 +94,7 @@ describe("OrphansTable", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: ["s1"] }),
     });
-    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":1,"plural":""}', "success");
+    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":1,"skipped":0,"plural":""}', "success");
   });
 
   it("warns about a wishlist release in the single-delete modal", () => {
@@ -124,7 +125,73 @@ describe("OrphansTable", () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1", "s2"]));
-    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":2,"plural":"s"}', "success");
+    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ["s1", "s2"] }),
+    });
+    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":2,"skipped":0,"plural":"s"}', "success");
+  });
+
+  it("excludes a series with an in-progress download from deletion", async () => {
+    const onDeleted = vi.fn();
+    fetchMock.mockResolvedValue(ok({ deleted: 1, skipped: 0, failed: [] }));
+    render(
+      <OrphansTable
+        series={[
+          makeOrphan(),
+          makeOrphan({ id: "s2", name: "Thorgal", has_active_download: true }),
+        ]}
+        onDeleted={onDeleted}
+      />
+    );
+
+    expect(screen.getByText("settings.orphans.activeDownload")).toBeInTheDocument();
+    const rowButtons = screen.getAllByText("settings.orphans.delete");
+    expect(rowButtons[1]!.closest("button")).toBeDisabled();
+
+    fireEvent.click(screen.getByText("settings.orphans.deletePage"));
+    expect(
+      screen.getByText('settings.orphans.deletePageActiveWarning:{"count":1}')
+    ).toBeInTheDocument();
+
+    const confirmButtons = screen.getAllByText("settings.orphans.deletePage");
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1"]));
+    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ["s1"] }),
+    });
+  });
+
+  it("disables the bulk delete when every series has an in-progress download", () => {
+    render(
+      <OrphansTable
+        series={[makeOrphan({ has_active_download: true })]}
+        onDeleted={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("settings.orphans.deletePage").closest("button")).toBeDisabled();
+  });
+
+  it("folds already-deleted rows into the success message", async () => {
+    const onDeleted = vi.fn();
+    fetchMock.mockResolvedValue(ok({ deleted: 1, skipped: 2, failed: [] }));
+    render(<OrphansTable series={[makeOrphan()]} onDeleted={onDeleted} />);
+
+    fireEvent.click(screen.getByText("settings.orphans.delete"));
+    const confirmButtons = screen.getAllByText("settings.orphans.delete");
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        'settings.orphans.deletedWithSkipped:{"count":1,"skipped":2,"plural":""}',
+        "success"
+      )
+    );
   });
 
   it("reports a failed deletion and keeps the selection", async () => {
@@ -157,7 +224,7 @@ describe("OrphansTable", () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1"]));
-    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":1,"plural":""}', "success");
+    expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":1,"skipped":0,"plural":""}', "success");
     expect(toast).toHaveBeenCalledWith(
       'settings.orphans.deletePartial:{"count":1,"plural":""}',
       "error"

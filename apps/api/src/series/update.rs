@@ -339,20 +339,27 @@ pub async fn delete_series(
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let mut conn = state.pool.acquire().await?;
-    delete_series_core(&mut conn, library_id, series_id).await?;
+    delete_series_core(&mut conn, library_id, series_id, true).await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }
 
-/// Deletes a series row, its books and their files.
+/// Deletes a series row, its books and (optionally) their files.
 ///
 /// Shared by the generic series endpoint and the orphan-only endpoint, which
 /// runs it inside a transaction after re-checking that the series still has no
-/// book.
+/// book. `delete_files` must be `false` for the orphan path: a series without
+/// books has no directory of its own, and deriving one from the library root
+/// plus the series name would let a crafted name escape the root.
+///
+/// Even when `delete_files` is `true`, the filesystem phase is skipped when the
+/// series has no book: there is nothing to delete, and the derived directory
+/// would be a guess.
 pub(crate) async fn delete_series_core(
     conn: &mut sqlx::PgConnection,
     library_id: Uuid,
     series_id: Uuid,
+    delete_files: bool,
 ) -> Result<(), ApiError> {
     use stripstream_core::paths::remap_libraries_path;
 
@@ -376,71 +383,57 @@ pub(crate) async fn delete_series_core(
     .fetch_all(&mut *conn)
     .await?;
 
-    // Collect the series directory from the first book's path
-    let mut series_dir: Option<String> = None;
-
     // Track physical deletion failures so we can fall back to a scan (which
     // reconciles disk and DB) only in that exceptional case.
     let mut deletion_failed = false;
 
-    // Delete each book's physical file and thumbnail
-    for row in &book_rows {
-        let abs_path: Option<String> = row.get("abs_path");
-        let thumbnail_path: Option<String> = row.get("thumbnail_path");
+    // The orphan path has no books, hence no series directory: never derive one
+    // from the library root plus the (torrent/provider supplied) series name.
+    if delete_files && !book_rows.is_empty() {
+        // Collect the series directory from a real book path. Never guess it
+        // from the series name: `..` or `/` in a name could escape the library.
+        let mut series_dir: Option<String> = None;
 
-        if let Some(ref path) = abs_path {
-            let physical = remap_libraries_path(path);
-            if series_dir.is_none() {
-                if let Some(parent) = std::path::Path::new(&physical).parent() {
-                    series_dir = Some(parent.to_string_lossy().into_owned());
+        // Delete each book's physical file and thumbnail
+        for row in &book_rows {
+            let abs_path: Option<String> = row.get("abs_path");
+            let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+            if let Some(ref path) = abs_path {
+                let physical = remap_libraries_path(path);
+                if series_dir.is_none() {
+                    if let Some(parent) = std::path::Path::new(&physical).parent() {
+                        series_dir = Some(parent.to_string_lossy().into_owned());
+                    }
+                }
+                match std::fs::remove_file(&physical) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        deletion_failed = true;
+                        tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
+                    }
                 }
             }
-            match std::fs::remove_file(&physical) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => {
-                    deletion_failed = true;
-                    tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
-                }
+
+            if let Some(ref path) = thumbnail_path {
+                let _ = std::fs::remove_file(path);
             }
         }
 
-        if let Some(ref path) = thumbnail_path {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-
-    // Delete the series directory
-    // Use dir from book paths if available, otherwise build from library root + series name
-    if series_dir.is_none() {
-        if let Ok(root) =
-            sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_one(&mut *conn)
-                .await
-        {
-            let physical = remap_libraries_path(&root);
-            series_dir = Some(
-                std::path::Path::new(&physical)
-                    .join(&series_name)
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-        }
-    }
-
-    if let Some(ref dir) = series_dir {
-        let dir_path = std::path::Path::new(dir);
-        if dir_path.exists() {
-            // Use remove_dir (non-recursive) so shared folders like Oneshots/ are preserved
-            // when they still contain other books after deletion.
-            match std::fs::remove_dir(dir) {
-                Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
-                Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
-                    tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
-                }
-                Err(e) => {
-                    tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e)
+        if let Some(ref dir) = series_dir {
+            let dir_path = std::path::Path::new(dir);
+            if dir_path.exists() {
+                // Use remove_dir (non-recursive) so shared folders like Oneshots/ are preserved
+                // when they still contain other books after deletion.
+                match std::fs::remove_dir(dir) {
+                    Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
+                    Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                        tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
+                    }
+                    Err(e) => {
+                        tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e)
+                    }
                 }
             }
         }
