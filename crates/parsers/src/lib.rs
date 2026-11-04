@@ -24,7 +24,7 @@ pub use cbr::convert_cbr_to_cbz;
 pub use metadata::{analyze_book, page_count_only, parse_metadata, parse_metadata_fast};
 pub use volume::{
     extract_hs_info, extract_int_info, extract_metadata_volume, extract_volume, extract_volumes,
-    read_bare_number, read_vol_prefix_number,
+    read_bare_number,
 };
 
 /// Cache of sorted image names per archive path. Avoids re-listing and sorting on every page request.
@@ -164,7 +164,9 @@ mod tests {
     use super::*;
 
     use crate::cbr::{is_not_rar_error, open_cbr_listing};
-    use crate::volume::{clean_title, extract_series, is_hs_subfolder, parse_volume_markers};
+    use crate::volume::{
+        clean_title, extract_series, is_hs_subfolder, parse_volume_markers, read_vol_prefix_number,
+    };
     use crate::zip::get_cbz_image_index;
 
     #[test]
@@ -377,6 +379,7 @@ mod tests {
         );
         assert_eq!(extract_volume("X-Force V2#14"), Some(14));
         assert_eq!(extract_volume("Saga v2 T03"), Some(3));
+        assert_eq!(extract_volume("X-Men v2 001"), Some(1));
         // `V2-14` must not be expanded as the range 2..=14.
         assert_eq!(extract_volume("X-Force V2-14"), Some(14));
         assert_eq!(
@@ -454,8 +457,11 @@ mod tests {
     }
 
     #[test]
-    fn extract_volumes_version_marker_ignores_quality_tag() {
-        assert_eq!(extract_volumes("v2 1080p"), Vec::<i32>::new());
+    fn extract_volumes_version_marker_quality_tag_is_not_a_tome() {
+        // `1080` is rejected as a tome by the probe, so the lone marker keeps
+        // its historic reading instead of disappearing.
+        assert_eq!(extract_volumes("v2 1080p"), vec![2]);
+        assert_eq!(extract_volumes("Berserk v2 [1080p]"), vec![2]);
     }
 
     #[test]
@@ -464,8 +470,44 @@ mod tests {
     }
 
     #[test]
-    fn extract_volumes_ignores_decimal_version() {
-        assert_eq!(extract_volumes("Tool v2.0"), Vec::<i32>::new());
+    fn extract_volumes_decimal_zero_is_not_a_tome() {
+        // `0` is not a plausible tome, so `v2.0` falls back to the marker.
+        assert_eq!(extract_volumes("Tool v2.0"), vec![2]);
+    }
+
+    #[test]
+    fn extract_volumes_lone_unpadded_v_marker_keeps_historic_tome() {
+        assert_eq!(extract_volume("Berserk v2 [1080p]"), Some(2));
+        assert_eq!(extract_volumes("Berserk v2 [1080p]"), vec![2]);
+        assert_eq!(extract_volumes("Saga v2 [Digital]"), vec![2]);
+        assert_eq!(extract_volumes("Berserk v2 (2019)"), vec![2]);
+        assert_eq!(extract_volumes("v 2"), vec![2]);
+    }
+
+    #[test]
+    fn extract_volumes_rejected_v_range_keeps_left_endpoint() {
+        assert_eq!(extract_volumes("v15-v1"), vec![15]);
+        assert_eq!(extract_volumes("v01-1"), vec![1]);
+        // Span larger than 500 is rejected too, keeping the left endpoint.
+        assert_eq!(extract_volumes("v01-600"), vec![1]);
+    }
+
+    #[test]
+    fn extract_volumes_v_range_bare_endpoint_requires_padding() {
+        // Zero padding of the left endpoint decides whether a bare endpoint
+        // is a range: padded expands, unpadded is a version followed by a tome.
+        assert_eq!(extract_volumes("v07-15"), (7..=15).collect::<Vec<_>>());
+        assert_eq!(extract_volumes("v7-15"), vec![15]);
+        // A vol-prefixed endpoint always ranges, padded or not.
+        assert_eq!(extract_volumes("v7-v15"), (7..=15).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn extract_volumes_to_separator_expands() {
+        assert_eq!(
+            extract_volumes("One Piece T01 to T15"),
+            (1..=15).collect::<Vec<_>>()
+        );
     }
 
     // ─── extract_volumes ─────────────────────────────────────────────────
