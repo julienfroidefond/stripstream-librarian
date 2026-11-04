@@ -1,0 +1,141 @@
+name: CodeQL
+
+# Advanced setup, deliberately replacing GitHub's CodeQL default setup.
+#
+# Default setup generates its workflow itself and offers no trigger-level path
+# filter: it ran the full Rust analysis (~13 min per run) on every pull request
+# AND every push to `main`, even for a two-file workflow edit (2026-11-04,
+# PR #212: 15 min of runners for a YAML diff, and again on the merge commit).
+#
+# Here each language has its own job, gated on the surfaces it actually covers,
+# mirroring the filters of `ci.yml` (Rust) and `ci-web.yml` (web apps):
+#
+#   rust                      apps/api, apps/indexer, crates, Cargo.*, migrations
+#   javascript-typescript     apps/backoffice, apps/docs
+#   actions                   .github/workflows
+#
+# A docs-only pull request therefore runs no CodeQL job at all, a backoffice-only
+# one no longer analyzes Rust, and a workflow-only one skips the 13 min Rust job
+# entirely. The weekly `schedule` scan analyzes every language, whatever the
+# paths.
+#
+# The three jobs repeat the same three steps instead of sharing one `matrix`:
+# `jobs.<job_id>.if` cannot read the `matrix` context, so a matrix would have to
+# re-check the language on every step (or build the language list dynamically,
+# which fails on an empty matrix). Explicit jobs keep each condition in one
+# place.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, the same cadence as the default setup this replaces: new CodeQL
+    # queries ship continuously, so unchanged code still gets re-analyzed.
+    - cron: '20 4 * * 1'
+
+# A new push on the same branch/PR cancels the previous analysis instead of
+# letting two full Rust runs finish concurrently.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Required to upload the SARIF results of the analyze job.
+  security-events: write
+  # `dorny/paths-filter` lists the changed files through the API.
+  pull-requests: read
+
+jobs:
+  changes:
+    name: Detect changed surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      # `schedule` has no diff to compute (and `dorny/paths-filter` needs a push
+      # or pull request event): analyze everything instead.
+      rust: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.rust }}
+      web: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.web }}
+      actions: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.actions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Filter paths
+        id: filter
+        if: github.event_name != 'schedule'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            rust:
+              - "apps/api/**"
+              - "apps/indexer/**"
+              - "crates/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "infra/migrations/**"
+              - "rust-toolchain*"
+            web:
+              - "apps/backoffice/**"
+              - "apps/docs/**"
+            actions:
+              - ".github/workflows/**"
+              - ".github/actions/**"
+
+  rust:
+    name: Analyze (rust)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      # Same build mode as the default setup this replaces: `none` (the CodeQL
+      # default for Rust) extracts from the sources without compiling them. No
+      # toolchain, no cargo cache — and no way for a broken build to fail the
+      # scan. The ~13 min it takes is the extraction itself, unchanged here.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          build-mode: none
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:rust'
+
+  javascript-typescript:
+    name: Analyze (javascript-typescript)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:javascript-typescript'
+
+  actions:
+    name: Analyze (actions)
+    needs: changes
+    if: needs.changes.outputs.actions == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          build-mode: none
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:actions'
