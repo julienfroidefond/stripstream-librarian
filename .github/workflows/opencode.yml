@@ -8,21 +8,30 @@ on:
   pull_request_review_comment:
     types: [created]
 
-# One run per issue/PR. A newer event supersedes the previous run instead of
-# queueing behind it: without this, a single wedged run blocks every further
-# `/oc` mention on that thread until the 6 h default job timeout.
+# One run per issue/PR. A newer triggering event supersedes the previous run
+# instead of queueing behind it: without this, a single wedged run blocks every
+# further `/oc` mention on that thread until the 6 h default job timeout.
 #
-# The agent posts "Created PR #N" itself when it finishes. That issue_comment
-# event used to land in the same group and cancelled the run that had just
-# opened the PR, in the middle of its post-steps: four green runs (PRs #131,
-# #132, #133, #138) were reported as "cancelled" for this reason. Bot-triggered
-# runs therefore get a throwaway group, so they can never cancel real work.
+# Only events that will actually start a job may join that group. Every event
+# that fails the job `if:` gets a throwaway group instead, because a run in the
+# same group cancels the in-flight one *before* its own `if:` is evaluated:
+# applying `bug` and `ai` together on issue #211 (2026-11-04) produced two
+# `labeled` events, and the `bug` run cancelled the `ai` run 1 s in, leaving
+# nothing but a `cancelled` + a `skipped` run. Same for a plain comment, which
+# used to cancel an ongoing `/oc` run, and for the agent's own "Created PR #N"
+# comment: four green runs (PRs #131, #132, #133, #138) were reported as
+# "cancelled" for this reason.
 concurrency:
   group: >-
-    opencode-${{ github.event.sender.type == 'Bot'
-    && format('noop-{0}', github.run_id)
-    || github.event.issue.number
-    || github.event.pull_request.number }}
+    opencode-${{
+      (github.event.sender.type == 'Bot'
+       || (github.event_name == 'issues' && github.event.label.name != 'ai')
+       || (github.event_name != 'issues'
+           && !contains(github.event.comment.body, '/oc')
+           && !contains(github.event.comment.body, '/opencode')))
+      && format('noop-{0}', github.run_id)
+      || github.event.issue.number
+      || github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:

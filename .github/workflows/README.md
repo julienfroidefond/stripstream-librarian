@@ -102,6 +102,21 @@ a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so
 — version bump, image build, deployment — would silently not run. The PAT attributes the
 merge to its owner, like a human merge.
 
+## OpenCode agent (`opencode.yml`)
+
+Two jobs share the file: `issue` runs when the `ai` label is applied, `comment` when an issue or
+review comment contains `/oc` or `/opencode`. The workflow always runs **from `main`**, so an
+edit here only takes effect once it is on `main`.
+
+Only an event that will actually start a job joins the per-issue concurrency group; every other
+event gets a throwaway `noop-<run_id>` group. A run in the same group cancels the in-flight one
+**before** its own `if:` is evaluated, so without that guard applying `bug` and `ai` together
+(two `labeled` events) killed the `ai` run 1 s in (issue #211, 2026-11-04), and a plain comment
+cancelled an ongoing run.
+
+To re-trigger, **remove** the `ai` label and add it back: `labeled` only fires on an actual add,
+and editing the issue fires `edited`, which the workflow does not listen to.
+
 ## Images
 
 The API and indexer share a single Dockerfile (`apps/api/Dockerfile`) with two targets
