@@ -364,9 +364,9 @@ mod tests {
     }
 
     #[test]
-    fn extract_volume_ignores_series_version_marker() {
-        // Issue #215: `v2`/`V2` is a series version, not a tome. The real
-        // number is the one that follows it.
+    fn extract_volume_handles_series_version_marker() {
+        // Issue #215: `v2`/`V2` is a series version only when a tome follows
+        // it; the real number is then the one that follows.
         assert_eq!(
             extract_volume("Ultimate Spider-Man v2 01 - Le nouveau monde selon parker (1)"),
             Some(1)
@@ -384,21 +384,23 @@ mod tests {
             vec![1]
         );
 
-        // A lone version marker is not a tome.
-        assert_eq!(extract_volume("Series v2"), None);
-        assert_eq!(extract_volume("Series v2.cbz"), None);
-        assert_eq!(extract_volume("Series v.2"), None);
-
-        // Zero-padded `vNN` keeps the historic tome meaning.
+        // A lone `vN` keeps the historic tome reading, padded or not.
+        assert_eq!(extract_volume("Series v2"), Some(2));
+        assert_eq!(extract_volume("Series v2.cbz"), Some(2));
+        assert_eq!(extract_volume("Series v.2"), Some(2));
         assert_eq!(extract_volume("Series v07"), Some(7));
         assert_eq!(extract_volume("Series v03 [1080p]"), Some(3));
     }
 
     #[test]
-    fn extract_hs_info_wins_over_series_version_marker() {
-        let (volume, _) = extract_hs_info("Ultimate Spider-Man v2 HS 03 - L'ennemi")
-            .expect("HS marker should be detected");
-        assert_eq!(volume, Some(3));
+    fn parse_metadata_fast_regular_volume_after_series_version_marker() {
+        let path = Path::new(
+            "/libraries/bd/Ultimate Spider-Man/Ultimate Spider-Man v2 01 - Le nouveau monde.cbz",
+        );
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume, Some(1));
+        assert_eq!(meta.volume_type, VolumeType::Regular);
     }
 
     #[test]
@@ -410,6 +412,60 @@ mod tests {
         let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
         assert_eq!(meta.volume, Some(3));
         assert_eq!(meta.volume_type, VolumeType::Hs);
+    }
+
+    #[test]
+    fn extract_volumes_v_prefixed_ranges_expand() {
+        assert_eq!(
+            extract_volumes("One Piece v1-v15"),
+            (1..=15).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            extract_volumes("Coq v01-105"),
+            (1..=105).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn extract_volumes_lone_v_marker_is_a_tome() {
+        assert_eq!(extract_volumes("Berserk v12"), vec![12]);
+        assert_eq!(extract_volumes("One Piece v100"), vec![100]);
+    }
+
+    #[test]
+    fn extract_volumes_version_marker_with_dot() {
+        assert_eq!(extract_volumes("v2.01"), vec![1]);
+    }
+
+    #[test]
+    fn extract_volumes_bracketed_version_marker() {
+        assert_eq!(extract_volumes("Ultimate Spider-Man [V2] 01"), vec![1]);
+        assert_eq!(extract_volumes("[V2]"), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn extract_volumes_mixed_tome_and_lone_version() {
+        assert_eq!(extract_volumes("Naruto T05 v2"), vec![5, 2]);
+    }
+
+    #[test]
+    fn extract_volumes_version_marker_before_tome_prefix() {
+        assert_eq!(extract_volumes("v07 T05"), vec![5]);
+    }
+
+    #[test]
+    fn extract_volumes_version_marker_ignores_quality_tag() {
+        assert_eq!(extract_volumes("v2 1080p"), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn extract_volumes_ignores_episode_numbers() {
+        assert_eq!(extract_volumes("S02E03"), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn extract_volumes_ignores_decimal_version() {
+        assert_eq!(extract_volumes("Tool v2.0"), Vec::<i32>::new());
     }
 
     // ─── extract_volumes ─────────────────────────────────────────────────

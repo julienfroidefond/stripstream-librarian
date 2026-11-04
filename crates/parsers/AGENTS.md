@@ -82,12 +82,14 @@ Patterns reconnus dans le nom de fichier (dans l'ordre de priorité) :
 - `#1`, `#01`
 - `- 1`, `- 01` (en fin de nom)
 
-Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`) sont expansés.
+Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`) sont expansés,
+y compris lorsqu'ils sont préfixés par `v` (`v1-v15` → 1..=15, `v01-105` → 1..=105).
 
-Un `vN` isolé (`v2`, `V2`, `v.2`) est un **marqueur de version de série**, pas un tome
-(issue #215) : le tome réel est le nombre qui suit (`v2 01` → 1, `V2#14` → 14, `v2 T03` → 3,
-`v2 HS 03` → HS 3 via `extract_hs_info`). Le `[V2]` entre crochets est ignoré, et un `vN`
-zéro-paddé (`v07`) garde son sens historique de tome.
+Un `vN` (`v2`, `V2`, `v.2`) est un **marqueur de version de série** uniquement lorsqu'un
+numéro de tome le suit (issue #215) : le tome réel est alors le nombre qui suit (`v2 01` → 1,
+`V2#14` → 14, `v2 T03` → 3, `v2 HS 03` → HS 3 via `extract_hs_info`). Un `vN` isolé
+(`Berserk v12`, `One Piece v100`) garde son sens historique de tome, et `V2-14` reste
+« version 2, tome 14 » (pas une plage 2..=14).
 
 ### Nombre de pages / extraction
 
