@@ -5,66 +5,19 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::super::get_series_owned_volumes;
+use super::{create_book_with_type, create_series, create_test_library};
 use crate::state::test_state;
 
-async fn create_library(pool: &PgPool, name: &str) -> Uuid {
-    sqlx::query_scalar(
-        "INSERT INTO libraries (id, name, root_path) \
-         VALUES (gen_random_uuid(), $1, $2) RETURNING id",
-    )
-    .bind(name)
-    .bind(format!("/libraries/{}-{}", name, Uuid::new_v4()))
-    .fetch_one(pool)
-    .await
-    .unwrap()
-}
-
-async fn create_series(pool: &PgPool, library_id: Uuid, name: &str) -> Uuid {
-    sqlx::query_scalar(
-        "INSERT INTO series (id, library_id, name) \
-         VALUES (gen_random_uuid(), $1, $2) RETURNING id",
-    )
-    .bind(library_id)
-    .bind(name)
-    .fetch_one(pool)
-    .await
-    .unwrap()
-}
-
-async fn create_book_with(
-    pool: &PgPool,
-    library_id: Uuid,
-    series_id: Uuid,
-    title: &str,
-    volume: Option<i32>,
-    volume_type: &str,
-) {
-    sqlx::query(
-        "INSERT INTO books \
-             (id, library_id, kind, title, series_id, volume, volume_type, authors, page_count) \
-         VALUES (gen_random_uuid(), $1, 'comic', $2, $3, $4, $5, '{}', 10)",
-    )
-    .bind(library_id)
-    .bind(title)
-    .bind(series_id)
-    .bind(volume)
-    .bind(volume_type)
-    .execute(pool)
-    .await
-    .unwrap();
-}
-
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn returns_only_regular_volumes(pool: PgPool) {
+async fn includes_numbered_integrals_and_regular_volumes(pool: PgPool) {
     let state = test_state(pool.clone());
-    let library = create_library(&pool, "volumes_regular").await;
+    let library = create_test_library(&pool, "volumes_integral").await;
     let series = create_series(&pool, library, "Series").await;
 
-    create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
-    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
-    create_book_with(&pool, library, series, "HS 1", Some(3), "hs").await;
-    create_book_with(&pool, library, series, "One-shot", Some(4), "oneshot").await;
-    create_book_with(&pool, library, series, "Integral", Some(5), "integral").await;
+    create_book_with_type(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    // An integral of tome 2 covers that same volume.
+    create_book_with_type(&pool, library, series, "INT 2", Some(2), "integral").await;
 
     let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
         .await
@@ -73,20 +26,19 @@ async fn returns_only_regular_volumes(pool: PgPool) {
     assert_eq!(
         dto.owned_volumes,
         vec![1, 2],
-        "only regular volumes count as owned"
+        "numbered integrals count as owned volumes"
     );
+    assert!(!dto.has_unnumbered_integral);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn excludes_null_and_duplicate_volumes_and_sorts(pool: PgPool) {
+async fn unnumbered_integral_sets_flag_and_keeps_regular_volumes(pool: PgPool) {
     let state = test_state(pool.clone());
-    let library = create_library(&pool, "volumes_sort").await;
+    let library = create_test_library(&pool, "volumes_int_null").await;
     let series = create_series(&pool, library, "Series").await;
 
-    create_book_with(&pool, library, series, "Vol 3", Some(3), "regular").await;
-    create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
-    create_book_with(&pool, library, series, "Vol 3 dup", Some(3), "regular").await;
-    create_book_with(&pool, library, series, "No volume", None, "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, library, series, "INT", None, "integral").await;
 
     let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
         .await
@@ -94,15 +46,80 @@ async fn excludes_null_and_duplicate_volumes_and_sorts(pool: PgPool) {
 
     assert_eq!(
         dto.owned_volumes,
-        vec![1, 3],
-        "distinct, ascending, no NULLs"
+        vec![1],
+        "regular volumes stay listed alongside the unnumbered integral"
     );
+    assert!(
+        dto.has_unnumbered_integral,
+        "an unnumbered integral means the series is complete"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn excludes_hs_and_oneshot_volumes(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_test_library(&pool, "volumes_hs").await;
+    let series = create_series(&pool, library, "Series").await;
+
+    create_book_with_type(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, library, series, "HS 5", Some(5), "hs").await;
+    create_book_with_type(&pool, library, series, "One-shot 6", Some(6), "oneshot").await;
+    create_book_with_type(&pool, library, series, "One-shot", None, "oneshot").await;
+
+    let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        dto.owned_volumes,
+        vec![1],
+        "HS and one-shots never count as owned"
+    );
+    assert!(!dto.has_unnumbered_integral);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn excludes_null_regular_volumes(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_test_library(&pool, "volumes_null").await;
+    let series = create_series(&pool, library, "Series").await;
+
+    create_book_with_type(&pool, library, series, "No volume", None, "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 3", Some(3), "regular").await;
+
+    let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        dto.owned_volumes,
+        vec![3],
+        "NULL regular volumes are excluded"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn deduplicates_and_sorts_volumes(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_test_library(&pool, "volumes_sort").await;
+    let series = create_series(&pool, library, "Series").await;
+
+    create_book_with_type(&pool, library, series, "Vol 3", Some(3), "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 3 dup", Some(3), "regular").await;
+    create_book_with_type(&pool, library, series, "INT 1", Some(1), "integral").await;
+
+    let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(dto.owned_volumes, vec![1, 3], "distinct and ascending");
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn returns_empty_list_for_series_without_books(pool: PgPool) {
     let state = test_state(pool.clone());
-    let library = create_library(&pool, "volumes_empty").await;
+    let library = create_test_library(&pool, "volumes_empty").await;
     let series = create_series(&pool, library, "Empty Series").await;
 
     let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
@@ -110,16 +127,46 @@ async fn returns_empty_list_for_series_without_books(pool: PgPool) {
         .unwrap();
 
     assert!(dto.owned_volumes.is_empty());
+    assert!(!dto.has_unnumbered_integral);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn returns_404_for_unknown_series(pool: PgPool) {
     let state = test_state(pool);
+    let missing = Uuid::new_v4();
 
-    let err = get_series_owned_volumes(State(state), Path(Uuid::new_v4()))
+    let err = get_series_owned_volumes(State(state), Path(missing))
         .await
         .err()
         .expect("unknown series should return an error");
 
     assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(err.message, format!("series '{missing}' not found"));
+}
+
+/// Defence in depth: the admin route only accepts a UUID path segment.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn route_rejects_a_non_uuid_path(pool: PgPool) {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use axum::Router;
+    use tower::ServiceExt;
+
+    let app = Router::new()
+        .route("/series/{series_id}/volumes", get(get_series_owned_volumes))
+        .with_state(test_state(pool));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/series/not-a-uuid/volumes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

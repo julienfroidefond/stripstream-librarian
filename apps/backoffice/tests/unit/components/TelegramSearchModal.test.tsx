@@ -82,6 +82,26 @@ describe("TelegramSearchModal", () => {
     expect(missingRow.className).toContain("bg-success/10");
   });
 
+  it("highlights nothing when ownedVolumes is undefined", async () => {
+    mockSearch([
+      result({ id: "book-1", filename: "one.cbz", volume_number: 1 }),
+      result({ id: "book-2", filename: "two.cbz", volume_number: 2 }),
+    ]);
+
+    render(
+      <TelegramSearchModal seriesName="Series" initialEnabled ownedVolumes={undefined}>
+        {(open) => <button onClick={open}>open</button>}
+      </TelegramSearchModal>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const one = (await screen.findByText("one.cbz")).closest("tr") as HTMLElement;
+    const two = screen.getByText("two.cbz").closest("tr") as HTMLElement;
+
+    expect(one.className).not.toContain("bg-success/10");
+    expect(two.className).not.toContain("bg-success/10");
+  });
+
   it.each(["failed", "imported"])(
     "retries a %s result through the download endpoint",
     async (status) => {

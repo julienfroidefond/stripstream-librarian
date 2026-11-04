@@ -152,7 +152,7 @@ describe("SeriesDetailPage", () => {
     expect(toolbar.props?.ownedVolumes).toEqual([1, 2, 3]);
   });
 
-  it("falls back to an empty owned-volume list when the endpoint fails", async () => {
+  it("falls back to undefined so a failed fetch highlights nothing", async () => {
     api.fetchSeriesOwnedVolumes.mockRejectedValue(new Error("boom"));
 
     render(
@@ -162,6 +162,19 @@ describe("SeriesDetailPage", () => {
       })
     );
 
-    expect(toolbar.props?.ownedVolumes).toEqual([]);
+    expect(toolbar.props?.ownedVolumes).toBeUndefined();
+  });
+
+  it("passes undefined when the series owns an unnumbered integral", async () => {
+    api.fetchSeriesOwnedVolumes.mockResolvedValue(null);
+
+    render(
+      await SeriesDetailPage({
+        params: Promise.resolve({ seriesId: "ser-1" }),
+        searchParams: Promise.resolve({}),
+      })
+    );
+
+    expect(toolbar.props?.ownedVolumes).toBeUndefined();
   });
 });

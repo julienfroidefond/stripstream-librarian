@@ -257,13 +257,19 @@ describe("series", () => {
     expect(lastCall().url).toBe("http://api:7080/series/ser-1/details");
   });
 
-  it("fetches every owned regular volume of a series", async () => {
-    fetchMock.mockResolvedValueOnce(makeResponse({ owned_volumes: [1, 3, 7] }));
+  it("fetches every owned volume of a series", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ owned_volumes: [1, 3, 7], has_unnumbered_integral: false }));
 
     await expect(fetchSeriesOwnedVolumes("ser-1")).resolves.toEqual([1, 3, 7]);
 
     expect(lastCall().url).toBe("http://api:7080/series/ser-1/volumes");
     expect(lastCall().method).toBe("GET");
+  });
+
+  it("maps an unnumbered integral to null (nothing to highlight)", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ owned_volumes: [1], has_unnumbered_integral: true }));
+
+    await expect(fetchSeriesOwnedVolumes("ser-1")).resolves.toBeNull();
   });
 
   it("limits related series", async () => {

@@ -86,7 +86,7 @@ export default async function SeriesDetailPage({
     hasActiveUser
       ? Promise.resolve([] as SeriesUserActivityDto[])
       : fetchSeriesUserActivity(seriesId).catch(() => [] as SeriesUserActivityDto[]),
-    fetchSeriesOwnedVolumes(seriesId).catch(() => [] as number[]),
+    fetchSeriesOwnedVolumes(seriesId).catch(() => undefined),
   ]);
 
   const ratingEntries = ratedActivity(seriesUserActivity);
@@ -377,7 +377,7 @@ export default async function SeriesDetailPage({
             alldebridConfigured={alldebridConfigured}
             telegramEnabled={telegramEnabled}
             ddlProviderEnabled={ddlProviderEnabled}
-            ownedVolumes={ownedVolumes}
+            ownedVolumes={ownedVolumes ?? undefined}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             renameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
