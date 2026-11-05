@@ -67,6 +67,10 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ## v3.32.85 — 2026-11-04
 
+### Corrections
+
+- **ci** — stop non-triggering events from cancelling opencode runs
+
 <details>
 <summary>Maintenance (1)</summary>
 
@@ -341,12 +345,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ## v3.32.53 — 2026-10-22
 
-### Corrections
-
-- **security** — corriger les alertes CodeQL
-
-## v3.32.52 — 2026-10-22
-
 ### Nouveautés
 
 - **backoffice** — unifier les barres de recherche et de filtres ([#161](https://github.com/julienfroidefond/stripstream-librarian/pull/161))
@@ -355,6 +353,7 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ### Corrections
 
+- **security** — corriger les alertes CodeQL
 - **deploy** — ne plus geler le compteur de version sur un tag orphelin
 - **reading-lists** — fiabiliser positions, déplacements et suggestions IAG ([#166](https://github.com/julienfroidefond/stripstream-librarian/pull/166))
 - **api** — fiabiliser les recherches BDTheque des batchs de métadonnées ([#162](https://github.com/julienfroidefond/stripstream-librarian/pull/162))
@@ -382,7 +381,7 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - Fixed Prowlarr cold-start empty search.
 
 <details>
-<summary>Maintenance (11)</summary>
+<summary>Maintenance (10)</summary>
 
 - **deps** — bump postcss ([#164](https://github.com/julienfroidefond/stripstream-librarian/pull/164))
 - **ci** — attendre le recalcul de mergeabilité avant de merger
@@ -394,6 +393,14 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - **opencode** — stop bot comments from cancelling successful runs ([#143](https://github.com/julienfroidefond/stripstream-librarian/pull/143))
 - **deps** — migrate zip from 8.6.0 to 9.0.2 ([#140](https://github.com/julienfroidefond/stripstream-librarian/pull/140))
 - **deps** — bump lukemathwalker/cargo-chef in /apps/api ([#134](https://github.com/julienfroidefond/stripstream-librarian/pull/134))
+
+</details>
+
+## v3.32.52 — 2026-10-20
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - **deps** — bump the rust-non-major group across 1 directory with 2 updates ([#135](https://github.com/julienfroidefond/stripstream-librarian/pull/135))
 
 </details>
@@ -509,14 +516,12 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 </details>
 
-## v3.32.39 — 2026-10-19
+## v3.32.38 — 2026-10-19
 
 ### Nouveautés
 
 - **backoffice** — redesign book and series cards, add list views and per-card shortcuts
 - **api** — expose file size, summary and publish date on book listings
-
-## v3.32.38 — 2026-10-19
 
 ### Documentation
 
@@ -717,20 +722,20 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 ## v3.32.18 — 2026-10-14
 
 <details>
-<summary>Maintenance (4)</summary>
+<summary>Maintenance (3)</summary>
 
 - surface pre-1.0 minor bumps as individual Dependabot PRs
 - fix Dependabot pre-1.0 minor ignore rules
 - **deps** — bump sha2 from 0.11.0 to 0.11.1
-- replace Renovate with Dependabot
 
 </details>
 
 ## v3.32.17 — 2026-10-14
 
 <details>
-<summary>Maintenance (1)</summary>
+<summary>Maintenance (2)</summary>
 
+- replace Renovate with Dependabot
 - **deps** — update rust non-major
 
 </details>
@@ -851,17 +856,15 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 - **backoffice** — apply the front factorization checklist
 
-## v3.32.5 — 2026-10-09
-
-### Performances
-
-- **api** — cache stats and make search/list queries index-backed
-
 ## v3.32.4 — 2026-10-09
 
 ### Nouveautés
 
 - **metadata** — add "no community rating" gap filter
+
+### Performances
+
+- **api** — cache stats and make search/list queries index-backed
 
 ## v3.32.3 — 2026-10-09
 
@@ -939,208 +942,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - hide downloads page and indicator when downloads_enabled is false
 - replace prowlarr-configured check with downloads_enabled feature flag
 - enrich Prowlarr releases with cover images
-- replace oneshot filter with generic volume_type filter on series list
-- oneshot folder support
-- add wishlist filter to series page
-- two-pass Prowlarr fetch for better recent coverage, cap at 200
-- **discovery** — server-side indexer filter with full provider list
-- **discovery** — filter Prowlarr results by indexer/provider
-- genre filter counts per library + protect manual genres from sync
-- personalized series recommendations endpoint
-- genres management page with series browser
-- extract Style field (Manga - Shônen, Franco-belge…) from Bedetheque detail page
-- genre autocomplete with styled portal dropdown
-- autocomplete genres from existing values in series edit form
-- add genres field to series edit form
-- add related series carousel on series detail page
-- display 'new releases' count in jobs UI
-- report 'new releases' count in download detection notification
-- paginate Prowlarr discovery (25/page) + provider column + info link
-- server-side date sort for Prowlarr discovery
-- prowlarr search on book detail with T<volume> prefix
-- replace "Other" with detailed job categories in dashboard chart
-- track per-release detected_at for accurate freshness sorting
-- add "Recent" sort and date display on downloads page
-- add "all time" period filter in discovery
-- multi-platform Docker builds (amd64 + arm64)
-- add Docker support for docs site
-- add documentation site (Starlight/Astro)
-- regenerate PWA icons and splash screens with new logostrip3 logo
-- add PWA manifest, icons, and iOS splash screens
-- show missing volumes as grayed-out cards in series page
-- add integral (INT) volume type support
-- separate rename template for hors-série books
-- align library series page with global series page
-- add volume_type support (regular, hs, oneshot)
-- split OpenAPI into client and admin specs + API home page
-- optional has_books filter on series listing endpoints
-- download and store series cover images locally
-- release blacklist — hide releases from future download detection
-- docker-push allows selecting which services to build
-- new download statuses (partial, no_files_imported) + retry import
-- discovery shows series instead of individual tomes
-- hide/unhide discovery suggestions + UI improvements
-- create series directory on disk, delete on series removal
-- POST /series/create with metadata linking + tests
-- SensCritique edition selection + confidence based on name & volume count
-- merge series + fix duplicate series after rename
-- enrich all notification messages with detailed information
-- add jobType.scan translation + replace library dropdown with selectable pill badges
-- emit job events for all remaining job types + 8 tests (418 total)
-- unified index_job_events table for detailed job tracking (410 tests)
-- quick match button for undecided metadata batch results
-- reuse available downloads UI in download detection job details
-- add metadata re-match job to re-link series with current provider
-- show failed badge on individual releases in available downloads
-- add colored icons to nav menu and page titles
-- redesign available downloads UX + sortable Prowlarr table
-- add description hover on SensCritique discovery cards
-- infer series status (ongoing/ended) in SensCritique provider
-- add SensCritique as full metadata provider
-- add SensCritique discovery providers with trending and best-rated lists
-- add search input field to metadata search modal
-- show failed download indicator on available downloads
-- accumuler les available_downloads au lieu d'écraser
-- filtres catégorie et recherche sur l'onglet Prowlarr discovery
-- bouton hard refresh discovery + détection catégories améliorée
-- deviner la catégorie BD/Manga/Comics depuis le titre du torrent
-- clean URLs pour les onglets de la page découverte
-- support lien info torrent dans Prowlarr discovery
-- améliorer Prowlarr discovery + placeholder covers pour séries vides
-- ajouter onglet Prowlarr dans la page découverte
-- ajouter page découverte de séries avec AniList trending et Bédéthèque indispensables
-- ajouter job metadata_refresh_all pour rafraîchir toutes les séries sans filtre de statut
-- ajouter indicateur de téléchargements dans le header et refactorer la navigation
-- ajouter les stats de téléchargements sur le dashboard
-- déplacer le bouton logout dans le menu hamburger mobile
-- table series avec UUID PK — migration complète backend + frontend
-- migration DB — table series avec UUID PK (fusionne series_metadata)
-- docker-push ne build que les services modifiés depuis le dernier tag
-- loader discret dans la barre de recherche pendant la navigation
-- suppression de série entière (dossier + livres + métadonnées)
-- regroupement des releases par titre identique dans la UI
-- détection des releases intégrales/complètes dans Prowlarr
-- suppression de livres + import insensible aux accents
-- suppression individuelle de releases dans les available downloads
-- notification Telegram à la fin d'un import torrent
-- unifier la recherche livres via le endpoint /books avec paramètre q
-- modale Prowlarr avec bouton remplacer + fix parseur volumes
-- bouton télécharger et remplacer + fix extraction volumes UTF-8
-- lien vers la série sur les noms dans la liste des téléchargements
-- table available_downloads découplée des jobs de détection
-- affiche les versions API, Indexer et Backoffice dans About
-- bloc About avec versions dans les settings
-- SSR pour toutes les cards de la page Settings
-- lien vers la page série sur les résultats de détection
-- nettoyage après import — supprime le répertoire source et le torrent qBittorrent
-- pagination et lignes compactes sur la page téléchargements
-- refresh metadata ciblé par série après import et dans la modale
-- persistance des filtres server-side via cookies
-- section disponibles au téléchargement + fix nommage import
-- gestion des téléchargements qBittorrent avec import automatique
-- unify job creation — tous les types créent N jobs par librairie côté backend
-- add type, status, and library filters to jobs list
-- add replay button for download detection jobs and color-coded job type badges
-- add qBittorrent download button to download detection report
-- streamline mobile header navigation
-- replace inline save status with toast notifications in settings
-- expand volume range packs in Prowlarr title matching
-- add per-library download detection auto-schedule
-- add download detection job with Prowlarr integration
-- add reading_status_push auto-refresh schedule per library
-- expose all API endpoints in OpenAPI spec
-- add client-side pagination to jobs table (25 per page)
-- add stats display for reading_status_match and reading_status_push jobs
-- add reading_status_push job — differential push to AniList
-- add replay button on completed jobs in the jobs table
-- add books/pages metric toggle on reading activity chart
-- AniList reading status integration
-- multi-user reading progress & backoffice impersonation
-- add backoffice authentication with login page
-- filter metadata refresh to ongoing series & improve job action buttons
-- enhance jobs list stats with tooltips, icons, and refresh count
-- improve Telegram notification UI with better formatting
-- add job runs chart and scrollable reading lists on dashboard
-- add day/week/month period toggle for dashboard line charts
-- add reading stats and replace dashboard charts with recharts
-- send book thumbnails in Telegram notifications
-- add Telegram notification system with granular event toggles
-- allow batch metadata and refresh metadata on all libraries
-- include series_count and thumbnail_book_ids in libraries API response
-- persist filter state in localStorage across pages
-- add format and metadata filters to books page
-- redesign libraries page UI with fan thumbnails and modal settings
-- add rescan job type and improve full rebuild UX
-- add EPUB format support with spine-aware image extraction
-- add live refresh to job detail page via SSE
-- highlight missing volumes in Prowlarr search results
-- add authors page to backoffice with dedicated API endpoint
-- add scheduled metadata refresh for libraries
-- add editable search input to Prowlarr modal with scrollable badges
-- add qBittorrent download client integration
-- add Prowlarr integration for manual release search
-- add configurable status mappings for metadata providers
-- redesign search bars with prominent search input and compact filters
-- redesign jobs page action bar with grouped layout
-- add metadata refresh job to re-download metadata for linked series
-- add metadata statistics to dashboard
-- auto-match metadata when 100% confidence and matching book count
-- add metadata provider filter to series page
-- make series names clickable in batch metadata report
-- add i18n support (FR/EN) to backoffice with English as default
-- add batch metadata jobs, series filters, and translate backoffice to French
-- add series status, improve providers & e2e tests
-- add external metadata sync system with multiple providers
-- fix author search, add edit modals, settings tabs & search resync
-- **komga** — add Komga read-status sync with reports and history
-- **books** — édition des métadonnées livres et séries + champ authors multi-valeurs
-- **api** — log info par requête HTTP (méthode, path, status, durée)
-- **backoffice** — afficher le format (cbz/cbr/pdf) au lieu du kind sur les cards
-- add sort parameter (title/latest) to books and series endpoints
-- **backoffice** — add dashboard statistics with charts
-- **backoffice** — add reading progress management, series page, and live search
-- **api** — add GET /series/ongoing and GET /books/ongoing endpoints
-- **tokens** — allow permanent deletion of revoked tokens
-- **indexer,backoffice** — logs par domaine, réduction fd, UI mobile
-- **indexer,backoffice** — ajouter warnings dans les stats de job, skip fichiers inaccessibles
-- **books** — ajouter le champ format en base et l'exposer dans l'API
-- **jobs** — introduce extracting_pages status and update job progress handling
-- **docker** — migrations sqlx intégrées dans le démarrage de l'API
-- **api+backoffice** — pagination par page/offset + filtres séries
-- **api** — enrichir GET /books et series avec filtres et pagination
-- suivi de la progression de lecture par livre
-- **backoffice** — améliorer les détails de job avec historique des phases
-- **api** — relier les settings DB au comportement runtime
-- conversion CBR → CBZ via job asynchrone
-- **backoffice** — amélioration navigation mobile et tablette
-- **backoffice** — add page preview carousel on book detail page
-- two-phase indexation with direct thumbnail generation in indexer
-- enhance thumbnail management with full rebuild functionality
-- enhance library scanning and metadata parsing
-- enhance concurrency settings for rendering and thumbnail generation
-- implement thumbnail generation and management
-- thumbnails : part1
-- review cbr and unraring for image on api
-- add image rendering logs and refactor Icon component
-- add image optimization and settings page
-- make all service ports configurable via env variables
-- make libraries volume path configurable via env variable
-- add hierarchical folder browser for library creation
-- **backoffice** — redesign UI with enhanced background and glassmorphism effects
-- **ui** — Add pagination to books pages and improve spacing
-- **ui** — Components refactoring with Tailwind - UI kit, icons, lazy loading images
-- **tailwind** — Migration vers Tailwind CSS v4
-- **ui** — JobsIndicator moderne avec loader et popin détaillée
-- **ui** — Refonte UI page Libraries - design moderne en cards
-- **ui** — Lazy loading images + dark mode job highlight
-- **jobs** — T22 complété - Page détail jobs avec timeline et stats
-- **watcher** — Ajout watcher de fichiers temps réel
-- **monitoring** — T23 - Surveillance automatique des libraries
-- **indexing** — Lot 4 - Progression temps reel, Full Rebuild, Optimisations
-- change volume from string to integer type
-- **db** — add migration for volume column type change
-- add series support for book organization
-- **api** — improve Swagger/OpenAPI documentation
 
 ### Corrections
 
@@ -1230,243 +1031,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - series deletion — preserve shared folders and invalidate list cache
 - log high-frequency polling routes at debug instead of info
 - refresh layout after toggling downloads_enabled
-- **discovery** — single Prowlarr cache, sort applied in memory
-- **api** — include series_id in ongoing_books outer SELECT
-- show #0 badge for volume 0 books (falsy check bug)
-- use series DTO first_book_id for cover in backoffice series detail
-- prioritize regular volumes over HS for series thumbnails everywhere
-- prioritize regular volumes over HS for series cover thumbnail
-- sort genre cards by series count desc on genres page
-- remove old-named files for replaced volumes in replace mode
-- handle legacy bare numeric external_id in SensCritique provider
-- sort genres by series count desc on genres page
-- remove all cache mounts from sqlx-installer stage
-- remove stale CARGO_TARGET_DIR cache mount from sqlx-installer stage
-- **parsers** — streaming fallback when zip v8 fails to read CBZ entries
-- exclude series with no books from related and recommendations
-- return NULL instead of nil UUID for first_book_id when series has no books
-- circuit breaker for SensCritique 429 in metadata sync/batch
-- genre dropdown - restore container ref for reliable rect, align to input width
-- genre dropdown - align to input width and fix background color
-- genre autocomplete - add missing proxy route and fix dropdown clipping
-- align status select height with other inputs in EditSeriesForm
-- JobProgress no longer stuck on "Loading progress..."
-- 'latest added' sort falls back to series.created_at for empty series
-- scheduler checked wrong Prowlarr config key (base_url → url)
-- download detection now processes series without books
-- dedup missing books vs owned + reduce caching aggressiveness
-- extract_volumes Pattern C also matches without file extension
-- extract trailing bare number before file extension
-- extract volume from glued T-prefix patterns like 'FrontierT01'
-- empty series (no books) no longer show as 'read'
-- make mobile nav drawer scrollable
-- add download_detection and reading_status_push to indexer API_ONLY_JOB_TYPES
-- restore multi-arch Docker builds (amd64 + arm64)
-- avoid SSR hydration mismatch in ActionsMenu portal
-- refresh UI data and bust stale image caches after content changes
-- distinguish actually imported files from already-existing ones
-- move legend below chart with clickable filtering and fix tooltip z-index
-- cleanup stale pending jobs that block scheduled detection
-- rename migration 0085 → 0089 to avoid conflict with existing migration
-- deduplicate missing books by volume_number in get_missing_books
-- check content_path exists before importing duplicate torrent
-- store description in metadata_json for all providers and factorize sync code
-- respect iOS safe areas in PWA mode
-- exclude PWA icon/manifest paths from auth middleware
-- flatten PWA icons to RGB with opaque background
-- use full "Stripstream Librarian" name in PWA metadata
-- iOS apple-touch-icon detection
-- integral books make series complete, shown with regular volumes
-- treat provider volume 0 (T0) as hors-série, exclude from matching
-- add integral to BookDto volume_type union type
-- handle HS subfolders and nested series directories in parser
-- clean up series that lost all books after directory removal
-- exclude HS/oneshot books from metadata matching, missing counts, and AniList progress
-- migration to backfill volume_type=hs for existing books
-- add series_id to search API series hits for correct frontend links
-- register all missing endpoints and schemas in OpenAPI spec
-- add schema annotation for Uuid in MergeSeriesRequest
-- register merge_series and create_series in OpenAPI spec
-- serve series covers via existing /books/:id/thumbnail endpoint
-- retry Prowlarr search once on empty results + increase timeout
-- keep original filename when no existing book reference
-- refresh blacklist panel after blacklisting a release
-- proxy route forwards query params (release, blacklist) to API
-- align blacklist/delete buttons with download button size (w-7 h-7)
-- dashboard period toggle — fix week/month data mismatch + client-side refresh
-- count already-existing files as imported, not skipped
-- handle duplicate torrents in qBittorrent — immediate import
-- verify content_path exists on disk for duplicate torrents
-- import status is 'imported' when any file imported, not 'partial'
-- detect duplicate torrents in qBittorrent on add
-- torrent poller gives up after 5 minutes if qb_hash not resolved
-- retry import now re-launches import directly instead of resetting status
-- add partial and no_files_imported to torrent_downloads CHECK constraint
-- sync_series_metadata uses UPDATE with unaccent match instead of INSERT
-- import one-shot books without volume number
-- underscore separator in volume extraction + detailed import results
-- show provider cover_url on series detail when no books exist
-- sync cover_url in metadata sync (was missing)
-- series without books now visible in per-library series list
-- clean up volume 0 from stored available_downloads after detection
-- resolve all clippy warnings across workspace
-- metadata batch uses detailed search + throttle SensCritique refresh
-- rematch metadata uses detailed edition search, batch does not
-- series description from lowest volume in edition, not first found
-- reduce SensCritique API calls + retry on 429 + batch ordering
-- missing books count respects series.total_volumes override
-- ignore volume 0 in download detection missing volumes
-- missing_count based on series.total_volumes instead of external metadata
-- distinguish prowlarr_no_results (error) from downloads_not_found (info)
-- clean up orphan series after stale book deletions
-- scanner also checks volume mismatch + 3 tests (451 total)
-- check title mismatch in skipped dirs + diagnostic logs
-- dashboard toggles wrap on mobile + default to week + Next.js 16 fix
-- scanner updates title/volume when filename differs from DB
-- update book title and volume in DB after rename + 4 tests (447)
-- handle server action errors gracefully in jobs page
-- extract volume from filename when DB volume is null + 4 tests (443)
-- use unaccent in event→series JOIN + 4 regression tests (431 total)
-- series links in job detail only render when series_id exists
-- preserve selected library when launching a job from jobs page
-- show release title on second line in available downloads
-- rematch skips series already linked to the target provider
-- add series_id to all job result endpoints for working series links
-- span download detection results across full grid width
-- wrap AvailableDownloadsSection in Client Component for job detail
-- add SensCritique to metadata provider filter on series page
-- show stats and details for metadata_batch_rematch jobs
-- add metadata_batch_rematch to index_jobs CHECK constraint
-- series failed badge counts flagged releases, not error torrents
-- silence dead_code warnings for test-only helper functions
-- pagination not working in Next.js 16 production/standalone
-- increase max timeout for PDF extraction from 60s to 300s
-- remove Vol. column from Prowlarr modal and available downloads
-- support 'a' (no accent) as range separator in volume extraction
-- import all missing volumes from torrent, not just expected ones
-- clear button properly resets search input and all filters
-- create metadata link for SensCritique when adding from discovery
-- prevent duplicate series via case/accent-insensitive matching
-- show library name instead of job ID in jobs indicator popin
-- revalidate series/libraries cache after discovery add-to-library
-- only create metadata link for bedetheque provider in discovery
-- use replaceState + router.refresh for search navigation in production
-- use click-based library picker in Prowlarr discovery for mobile support
-- add series_id to book detail API + filter discovery external_url to bedetheque only
-- cleanup available_downloads basé sur series (pas books)
-- vraies couvertures Bédéthèque + cache 7 jours pour tous les providers
-- import torrent avec expected_volumes vide importe tout au lieu de rien
-- poller qBittorrent plus réactif en cas d'erreur de connexion
-- supprimer le doublon du bouton refresh sur la page downloads mobile
-- rendre tous les torrents ajoutés "managed" (toujours suivis)
-- résolution hash qBittorrent robuste pour les magnet links
-- retry résolution hash qBittorrent pour les magnet links
-- corriger import torrent (series_name supprimé) et extraction volume -NN-
-- ne notifier sur Telegram que quand l'event est pertinent
-- optimiser les book cards en mode compact sur la page série
-- optimiser les cards séries — bouton lu compact, badges sur couverture, lien direct
-- supprimer le window.location.reload() à la fin des jobs pour éviter le clignotement
-- ajouter series_id dans AvailableDownloadDto pour corriger les liens série
-- supprimer les variables inutilisées et la fonction morte (warnings Rust)
-- résoudre series_id dans torrent_downloads via JOIN
-- LiveSearchForm — clear remet tout à zéro + focus préservé
-- conserver le focus du champ de recherche après navigation
-- aligner la page livre sur le layout de la page série
-- harmoniser la hauteur des boutons dans la toolbar série
-- envoyer expected_volumes lors d'un replace pour tracker le download
-- re-matching automatique des métadonnées externes après scan/import
-- toujours afficher le bouton replace dans la modale Prowlarr
-- retirer le terme "manquant" des badges de volumes dans les résultats Prowlarr
-- import torrent — reconnaître les volumes nus (- 07 -, 06.) et gérer les torrents stalledDL
-- prioriser cbz > cbr > pdf > epub lors de l'import torrent
-- désactiver le Router Cache client pour les pages dynamiques
-- résoudre les URLs Prowlarr avant envoi à qBittorrent
-- nettoyer les available_downloads orphelins lors de la détection
-- tri "derniers ajoutés" utilise created_at au lieu de updated_at
-- réinitialiser le bouton de téléchargement après 5 secondes
-- résolution du hash qBittorrent par catégorie unique
-- rafraîchir la liste des téléchargements disponibles côté client
-- corrige le lien repo vers Gitea
-- fallback localhost pour la version indexer (dev local)
-- retire CONCURRENTLY des CREATE INDEX (incompatible avec transactions sqlx)
-- fiabilise le SSE du widget jobs dans le header
-- refresh auto de la liste des téléchargements après ajout qBittorrent
-- SSR pour les providers cachés dans MetadataSearchModal
-- supprime le layout shift du bouton Prowlarr sur la page série
-- supprime le layout shift des boutons qBittorrent au chargement
-- onglets settings scrollables horizontalement sur mobile
-- responsive mobile de la page téléchargements
-- remove unused wget install from backoffice Dockerfile
-- disable Next.js fetch cache for settings API calls
-- cache getServerSnapshot return value to prevent useSyncExternalStore infinite loop
-- merge duplicate series created by pre-rename scanner bug
-- redirect instead of silent return when metadata refresh fails
-- prevent scanner from recreating renamed series
-- revalidate /libraries cache after settings updates
-- persist partial stats_json on reading_status_match/push job failure
-- retry once after 10s on AniList 429 before aborting job
-- abort reading_status_match job on AniList 429 rate limit
-- reduce action button size on tokens page to match jobs page
-- add cursor-pointer to Button component
-- refresh jobs list immediately after replay
-- use correct column name sm.name instead of sm.series_name in series_metadata queries
-- use subquery for total_volumes to avoid GROUP BY returning 0 rows
-- make AniList user_id optional for preview/sync (only required for pull)
-- add autoComplete=off on password fields to suppress WebKit autofill error
-- add API job poller to process scheduler-created metadata jobs
-- show absolute date/time in jobs "created" column
-- add missing Next.js route handler for Telegram test endpoint
-- include series_metadata authors in authors listing and detail pages
-- pass explicit locale to date formatting to prevent hydration mismatch
-- pass metadata_refresh_mode through backoffice proxy to API
-- reorder Prowlarr button, add collection progress bar, remove redundant missing badge
-- unmap status mappings instead of deleting, store unmapped provider statuses
-- ignore unknown provider statuses instead of storing them
-- re-normalize series statuses with UI-added mappings
-- normalize series status casing to avoid duplicates
-- normalize French articles in Bedetheque confidence scoring
-- complete French translation for settings page
-- use sort-order position as fallback volume for book matching
-- improve book matching in metadata sync with bidirectional title search
-- **stats** — count authors from both author and authors fields
-- **books** — correction du tri naturel des titres avec sous-titres variables
-- **books** — tri des séries par volume + suppression de l'ancienne extract_page
-- **indexer** — corriger OOM lors du full rebuild (batching + limite threads)
-- **parsers,api,indexer,backoffice** — corriger CBZ Unicode extra fields, centraliser extraction, nettoyer Meili, fixer header
-- **parsers,api** — skipper les entrées ZIP corrompues au lieu d'échouer
-- **parsers,api** — fallback streaming ZIP pour archives avec extra fields NTFS
-- **parsers** — corriger récursion infinie CBZ↔CBR causant un stack overflow
-- **docker** — retirer sysctls inotify non supportés par ce kernel
-- **docker** — retirer fs.inotify.max_user_instances non namespacé
-- **api/pages** — fallback CBR→ZIP et CBZ→RAR pour archives mal extensionnées
-- **docker** — augmenter les limites inotify pour éviter "Too many open files"
-- **analyzer** — timeout sur analyze_book pour éviter les blocages indefinis
-- **parsers** — fallback CBR pour les .cbz qui sont en réalité des archives RAR
-- plusieurs correctifs jobs et analyzer
-- fallback for fake cbr
-- **parsers** — corriger la génération de thumbnails CBR/CBZ/PDF
-- **db** — ajouter 'cancelled' à la contrainte CHECK de index_jobs.status
-- **indexer** — détecter l'annulation de job pendant la phase 2 (analyzer)
-- thumbnails manquants dans les résultats de recherche
-- **indexer** — full_rebuild par library ne supprime plus les thumbnails des autres libraries
-- bad ignore no settings update
-- slow thumbnail and analyser test
-- **api** — resolve all OpenAPI schema reference errors
-- improve CBR extraction with fallback and increase timeout
-- improve CBR extraction logging and remove dead code
-- handle SSE controller errors gracefully
-- improve series detection and add detailed indexing logs
-- natural sort regex to handle titles with letters after numbers
-- correct healthchecks and env variable handling for custom ports
-- **env** — Sync .env.example with actual .env variables
-- **docker** — Fix migrate service authentication
-- **ui** — Harmonize spacing in library sub-pages
-- **ui** — Improve pagination spacing
-- **ui** — Progress bar height too small for label text
-- **indexer** — Progress bar stuck at 95% max
-- **indexer** — Book deletion not working due to path mismatch
-- **indexer** — File watcher not watching directories
-- **ui** — LibraryActions checkbox values and error handling
 
 ### Performances
 
@@ -1490,35 +1054,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - optimise /reading-lists — replace correlated ARRAY subquery with CTE
 - optimise /series/recommendations query (11s → <1s)
 - fix N+1 and O(N²) queries in telegram available endpoint
-- **discovery** — lower Prowlarr fetch limit to 100
-- **discovery** — filter by indexer before ownership SQL check
-- **reader/api** — enrich API responses to eliminate home waterfall
-- **docker** — cargo-chef + mold for faster CI builds
-- combine api and indexer into a single multi-target Dockerfile
-- cross-compile Rust Dockerfiles for amd64 from arm64 host
-- build Docker images for amd64 only (server is Intel)
-- build Docker images for amd64 only (deployment target is Intel)
-- add server-side and client-side caching for backoffice
-- replace logo.png (1.6MB) with logo.webp (18KB) and remove unused images
-- optimize docs logo (857KB PNG → 12KB WebP)
-- optimise la query des auteurs — single pass + index GIN
-- add ETag and server-side caching for thumbnail proxy
-- skip Next.js image re-optimization and stream proxy responses
-- add selective fetch caching for stable API endpoints
-- wrap BookCard and BookImage with React.memo
-- lazy-load heavy modal components with next/dynamic
-- optimize JobsIndicator polling with visibility API and adaptive interval
-- enable Next.js image optimization across backoffice
-- **docker** — optimize Rust build times with dependency layer caching
-- **pages** — cache de l'index d'archive en mémoire (-73% CBZ, -76% CBR cold)
-- **parsers** — optimiser listing CBZ avec file_names(), ajouter magic bytes check RAR
-- **api,indexer** — optimiser pages, thumbnails, watcher et robustesse fd
-- **indexer** — éliminer le pre-count WalkDir en mode incrémental + concurrence adaptative
-- **api** — remplacer unar/pdftoppm par unrar crate et pdfium-render
-- **parsers** — remplacer tous les subprocesses par des libs in-process
-- increase concurrent renders limit from 4 to 8
-- optimize indexing speed with batching and incremental sync
-- add sccache to Docker builds for faster compilation
 
 ### Refactoring
 
@@ -1535,42 +1070,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - prowlarr_rss uses one global job for all libraries
 - extract ReadingListCover as shared component
 - merge ProwlarrAddModal and DiscoveryAddModal into SeriesAddModal
-- **discovery** — provider as primary upstream filter
-- replace custom genre dropdown with native <datalist> autocomplete
-- factorize series creation — shared helper for create + discovery
-- split 6 files >1000 lines into smaller modules
-- extract all remaining inline tests into tests/ directories
-- move index_jobs/poller/helpers into jobs/ and auth/tokens/users into users/
-- extract metadata_providers tests into tests/ subdirectory
-- move all test files into tests/ subdirectories
-- move anilist, komga, telegram, discovery into integrations/ module
-- move reading and books into module directories
-- move download_detection, prowlarr, torrent_import, qbittorrent into downloads/ module
-- extract tests from metadata/ into separate *_tests.rs files
-- merge metadata.rs, metadata_batch.rs, metadata_refresh.rs into metadata/ module
-- extract shared helpers into job_helpers.rs and metadata_common.rs
-- split series.rs (2098 lines) into series/ module
-- factorize volume extraction into shared parsers crate
-- migrate all job reads to index_job_events + 9 tests (427 total)
-- migrer les URLs séries de /libraries/{libId}/series/{id} vers /series/{id}
-- remplacer useSearchParams par initialValues server-side dans les formulaires
-- migrer tout le code Rust vers series_id (table series)
-- Phase E — types de réponses API standardisés + SVGs inline → Icon
-- Phase D — composant Modal réutilisable + utilitaire searchParams
-- Phase C — découpe scanner.rs et analyzer.rs en sous-fonctions
-- Phase B — fallback CBR factorisé, erreurs DB typées, logging silent errors
-- Phase A — extraction des helpers partagés et micro-fixes
-- split job detail page into dedicated components
-- **settings** — split SettingsPage into components, restructure tabs
-- split books.rs into books+series, reorganize OpenAPI tags and fix access control
-- switch JobsIndicator from polling to SSE and fix stream endpoint
-- replace Meilisearch with PostgreSQL full-text search
-- **pages** — déléguer l'extraction de pages au crate parsers
-- improve API error handling and response structure
-- streamline API calls and enhance configuration management
-- update AppState references to use state module
-- hardcode ports in docker-compose.yml for server deployment
-- simplify env configuration with single port definitions
 
 ### Documentation
 
@@ -1602,34 +1101,12 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - complete documentation audit — rewrite and expand all flagged pages
 - add downloads section, library options, series folder structure
 - réécrire la section types de scan en langage utilisateur
-- fix oneshot detection in scan & indexation page
-- add genres, related series, recommendations; update wishlist, Prowlarr
-- update CLAUDE.md with shared Dockerfile, CI, stale jobs, import count
-- note shared Dockerfile between api and indexer
-- update docs with all-time filter, detected_at, and downloads sorting
-- update CLAUDE.md with docs app, shared_sync, caching, and new gotchas
-- add docs service to README (architecture, compose, ports)
-- document metadata sync fields, rules, and provider description sources
-- update CLAUDE.md, FEATURES.md, AGENTS.md for volume_type and recent features
-- update README and FEATURES.md with all recent additions
-- update FEATURES.md with recent additions
-- update CLAUDE.md, README, FEATURES with SensCritique, Discovery, tests
-- réécrire CLAUDE.md avec architecture détaillée, conventions et directives
-- add MIT license
-- add Telegram notifications and updated dashboard to README and FEATURES
-- add comprehensive features list to README and docs/FEATURES.md
-- **readme** — documenter toutes les variables d'env avec valeurs par défaut
-- **api** — complete OpenAPI coverage for all routes
-- add AGENTS.md per module and unify ports to 70XX
-- **plan** — T22 marqué comme complet
 
 ### Annulations
 
 - restore full exclusion of read series from recommendations
 - restore simple reading lists view on group_by toggle (drop mixed grid)
 - remove cover image code from Prowlarr search and discovery
-- remove Style category from Bedetheque genres (thematic tags only)
-- remove local cover download and /books/:id/thumbnail fallback
 
 ### Divers
 
@@ -1691,37 +1168,9 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - redesign reading lists pages with cover mosaic and improved detail view
 - **prowlarr** — add category column and wrap long release titles
 - move image processing / cache / thumbnails to dedicated settings tab
-- change discovery color to rose (indigo too close to violet/authors)
-- change discovery color from teal to indigo
-- change discovery color from orange to teal
-- change discovery color from cyan to orange (too close to libraries blue)
-- rename "backoffice" to "BO" in header logo
-- merge nav into single header row, centered between logo and actions
-- remove downloads from nav (header indicator is sufficient)
-- move tokens page into settings as a dedicated tab with colored tab icons
-- move settings to top bar cog on desktop, keep in mobile burger menu
-- align jobs and downloads indicators to h-9 like theme toggle and logout
-- align logout button height with theme toggle (h-9 w-9)
-- remove jobs from nav, replace jobs indicator icon with lightning bolt
-- **discovery** — remove misleading counts from provider filter buttons
-- compact genre cards — shorter cover, single-row body with always-visible actions
-- stat cards accent colors + SSR stats to remove flash
-- redesign genres page with stat cards and cover cards
-- mobile layout fixes and remove genre charts from genres page
-- display genres as badges in series detail header
-- render ActionsMenu as a bottom sheet on mobile
-- replace kebab with labeled "Plus" button on actions menu
-- Add Docker push script and registry documentation
-- add OpenAPI/Swagger documentation with utoipa
-- add book_count feature, migrate backoffice to server actions, fix healthcheck
-- backoffice nextJs replaces admin in rust
-- add page streaming, admin ui flows, and runtime hardening
-- add indexing jobs, parsers, and search APIs
-- bootstrap rust services, auth, and compose stack
-- init
 
 <details>
-<summary>Maintenance (139)</summary>
+<summary>Maintenance (77)</summary>
 
 - auto-bump workspace version on push to main ([#50](https://github.com/julienfroidefond/stripstream-librarian/pull/50))
 - **renovate** — exclude deferred grammers deps from rust non-major group
@@ -1800,6 +1249,119 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - **discovery** — remove discovery_limit setting (Prowlarr hard-caps at 100)
 - add manual deploy workflow with service selector
 - trigger CI test — docs-only change
+
+</details>
+
+## v3.32.0 — 2026-05-22
+
+### Nouveautés
+
+- replace oneshot filter with generic volume_type filter on series list
+- oneshot folder support
+- add wishlist filter to series page
+- two-pass Prowlarr fetch for better recent coverage, cap at 200
+- **discovery** — server-side indexer filter with full provider list
+- **discovery** — filter Prowlarr results by indexer/provider
+- genre filter counts per library + protect manual genres from sync
+- personalized series recommendations endpoint
+- genres management page with series browser
+- extract Style field (Manga - Shônen, Franco-belge…) from Bedetheque detail page
+- genre autocomplete with styled portal dropdown
+- autocomplete genres from existing values in series edit form
+- add genres field to series edit form
+- add related series carousel on series detail page
+- display 'new releases' count in jobs UI
+- report 'new releases' count in download detection notification
+- paginate Prowlarr discovery (25/page) + provider column + info link
+- server-side date sort for Prowlarr discovery
+
+### Corrections
+
+- **discovery** — single Prowlarr cache, sort applied in memory
+- **api** — include series_id in ongoing_books outer SELECT
+- show #0 badge for volume 0 books (falsy check bug)
+- use series DTO first_book_id for cover in backoffice series detail
+- prioritize regular volumes over HS for series thumbnails everywhere
+- prioritize regular volumes over HS for series cover thumbnail
+- sort genre cards by series count desc on genres page
+- remove old-named files for replaced volumes in replace mode
+- handle legacy bare numeric external_id in SensCritique provider
+- sort genres by series count desc on genres page
+- remove all cache mounts from sqlx-installer stage
+- remove stale CARGO_TARGET_DIR cache mount from sqlx-installer stage
+- **parsers** — streaming fallback when zip v8 fails to read CBZ entries
+- exclude series with no books from related and recommendations
+- return NULL instead of nil UUID for first_book_id when series has no books
+- circuit breaker for SensCritique 429 in metadata sync/batch
+- genre dropdown - restore container ref for reliable rect, align to input width
+- genre dropdown - align to input width and fix background color
+- genre autocomplete - add missing proxy route and fix dropdown clipping
+- align status select height with other inputs in EditSeriesForm
+- JobProgress no longer stuck on "Loading progress..."
+- 'latest added' sort falls back to series.created_at for empty series
+- scheduler checked wrong Prowlarr config key (base_url → url)
+- download detection now processes series without books
+- dedup missing books vs owned + reduce caching aggressiveness
+- extract_volumes Pattern C also matches without file extension
+- extract trailing bare number before file extension
+- extract volume from glued T-prefix patterns like 'FrontierT01'
+- empty series (no books) no longer show as 'read'
+- make mobile nav drawer scrollable
+- add download_detection and reading_status_push to indexer API_ONLY_JOB_TYPES
+- restore multi-arch Docker builds (amd64 + arm64)
+
+### Performances
+
+- **discovery** — lower Prowlarr fetch limit to 100
+- **discovery** — filter by indexer before ownership SQL check
+- **reader/api** — enrich API responses to eliminate home waterfall
+- **docker** — cargo-chef + mold for faster CI builds
+- combine api and indexer into a single multi-target Dockerfile
+- cross-compile Rust Dockerfiles for amd64 from arm64 host
+- build Docker images for amd64 only (server is Intel)
+
+### Refactoring
+
+- **discovery** — provider as primary upstream filter
+- replace custom genre dropdown with native <datalist> autocomplete
+
+### Documentation
+
+- fix oneshot detection in scan & indexation page
+- add genres, related series, recommendations; update wishlist, Prowlarr
+- update CLAUDE.md with shared Dockerfile, CI, stale jobs, import count
+- note shared Dockerfile between api and indexer
+
+### Annulations
+
+- remove Style category from Bedetheque genres (thematic tags only)
+
+### Divers
+
+- change discovery color to rose (indigo too close to violet/authors)
+- change discovery color from teal to indigo
+- change discovery color from orange to teal
+- change discovery color from cyan to orange (too close to libraries blue)
+- rename "backoffice" to "BO" in header logo
+- merge nav into single header row, centered between logo and actions
+- remove downloads from nav (header indicator is sufficient)
+- move tokens page into settings as a dedicated tab with colored tab icons
+- move settings to top bar cog on desktop, keep in mobile burger menu
+- align jobs and downloads indicators to h-9 like theme toggle and logout
+- align logout button height with theme toggle (h-9 w-9)
+- remove jobs from nav, replace jobs indicator icon with lightning bolt
+- **discovery** — remove misleading counts from provider filter buttons
+- compact genre cards — shorter cover, single-row body with always-visible actions
+- stat cards accent colors + SSR stats to remove flash
+- redesign genres page with stat cards and cover cards
+- mobile layout fixes and remove genre charts from genres page
+- display genres as badges in series detail header
+- render ActionsMenu as a bottom sheet on mobile
+- replace kebab with labeled "Plus" button on actions menu
+
+<details>
+<summary>Maintenance (30)</summary>
+
 - simplify to single job with inline detection + pre-push version hook
 - fix detect job — depth=2 + git diff instead of git show
 - always run deploy job — act does not pass job outputs between tasks
@@ -1830,33 +1392,1706 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - tag images with version and skip unchanged services
 - collapse build matrix into a single sequential job
 - build and push Docker images on main, then deploy
+
+</details>
+
+## v3.31.1 — 2026-05-06
+
+### Nouveautés
+
+- prowlarr search on book detail with T<volume> prefix
+
+## v3.31.0 — 2026-05-06
+
+### Corrections
+
+- avoid SSR hydration mismatch in ActionsMenu portal
+- refresh UI data and bust stale image caches after content changes
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - build Docker images for arm64 only
+
+</details>
+
+## v3.29.3 — 2026-05-05
+
+### Corrections
+
+- distinguish actually imported files from already-existing ones
+
+### Performances
+
+- build Docker images for amd64 only (deployment target is Intel)
+
+## v3.29.1 — 2026-05-01
+
+### Corrections
+
+- move legend below chart with clickable filtering and fix tooltip z-index
+- cleanup stale pending jobs that block scheduled detection
+
+## v3.29.0 — 2026-05-01
+
+### Nouveautés
+
+- replace "Other" with detailed job categories in dashboard chart
+
+## v3.28.3 — 2026-04-30
+
+### Corrections
+
+- rename migration 0085 → 0089 to avoid conflict with existing migration
+
+## v3.28.0 — 2026-04-30
+
+### Nouveautés
+
+- track per-release detected_at for accurate freshness sorting
+- add "Recent" sort and date display on downloads page
+
+### Documentation
+
+- update docs with all-time filter, detected_at, and downloads sorting
+- update CLAUDE.md with docs app, shared_sync, caching, and new gotchas
+
+## v3.27.0 — 2026-04-30
+
+### Nouveautés
+
+- add "all time" period filter in discovery
+
+## v3.26.4 — 2026-04-29
+
+### Nouveautés
+
+- multi-platform Docker builds (amd64 + arm64)
+
+### Corrections
+
+- deduplicate missing books by volume_number in get_missing_books
+- check content_path exists before importing duplicate torrent
+
+## v3.26.2 — 2026-04-25
+
+### Documentation
+
+- add docs service to README (architecture, compose, ports)
+
+## v3.26.1 — 2026-04-25
+
+### Nouveautés
+
+- add Docker support for docs site
+
+## v3.26.0 — 2026-04-25
+
+### Nouveautés
+
+- add documentation site (Starlight/Astro)
+
+### Performances
+
+- add server-side and client-side caching for backoffice
+- replace logo.png (1.6MB) with logo.webp (18KB) and remove unused images
+- optimize docs logo (857KB PNG → 12KB WebP)
+
+### Documentation
+
+- document metadata sync fields, rules, and provider description sources
+
+## v3.25.7 — 2026-04-14
+
+### Corrections
+
+- store description in metadata_json for all providers and factorize sync code
+
+## v3.25.6 — 2026-04-14
+
+### Nouveautés
+
+- regenerate PWA icons and splash screens with new logostrip3 logo
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add logo variants and update next-env.d.ts
+
+</details>
+
+## v3.25.5 — 2026-04-13
+
+### Corrections
+
+- respect iOS safe areas in PWA mode
+
+## v3.25.4 — 2026-04-13
+
+### Corrections
+
+- exclude PWA icon/manifest paths from auth middleware
+
+## v3.25.3 — 2026-04-13
+
+### Corrections
+
+- flatten PWA icons to RGB with opaque background
+
+## v3.25.2 — 2026-04-13
+
+### Corrections
+
+- use full "Stripstream Librarian" name in PWA metadata
+
+## v3.25.1 — 2026-04-13
+
+### Corrections
+
+- iOS apple-touch-icon detection
+
+## v3.25.0 — 2026-04-13
+
+### Nouveautés
+
+- add PWA manifest, icons, and iOS splash screens
+
+## v3.24.0 — 2026-04-10
+
+### Corrections
+
+- integral books make series complete, shown with regular volumes
+- treat provider volume 0 (T0) as hors-série, exclude from matching
+
+### Documentation
+
+- update CLAUDE.md, FEATURES.md, AGENTS.md for volume_type and recent features
+
+## v3.23.0 — 2026-04-10
+
+### Nouveautés
+
+- show missing volumes as grayed-out cards in series page
+
+## v3.22.0 — 2026-04-10
+
+### Nouveautés
+
+- add integral (INT) volume type support
+
+### Corrections
+
+- add integral to BookDto volume_type union type
+
+## v3.20.3 — 2026-04-10
+
+### Corrections
+
+- handle HS subfolders and nested series directories in parser
+
+## v3.20.1 — 2026-04-10
+
+### Nouveautés
+
+- separate rename template for hors-série books
+
+## v3.20.0 — 2026-04-09
+
+### Nouveautés
+
+- align library series page with global series page
+- add volume_type support (regular, hs, oneshot)
+
+### Corrections
+
+- clean up series that lost all books after directory removal
+- exclude HS/oneshot books from metadata matching, missing counts, and AniList progress
+- migration to backfill volume_type=hs for existing books
+
+## v3.19.7 — 2026-04-09
+
+### Nouveautés
+
+- split OpenAPI into client and admin specs + API home page
+
+### Corrections
+
+- add series_id to search API series hits for correct frontend links
+- register all missing endpoints and schemas in OpenAPI spec
+- add schema annotation for Uuid in MergeSeriesRequest
+- register merge_series and create_series in OpenAPI spec
+
+## v3.19.6 — 2026-04-08
+
+### Nouveautés
+
+- optional has_books filter on series listing endpoints
+
+## v3.19.5 — 2026-04-08
+
+### Nouveautés
+
+- download and store series cover images locally
+
+### Corrections
+
+- serve series covers via existing /books/:id/thumbnail endpoint
+
+### Annulations
+
+- remove local cover download and /books/:id/thumbnail fallback
+
+## v3.19.3 — 2026-04-07
+
+### Corrections
+
+- retry Prowlarr search once on empty results + increase timeout
+
+## v3.19.2 — 2026-04-07
+
+### Corrections
+
+- keep original filename when no existing book reference
+
+### Documentation
+
+- update README and FEATURES.md with all recent additions
+
+## v3.19.1 — 2026-04-07
+
+### Corrections
+
+- refresh blacklist panel after blacklisting a release
+- proxy route forwards query params (release, blacklist) to API
+
+## v3.19.0 — 2026-04-07
+
+### Nouveautés
+
+- release blacklist — hide releases from future download detection
+
+### Corrections
+
+- align blacklist/delete buttons with download button size (w-7 h-7)
+- dashboard period toggle — fix week/month data mismatch + client-side refresh
+
+## v3.18.14 — 2026-04-06
+
+### Corrections
+
+- count already-existing files as imported, not skipped
+
+## v3.18.13 — 2026-04-06
+
+### Corrections
+
+- handle duplicate torrents in qBittorrent — immediate import
+
+## v3.18.11 — 2026-04-06
+
+### Corrections
+
+- verify content_path exists on disk for duplicate torrents
+
+## v3.18.10 — 2026-04-06
+
+### Corrections
+
+- import status is 'imported' when any file imported, not 'partial'
+- detect duplicate torrents in qBittorrent on add
+
+## v3.18.8 — 2026-04-06
+
+### Corrections
+
+- torrent poller gives up after 5 minutes if qb_hash not resolved
+- retry import now re-launches import directly instead of resetting status
+
+## v3.18.7 — 2026-04-06
+
+### Nouveautés
+
+- docker-push allows selecting which services to build
+
+### Corrections
+
+- add partial and no_files_imported to torrent_downloads CHECK constraint
+
+## v3.18.6 — 2026-04-06
+
+### Nouveautés
+
+- new download statuses (partial, no_files_imported) + retry import
+- discovery shows series instead of individual tomes
+- hide/unhide discovery suggestions + UI improvements
+
+## v3.18.1 — 2026-04-06
+
+### Corrections
+
+- sync_series_metadata uses UPDATE with unaccent match instead of INSERT
+- import one-shot books without volume number
+- underscore separator in volume extraction + detailed import results
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - fill critical test coverage gaps (7 new tests)
+
+</details>
+
+## v3.18.0 — 2026-04-06
+
+### Nouveautés
+
+- create series directory on disk, delete on series removal
+- POST /series/create with metadata linking + tests
+
+### Corrections
+
+- show provider cover_url on series detail when no books exist
+- sync cover_url in metadata sync (was missing)
+- series without books now visible in per-library series list
+
+### Refactoring
+
+- factorize series creation — shared helper for create + discovery
+
+## v3.17.1 — 2026-04-06
+
+### Corrections
+
+- clean up volume 0 from stored available_downloads after detection
+
+## v3.17.0 — 2026-04-06
+
+### Corrections
+
+- resolve all clippy warnings across workspace
+- metadata batch uses detailed search + throttle SensCritique refresh
+
+### Refactoring
+
+- split 6 files >1000 lines into smaller modules
+- extract all remaining inline tests into tests/ directories
+- move index_jobs/poller/helpers into jobs/ and auth/tokens/users into users/
+- extract metadata_providers tests into tests/ subdirectory
+- move all test files into tests/ subdirectories
+- move anilist, komga, telegram, discovery into integrations/ module
+- move reading and books into module directories
+- move download_detection, prowlarr, torrent_import, qbittorrent into downloads/ module
+- extract tests from metadata/ into separate *_tests.rs files
+- merge metadata.rs, metadata_batch.rs, metadata_refresh.rs into metadata/ module
+- extract shared helpers into job_helpers.rs and metadata_common.rs
+- split series.rs (2098 lines) into series/ module
+
+### Documentation
+
+- update FEATURES.md with recent additions
+
+## v3.16.4 — 2026-04-05
+
+### Corrections
+
+- rematch metadata uses detailed edition search, batch does not
+
+## v3.16.2 — 2026-04-05
+
+### Corrections
+
+- series description from lowest volume in edition, not first found
+- reduce SensCritique API calls + retry on 429 + batch ordering
+
+## v3.16.1 — 2026-04-05
+
+### Corrections
+
+- missing books count respects series.total_volumes override
+
+## v3.16.0 — 2026-04-05
+
+### Nouveautés
+
+- SensCritique edition selection + confidence based on name & volume count
+
+## v3.15.2 — 2026-04-05
+
+### Corrections
+
+- ignore volume 0 in download detection missing volumes
+- missing_count based on series.total_volumes instead of external metadata
+
+## v3.15.1 — 2026-04-04
+
+### Corrections
+
+- distinguish prowlarr_no_results (error) from downloads_not_found (info)
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add merge series DB integration tests
+
+</details>
+
+## v3.15.0 — 2026-04-04
+
+### Nouveautés
+
+- merge series + fix duplicate series after rename
+
+## v3.14.6 — 2026-04-04
+
+### Corrections
+
+- clean up orphan series after stale book deletions
+- scanner also checks volume mismatch + 3 tests (451 total)
+
+## v3.14.5 — 2026-04-04
+
+### Corrections
+
+- check title mismatch in skipped dirs + diagnostic logs
+- dashboard toggles wrap on mobile + default to week + Next.js 16 fix
+
+## v3.14.4 — 2026-04-04
+
+### Corrections
+
+- scanner updates title/volume when filename differs from DB
+- update book title and volume in DB after rename + 4 tests (447)
+- handle server action errors gracefully in jobs page
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add scanner title mismatch update test (448 total)
+
+</details>
+
+## v3.14.3 — 2026-04-04
+
+### Corrections
+
+- extract volume from filename when DB volume is null + 4 tests (443)
+
+### Refactoring
+
+- factorize volume extraction into shared parsers crate
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add Tome pattern tests for volume extraction + rename (439 total)
+
+</details>
+
+## v3.14.2 — 2026-04-04
+
+### Corrections
+
+- use unaccent in event→series JOIN + 4 regression tests (431 total)
+
+## v3.14.1 — 2026-04-04
+
+### Corrections
+
+- series links in job detail only render when series_id exists
+
+## v3.14.0 — 2026-04-04
+
+### Nouveautés
+
+- enrich all notification messages with detailed information
+- add jobType.scan translation + replace library dropdown with selectable pill badges
+- emit job events for all remaining job types + 8 tests (418 total)
+- unified index_job_events table for detailed job tracking (410 tests)
+
+### Corrections
+
+- preserve selected library when launching a job from jobs page
+- show release title on second line in available downloads
+- rematch skips series already linked to the target provider
+
+### Refactoring
+
+- migrate all job reads to index_job_events + 9 tests (427 total)
+
+## v3.13.0 — 2026-04-03
+
+### Nouveautés
+
+- quick match button for undecided metadata batch results
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - verify best_candidate_json contains enriched fields for quick match (401 total)
 - add regression tests for series_id in job result queries (400 total)
+
+</details>
+
+## v3.10.3 — 2026-04-03
+
+### Corrections
+
+- add series_id to all job result endpoints for working series links
+
+## v3.10.2 — 2026-04-03
+
+### Nouveautés
+
+- reuse available downloads UI in download detection job details
+
+### Corrections
+
+- span download detection results across full grid width
+- wrap AvailableDownloadsSection in Client Component for job detail
+- add SensCritique to metadata provider filter on series page
+- show stats and details for metadata_batch_rematch jobs
+
+## v3.10.1 — 2026-04-03
+
+### Corrections
+
+- add metadata_batch_rematch to index_jobs CHECK constraint
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add wiremock tests for Prowlarr + ComicVine (393 total)
+
+</details>
+
+## v3.10.0 — 2026-04-03
+
+### Nouveautés
+
+- add metadata re-match job to re-link series with current provider
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - add wiremock tests for all metadata providers (377 total)
 - add wiremock integration tests for SensCritique provider (330 total)
+
+</details>
+
+## v3.9.5 — 2026-04-03
+
+### Corrections
+
+- series failed badge counts flagged releases, not error torrents
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add DB integration test for has_failed flag on releases (321 total)
+
+</details>
+
+## v3.9.4 — 2026-04-03
+
+### Nouveautés
+
+- show failed badge on individual releases in available downloads
+
+### Corrections
+
+- silence dead_code warnings for test-only helper functions
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add 11 DB integration tests for search, books, index_jobs (320 total)
+
+</details>
+
+## v3.9.3 — 2026-04-03
+
+### Nouveautés
+
+- add colored icons to nav menu and page titles
+
+## v3.9.2 — 2026-04-03
+
+### Corrections
+
+- pagination not working in Next.js 16 production/standalone
+- increase max timeout for PDF extraction from 60s to 300s
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - add 61 tests for auth, tokens, metadata (309 total)
+
+</details>
+
+## v3.9.1 — 2026-04-03
+
+### Corrections
+
+- remove Vol. column from Prowlarr modal and available downloads
+- support 'a' (no accent) as range separator in volume extraction
+- import all missing volumes from torrent, not just expected ones
+- clear button properly resets search input and all filters
+
+## v3.9.0 — 2026-04-03
+
+### Nouveautés
+
+- redesign available downloads UX + sortable Prowlarr table
+
+### Documentation
+
+- update CLAUDE.md, README, FEATURES with SensCritique, Discovery, tests
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - add 68 integration + unit tests across workspace (244 total)
 - add 51 unit tests + fix replace mode import + fix OpenAPI schema
+
+</details>
+
+## v3.8.3 — 2026-04-03
+
+### Nouveautés
+
+- add description hover on SensCritique discovery cards
+
+### Corrections
+
+- create metadata link for SensCritique when adding from discovery
+
+## v3.8.2 — 2026-04-03
+
+### Nouveautés
+
+- infer series status (ongoing/ended) in SensCritique provider
+
+### Corrections
+
+- prevent duplicate series via case/accent-insensitive matching
+- show library name instead of job ID in jobs indicator popin
+
+## v3.8.1 — 2026-04-03
+
+### Corrections
+
+- revalidate series/libraries cache after discovery add-to-library
+
+## v3.8.0 — 2026-04-02
+
+### Nouveautés
+
+- add SensCritique as full metadata provider
+
+## v3.7.0 — 2026-04-02
+
+### Nouveautés
+
+- add SensCritique discovery providers with trending and best-rated lists
+
+## v3.6.0 — 2026-04-02
+
+### Nouveautés
+
+- add search input field to metadata search modal
+- show failed download indicator on available downloads
+
+## v3.5.2 — 2026-04-02
+
+### Corrections
+
+- only create metadata link for bedetheque provider in discovery
+
+## v3.5.1 — 2026-04-02
+
+### Corrections
+
+- use replaceState + router.refresh for search navigation in production
+
+## v3.5.0 — 2026-04-02
+
+### Corrections
+
+- use click-based library picker in Prowlarr discovery for mobile support
+- add series_id to book detail API + filter discovery external_url to bedetheque only
+
+## v3.4.6 — 2026-04-01
+
+### Nouveautés
+
+- accumuler les available_downloads au lieu d'écraser
+
+### Corrections
+
+- cleanup available_downloads basé sur series (pas books)
+
+## v3.4.5 — 2026-04-01
+
+### Nouveautés
+
+- filtres catégorie et recherche sur l'onglet Prowlarr discovery
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - choix patch/minor/major dans docker-push
+
+</details>
+
+## v3.4.4 — 2026-04-01
+
+### Nouveautés
+
+- bouton hard refresh discovery + détection catégories améliorée
+- deviner la catégorie BD/Manga/Comics depuis le titre du torrent
+- clean URLs pour les onglets de la page découverte
+- support lien info torrent dans Prowlarr discovery
+
+### Corrections
+
+- vraies couvertures Bédéthèque + cache 7 jours pour tous les providers
+
+<details>
+<summary>Maintenance (3)</summary>
+
 - simplifier docker-push — toujours tout pousser
 - cache Prowlarr discovery 7 jours au lieu de 6h
 - retirer description/cover/lien Prowlarr (auth indexer inaccessible)
+
+</details>
+
+## v3.4.3 — 2026-04-01
+
+<details>
+<summary>Maintenance (1)</summary>
+
 - réduire active_wait du poller qBittorrent de 5s à 3s
+
+</details>
+
+## v3.4.2 — 2026-04-01
+
+### Corrections
+
+- import torrent avec expected_volumes vide importe tout au lieu de rien
+- poller qBittorrent plus réactif en cas d'erreur de connexion
+- supprimer le doublon du bouton refresh sur la page downloads mobile
+
+## v3.4.1 — 2026-04-01
+
+### Nouveautés
+
+- améliorer Prowlarr discovery + placeholder covers pour séries vides
+
+### Corrections
+
+- rendre tous les torrents ajoutés "managed" (toujours suivis)
+
+## v3.4.0 — 2026-04-01
+
+### Nouveautés
+
+- ajouter onglet Prowlarr dans la page découverte
+
+### Corrections
+
+- résolution hash qBittorrent robuste pour les magnet links
+
+## v3.3.2 — 2026-04-01
+
+### Corrections
+
+- retry résolution hash qBittorrent pour les magnet links
+- corriger import torrent (series_name supprimé) et extraction volume -NN-
+
+## v3.3.1 — 2026-03-31
+
+### Nouveautés
+
+- ajouter page découverte de séries avec AniList trending et Bédéthèque indispensables
+
+## v3.3.0 — 2026-03-31
+
+### Nouveautés
+
+- ajouter job metadata_refresh_all pour rafraîchir toutes les séries sans filtre de statut
+
+### Documentation
+
+- réécrire CLAUDE.md avec architecture détaillée, conventions et directives
+
+## v3.2.0 — 2026-03-30
+
+### Corrections
+
+- ne notifier sur Telegram que quand l'event est pertinent
+
+### Refactoring
+
+- migrer les URLs séries de /libraries/{libId}/series/{id} vers /series/{id}
+
+## v3.1.0 — 2026-03-30
+
+### Nouveautés
+
+- ajouter indicateur de téléchargements dans le header et refactorer la navigation
+
+### Corrections
+
+- optimiser les book cards en mode compact sur la page série
+- optimiser les cards séries — bouton lu compact, badges sur couverture, lien direct
+- supprimer le window.location.reload() à la fin des jobs pour éviter le clignotement
+
+## v3.0.3 — 2026-03-30
+
+### Nouveautés
+
+- ajouter les stats de téléchargements sur le dashboard
+
+### Refactoring
+
+- remplacer useSearchParams par initialValues server-side dans les formulaires
+
+## v3.0.2 — 2026-03-30
+
+### Corrections
+
+- ajouter series_id dans AvailableDownloadDto pour corriger les liens série
+
+## v3.0.1 — 2026-03-30
+
+### Nouveautés
+
+- déplacer le bouton logout dans le menu hamburger mobile
+
+### Corrections
+
+- supprimer les variables inutilisées et la fonction morte (warnings Rust)
+- résoudre series_id dans torrent_downloads via JOIN
+
+## v3.0.0 — 2026-03-29
+
+### Nouveautés
+
+- table series avec UUID PK — migration complète backend + frontend
+- migration DB — table series avec UUID PK (fusionne series_metadata)
+
+### Refactoring
+
+- migrer tout le code Rust vers series_id (table series)
+
+## v2.18.2 — 2026-03-29
+
+### Nouveautés
+
+- docker-push ne build que les services modifiés depuis le dernier tag
+
+### Corrections
+
+- LiveSearchForm — clear remet tout à zéro + focus préservé
+
+## v2.18.1 — 2026-03-29
+
+### Nouveautés
+
+- loader discret dans la barre de recherche pendant la navigation
+
+### Corrections
+
+- conserver le focus du champ de recherche après navigation
+- aligner la page livre sur le layout de la page série
+
+## v2.18.0 — 2026-03-29
+
+### Corrections
+
+- harmoniser la hauteur des boutons dans la toolbar série
+- envoyer expected_volumes lors d'un replace pour tracker le download
+- re-matching automatique des métadonnées externes après scan/import
+
+## v2.17.0 — 2026-03-29
+
+### Nouveautés
+
+- suppression de série entière (dossier + livres + métadonnées)
+
+### Corrections
+
+- toujours afficher le bouton replace dans la modale Prowlarr
+
+## v2.16.0 — 2026-03-29
+
+### Nouveautés
+
+- regroupement des releases par titre identique dans la UI
+- détection des releases intégrales/complètes dans Prowlarr
+
+### Corrections
+
+- retirer le terme "manquant" des badges de volumes dans les résultats Prowlarr
+- import torrent — reconnaître les volumes nus (- 07 -, 06.) et gérer les torrents stalledDL
+
+### Refactoring
+
+- Phase E — types de réponses API standardisés + SVGs inline → Icon
+- Phase D — composant Modal réutilisable + utilitaire searchParams
+- Phase C — découpe scanner.rs et analyzer.rs en sous-fonctions
+- Phase B — fallback CBR factorisé, erreurs DB typées, logging silent errors
+- Phase A — extraction des helpers partagés et micro-fixes
+
+## v2.14.18 — 2026-03-28
+
+### Nouveautés
+
+- suppression de livres + import insensible aux accents
+
+### Corrections
+
+- prioriser cbz > cbr > pdf > epub lors de l'import torrent
+
+## v2.14.17 — 2026-03-28
+
+### Nouveautés
+
+- suppression individuelle de releases dans les available downloads
+
+## v2.14.15 — 2026-03-28
+
+### Nouveautés
+
+- notification Telegram à la fin d'un import torrent
+
+### Corrections
+
+- désactiver le Router Cache client pour les pages dynamiques
+- résoudre les URLs Prowlarr avant envoi à qBittorrent
+
+## v2.14.12 — 2026-03-28
+
+### Nouveautés
+
+- unifier la recherche livres via le endpoint /books avec paramètre q
+
+## v2.14.10 — 2026-03-28
+
+### Corrections
+
+- nettoyer les available_downloads orphelins lors de la détection
+
+## v2.14.9 — 2026-03-28
+
+### Nouveautés
+
+- modale Prowlarr avec bouton remplacer + fix parseur volumes
+
+### Corrections
+
+- tri "derniers ajoutés" utilise created_at au lieu de updated_at
+
+## v2.14.4 — 2026-03-27
+
+### Nouveautés
+
+- bouton télécharger et remplacer + fix extraction volumes UTF-8
+
+## v2.13.2 — 2026-03-27
+
+### Corrections
+
+- réinitialiser le bouton de téléchargement après 5 secondes
+- résolution du hash qBittorrent par catégorie unique
+
+## v2.13.1 — 2026-03-27
+
+### Corrections
+
+- rafraîchir la liste des téléchargements disponibles côté client
+
+## v2.13.0 — 2026-03-27
+
+### Nouveautés
+
+- lien vers la série sur les noms dans la liste des téléchargements
+- table available_downloads découplée des jobs de détection
+
+## v2.12.18 — 2026-03-27
+
+### Nouveautés
+
+- affiche les versions API, Indexer et Backoffice dans About
+- bloc About avec versions dans les settings
+
+### Corrections
+
+- corrige le lien repo vers Gitea
+- fallback localhost pour la version indexer (dev local)
+- retire CONCURRENTLY des CREATE INDEX (incompatible avec transactions sqlx)
+
+## v2.12.17 — 2026-03-27
+
+### Performances
+
+- optimise la query des auteurs — single pass + index GIN
+
+## v2.12.16 — 2026-03-27
+
+### Corrections
+
+- fiabilise le SSE du widget jobs dans le header
+- refresh auto de la liste des téléchargements après ajout qBittorrent
+
+## v2.12.15 — 2026-03-27
+
+### Nouveautés
+
+- SSR pour toutes les cards de la page Settings
+
+### Corrections
+
+- SSR pour les providers cachés dans MetadataSearchModal
+
+## v2.12.14 — 2026-03-27
+
+### Nouveautés
+
+- lien vers la page série sur les résultats de détection
+
+### Corrections
+
+- supprime le layout shift du bouton Prowlarr sur la page série
+- supprime le layout shift des boutons qBittorrent au chargement
+
+## v2.12.13 — 2026-03-27
+
+### Nouveautés
+
+- nettoyage après import — supprime le répertoire source et le torrent qBittorrent
+
+### Corrections
+
+- onglets settings scrollables horizontalement sur mobile
+- responsive mobile de la page téléchargements
+
+## v2.12.11 — 2026-03-26
+
+### Nouveautés
+
+- pagination et lignes compactes sur la page téléchargements
+- refresh metadata ciblé par série après import et dans la modale
+
+## v2.12.10 — 2026-03-26
+
+### Nouveautés
+
+- persistance des filtres server-side via cookies
+
+## v2.12.9 — 2026-03-26
+
+### Nouveautés
+
+- section disponibles au téléchargement + fix nommage import
+
+## v2.12.1 — 2026-03-26
+
+### Nouveautés
+
+- gestion des téléchargements qBittorrent avec import automatique
+- unify job creation — tous les types créent N jobs par librairie côté backend
+
+### Corrections
+
+- remove unused wget install from backoffice Dockerfile
+- disable Next.js fetch cache for settings API calls
+- cache getServerSnapshot return value to prevent useSyncExternalStore infinite loop
+- merge duplicate series created by pre-rename scanner bug
+- redirect instead of silent return when metadata refresh fails
+
+## v2.9.1 — 2026-03-26
+
+### Corrections
+
+- prevent scanner from recreating renamed series
+
+## v2.9.0 — 2026-03-26
+
+### Nouveautés
+
+- add type, status, and library filters to jobs list
+
+### Refactoring
+
+- split job detail page into dedicated components
+
+## v2.8.1 — 2026-03-26
+
+### Nouveautés
+
+- add replay button for download detection jobs and color-coded job type badges
+- add qBittorrent download button to download detection report
+
+## v2.8.0 — 2026-03-26
+
+### Nouveautés
+
+- streamline mobile header navigation
+- replace inline save status with toast notifications in settings
+- expand volume range packs in Prowlarr title matching
+- add per-library download detection auto-schedule
+- add download detection job with Prowlarr integration
+- add reading_status_push auto-refresh schedule per library
+- expose all API endpoints in OpenAPI spec
+- add client-side pagination to jobs table (25 per page)
+- add stats display for reading_status_match and reading_status_push jobs
+- add reading_status_push job — differential push to AniList
+
+### Corrections
+
+- revalidate /libraries cache after settings updates
+- persist partial stats_json on reading_status_match/push job failure
+- retry once after 10s on AniList 429 before aborting job
+- abort reading_status_match job on AniList 429 rate limit
+
+### Refactoring
+
+- **settings** — split SettingsPage into components, restructure tabs
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - update backoffice .env.local default placeholders
 - replace separator line with blank line in Telegram notifications
+
+</details>
+
+## v2.2.0 — 2026-03-24
+
+### Nouveautés
+
+- add replay button on completed jobs in the jobs table
+- add books/pages metric toggle on reading activity chart
+- AniList reading status integration
+- multi-user reading progress & backoffice impersonation
+- add backoffice authentication with login page
+
+### Corrections
+
+- reduce action button size on tokens page to match jobs page
+- add cursor-pointer to Button component
+- refresh jobs list immediately after replay
+- use correct column name sm.name instead of sm.series_name in series_metadata queries
+- use subquery for total_volumes to avoid GROUP BY returning 0 rows
+- make AniList user_id optional for preview/sync (only required for pull)
+- add autoComplete=off on password fields to suppress WebKit autofill error
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - remove unnecessary auto-enable reading_status_provider on link
 - add missing migrations and routes
+
+</details>
+
+## v1.28.0 — 2026-03-23
+
+### Nouveautés
+
+- filter metadata refresh to ongoing series & improve job action buttons
+- enhance jobs list stats with tooltips, icons, and refresh count
+- improve Telegram notification UI with better formatting
+
+## v1.27.1 — 2026-03-22
+
+### Corrections
+
+- add API job poller to process scheduler-created metadata jobs
+
+## v1.27.0 — 2026-03-22
+
+### Nouveautés
+
+- add job runs chart and scrollable reading lists on dashboard
+
+## v1.26.0 — 2026-03-22
+
+### Nouveautés
+
+- add day/week/month period toggle for dashboard line charts
+
+### Documentation
+
+- add MIT license
+
+## v1.25.0 — 2026-03-22
+
+### Performances
+
+- add ETag and server-side caching for thumbnail proxy
+
+## v1.24.1 — 2026-03-22
+
+### Performances
+
+- skip Next.js image re-optimization and stream proxy responses
+
+### Documentation
+
+- add Telegram notifications and updated dashboard to README and FEATURES
+
+## v1.24.0 — 2026-03-22
+
+### Nouveautés
+
+- add reading stats and replace dashboard charts with recharts
+
+### Corrections
+
+- show absolute date/time in jobs "created" column
+
+## v1.23.0 — 2026-03-21
+
+### Nouveautés
+
+- send book thumbnails in Telegram notifications
+- add Telegram notification system with granular event toggles
+
+### Corrections
+
+- add missing Next.js route handler for Telegram test endpoint
+
+## v1.21.2 — 2026-03-21
+
+### Corrections
+
+- include series_metadata authors in authors listing and detail pages
+
+### Refactoring
+
+- split books.rs into books+series, reorganize OpenAPI tags and fix access control
+
+### Documentation
+
+- add comprehensive features list to README and docs/FEATURES.md
+
+## v1.21.1 — 2026-03-21
+
+### Nouveautés
+
+- allow batch metadata and refresh metadata on all libraries
+
+## v1.21.0 — 2026-03-21
+
+### Corrections
+
+- pass explicit locale to date formatting to prevent hydration mismatch
+
+### Refactoring
+
+- switch JobsIndicator from polling to SSE and fix stream endpoint
+
+## v1.20.1 — 2026-03-21
+
+### Performances
+
+- add selective fetch caching for stable API endpoints
+
+## v1.20.0 — 2026-03-21
+
+### Performances
+
+- wrap BookCard and BookImage with React.memo
+- lazy-load heavy modal components with next/dynamic
+- optimize JobsIndicator polling with visibility API and adaptive interval
+- enable Next.js image optimization across backoffice
+
+## v1.19.1 — 2026-03-21
+
+### Nouveautés
+
+- include series_count and thumbnail_book_ids in libraries API response
+
+## v1.19.0 — 2026-03-21
+
+### Nouveautés
+
+- persist filter state in localStorage across pages
+- add format and metadata filters to books page
+
+## v1.18.0 — 2026-03-21
+
+### Nouveautés
+
+- redesign libraries page UI with fan thumbnails and modal settings
+
+## v1.17.0 — 2026-03-21
+
+### Nouveautés
+
+- add rescan job type and improve full rebuild UX
+
+## v1.16.0 — 2026-03-21
+
+### Nouveautés
+
+- add EPUB format support with spine-aware image extraction
+- add live refresh to job detail page via SSE
+
+## v1.14.0 — 2026-03-20
+
+### Nouveautés
+
+- highlight missing volumes in Prowlarr search results
+
+## v1.12.0 — 2026-03-20
+
+### Nouveautés
+
+- add authors page to backoffice with dedicated API endpoint
+- add scheduled metadata refresh for libraries
+
+## v1.11.1 — 2026-03-20
+
+### Corrections
+
+- pass metadata_refresh_mode through backoffice proxy to API
+
+## v1.10.1 — 2026-03-19
+
+### Nouveautés
+
+- add editable search input to Prowlarr modal with scrollable badges
+
+### Corrections
+
+- reorder Prowlarr button, add collection progress bar, remove redundant missing badge
+
+## v1.10.0 — 2026-03-19
+
+### Nouveautés
+
+- add qBittorrent download client integration
+- add Prowlarr integration for manual release search
+
+## v1.9.2 — 2026-03-19
+
+### Corrections
+
+- unmap status mappings instead of deleting, store unmapped provider statuses
+
+## v1.9.1 — 2026-03-19
+
+### Corrections
+
+- ignore unknown provider statuses instead of storing them
+- re-normalize series statuses with UI-added mappings
+- normalize series status casing to avoid duplicates
+
+## v1.9.0 — 2026-03-19
+
+### Nouveautés
+
+- add configurable status mappings for metadata providers
+
+<details>
+<summary>Maintenance (2)</summary>
+
 - repair deploy
 - push deploy stack local with dockerhub images
+
+</details>
+
+## v1.8.1 — 2026-03-19
+
+### Nouveautés
+
+- redesign search bars with prominent search input and compact filters
+- redesign jobs page action bar with grouped layout
+
+## v1.8.0 — 2026-03-19
+
+### Nouveautés
+
+- add metadata refresh job to re-download metadata for linked series
+
+## v1.6.5 — 2026-03-18
+
+### Nouveautés
+
+- add metadata statistics to dashboard
+
+## v1.6.4 — 2026-03-18
+
+### Corrections
+
+- normalize French articles in Bedetheque confidence scoring
+
+## v1.6.3 — 2026-03-18
+
+### Nouveautés
+
+- auto-match metadata when 100% confidence and matching book count
+
+## v1.6.2 — 2026-03-18
+
+### Nouveautés
+
+- add metadata provider filter to series page
+
+## v1.6.1 — 2026-03-18
+
+### Nouveautés
+
+- make series names clickable in batch metadata report
+
+## v1.6.0 — 2026-03-18
+
+### Nouveautés
+
+- add i18n support (FR/EN) to backoffice with English as default
+
+## v1.5.6 — 2026-03-18
+
+### Nouveautés
+
+- add batch metadata jobs, series filters, and translate backoffice to French
+
+### Corrections
+
+- complete French translation for settings page
+
+## v1.5.5 — 2026-03-18
+
+### Nouveautés
+
+- add series status, improve providers & e2e tests
+
+## v1.5.3 — 2026-03-18
+
+### Corrections
+
+- use sort-order position as fallback volume for book matching
+
+## v1.5.1 — 2026-03-18
+
+### Corrections
+
+- improve book matching in metadata sync with bidirectional title search
+
+## v1.5.0 — 2026-03-18
+
+### Nouveautés
+
+- add external metadata sync system with multiple providers
+
+### Performances
+
+- **docker** — optimize Rust build times with dependency layer caching
+
+## v1.4.0 — 2026-03-18
+
+### Nouveautés
+
+- fix author search, add edit modals, settings tabs & search resync
+
+### Refactoring
+
+- replace Meilisearch with PostgreSQL full-text search
+
+## v1.2.2 — 2026-03-16
+
+### Nouveautés
+
+- **komga** — add Komga read-status sync with reports and history
+
+## v1.2.1 — 2026-03-16
+
+### Corrections
+
+- **stats** — count authors from both author and authors fields
+
+## v1.2.0 — 2026-03-16
+
+### Nouveautés
+
+- **books** — édition des métadonnées livres et séries + champ authors multi-valeurs
+- **api** — log info par requête HTTP (méthode, path, status, durée)
+- **backoffice** — afficher le format (cbz/cbr/pdf) au lieu du kind sur les cards
+
+### Corrections
+
+- **books** — correction du tri naturel des titres avec sous-titres variables
+- **books** — tri des séries par volume + suppression de l'ancienne extract_page
+
+### Performances
+
+- **pages** — cache de l'index d'archive en mémoire (-73% CBZ, -76% CBR cold)
+
+### Refactoring
+
+- **pages** — déléguer l'extraction de pages au crate parsers
+
+## v1.1.0 — 2026-03-15
+
+### Nouveautés
+
+- add sort parameter (title/latest) to books and series endpoints
+
+## v1.0.0 — 2026-03-15
+
+### Nouveautés
+
+- **backoffice** — add dashboard statistics with charts
+
+## v0.3.0 — 2026-03-15
+
+### Nouveautés
+
+- **backoffice** — add reading progress management, series page, and live search
+
+## v0.2.0 — 2026-03-15
+
+### Nouveautés
+
+- **api** — add GET /series/ongoing and GET /books/ongoing endpoints
+- **tokens** — allow permanent deletion of revoked tokens
+
+## v0.1.5 — 2026-03-15
+
+### Corrections
+
+- **indexer** — corriger OOM lors du full rebuild (batching + limite threads)
+
+## v0.1.2 — 2026-03-15
+
+### Performances
+
+- **parsers** — optimiser listing CBZ avec file_names(), ajouter magic bytes check RAR
+
+## v0.1.1 — 2026-03-15
+
+### Nouveautés
+
+- **indexer,backoffice** — logs par domaine, réduction fd, UI mobile
+- **indexer,backoffice** — ajouter warnings dans les stats de job, skip fichiers inaccessibles
+- **books** — ajouter le champ format en base et l'exposer dans l'API
+- **jobs** — introduce extracting_pages status and update job progress handling
+- **docker** — migrations sqlx intégrées dans le démarrage de l'API
+- **api+backoffice** — pagination par page/offset + filtres séries
+- **api** — enrichir GET /books et series avec filtres et pagination
+- suivi de la progression de lecture par livre
+- **backoffice** — améliorer les détails de job avec historique des phases
+- **api** — relier les settings DB au comportement runtime
+- conversion CBR → CBZ via job asynchrone
+- **backoffice** — amélioration navigation mobile et tablette
+- **backoffice** — add page preview carousel on book detail page
+- two-phase indexation with direct thumbnail generation in indexer
+- enhance thumbnail management with full rebuild functionality
+- enhance library scanning and metadata parsing
+- enhance concurrency settings for rendering and thumbnail generation
+- implement thumbnail generation and management
+- thumbnails : part1
+- review cbr and unraring for image on api
+- add image rendering logs and refactor Icon component
+- add image optimization and settings page
+- make all service ports configurable via env variables
+- make libraries volume path configurable via env variable
+- add hierarchical folder browser for library creation
+- **backoffice** — redesign UI with enhanced background and glassmorphism effects
+- **ui** — Add pagination to books pages and improve spacing
+- **ui** — Components refactoring with Tailwind - UI kit, icons, lazy loading images
+- **tailwind** — Migration vers Tailwind CSS v4
+- **ui** — JobsIndicator moderne avec loader et popin détaillée
+- **ui** — Refonte UI page Libraries - design moderne en cards
+- **ui** — Lazy loading images + dark mode job highlight
+- **jobs** — T22 complété - Page détail jobs avec timeline et stats
+- **watcher** — Ajout watcher de fichiers temps réel
+- **monitoring** — T23 - Surveillance automatique des libraries
+- **indexing** — Lot 4 - Progression temps reel, Full Rebuild, Optimisations
+- change volume from string to integer type
+- **db** — add migration for volume column type change
+- add series support for book organization
+- **api** — improve Swagger/OpenAPI documentation
+
+### Corrections
+
+- **parsers,api,indexer,backoffice** — corriger CBZ Unicode extra fields, centraliser extraction, nettoyer Meili, fixer header
+- **parsers,api** — skipper les entrées ZIP corrompues au lieu d'échouer
+- **parsers,api** — fallback streaming ZIP pour archives avec extra fields NTFS
+- **parsers** — corriger récursion infinie CBZ↔CBR causant un stack overflow
+- **docker** — retirer sysctls inotify non supportés par ce kernel
+- **docker** — retirer fs.inotify.max_user_instances non namespacé
+- **api/pages** — fallback CBR→ZIP et CBZ→RAR pour archives mal extensionnées
+- **docker** — augmenter les limites inotify pour éviter "Too many open files"
+- **analyzer** — timeout sur analyze_book pour éviter les blocages indefinis
+- **parsers** — fallback CBR pour les .cbz qui sont en réalité des archives RAR
+- plusieurs correctifs jobs et analyzer
+- fallback for fake cbr
+- **parsers** — corriger la génération de thumbnails CBR/CBZ/PDF
+- **db** — ajouter 'cancelled' à la contrainte CHECK de index_jobs.status
+- **indexer** — détecter l'annulation de job pendant la phase 2 (analyzer)
+- thumbnails manquants dans les résultats de recherche
+- **indexer** — full_rebuild par library ne supprime plus les thumbnails des autres libraries
+- bad ignore no settings update
+- slow thumbnail and analyser test
+- **api** — resolve all OpenAPI schema reference errors
+- improve CBR extraction with fallback and increase timeout
+- improve CBR extraction logging and remove dead code
+- handle SSE controller errors gracefully
+- improve series detection and add detailed indexing logs
+- natural sort regex to handle titles with letters after numbers
+- correct healthchecks and env variable handling for custom ports
+- **env** — Sync .env.example with actual .env variables
+- **docker** — Fix migrate service authentication
+- **ui** — Harmonize spacing in library sub-pages
+- **ui** — Improve pagination spacing
+- **ui** — Progress bar height too small for label text
+- **indexer** — Progress bar stuck at 95% max
+- **indexer** — Book deletion not working due to path mismatch
+- **indexer** — File watcher not watching directories
+- **ui** — LibraryActions checkbox values and error handling
+
+### Performances
+
+- **api,indexer** — optimiser pages, thumbnails, watcher et robustesse fd
+- **indexer** — éliminer le pre-count WalkDir en mode incrémental + concurrence adaptative
+- **api** — remplacer unar/pdftoppm par unrar crate et pdfium-render
+- **parsers** — remplacer tous les subprocesses par des libs in-process
+- increase concurrent renders limit from 4 to 8
+- optimize indexing speed with batching and incremental sync
+- add sccache to Docker builds for faster compilation
+
+### Refactoring
+
+- improve API error handling and response structure
+- streamline API calls and enhance configuration management
+- update AppState references to use state module
+- hardcode ports in docker-compose.yml for server deployment
+- simplify env configuration with single port definitions
+
+### Documentation
+
+- **readme** — documenter toutes les variables d'env avec valeurs par défaut
+- **api** — complete OpenAPI coverage for all routes
+- add AGENTS.md per module and unify ports to 70XX
+- **plan** — T22 marqué comme complet
+
+### Divers
+
+- Add Docker push script and registry documentation
+- add OpenAPI/Swagger documentation with utoipa
+- add book_count feature, migrate backoffice to server actions, fix healthcheck
+- backoffice nextJs replaces admin in rust
+- add page streaming, admin ui flows, and runtime hardening
+- add indexing jobs, parsers, and search APIs
+- bootstrap rust services, auth, and compose stack
+- init
+
+<details>
+<summary>Maintenance (5)</summary>
+
 - corriger whitespace et paths dans .env.example
 - **deps** — mettre à jour zip 2.4→8.2, notify 6.1→8.2, lopdf 0.35→0.39
 - remove docker-compose configuration
