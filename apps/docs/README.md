@@ -47,3 +47,15 @@ All commands are run from the root of the project, from a terminal:
 ## 👀 Want to learn more?
 
 Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+
+## Changelog
+
+`src/content/docs/reference/changelog.md` is generated from the git tags and the
+conventional commits — never edit it by hand.
+
+- Refresh locally: `./scripts/generate-changelog.sh` from the repository root.
+- The deploy workflow regenerates it on every release (`--release <version>`)
+  inside the version-bump commit, so the docs image always ships an up-to-date
+  changelog.
+- Tests: `./scripts/generate-changelog.test.sh` (also run by the
+  `Changelog generator` job of `ci-web.yml`).

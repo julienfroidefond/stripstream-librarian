@@ -118,6 +118,7 @@ export default defineConfig({
 						{ label: 'API', slug: 'reference/api' },
 						{ label: 'Utilisateurs & Tokens', slug: 'reference/users-tokens' },
 						{ label: 'Variables d\'environnement', slug: 'reference/environment' },
+						{ label: 'Changelog', slug: 'reference/changelog' },
 					],
 				},
 			],

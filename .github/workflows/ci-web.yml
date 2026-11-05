@@ -91,3 +91,12 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+
+  changelog:
+    name: Changelog generator
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Test the generator
+        run: ./scripts/generate-changelog.test.sh
