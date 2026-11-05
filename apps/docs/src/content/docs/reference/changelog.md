@@ -8,7 +8,13 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
-## À venir
+## v3.32.95 — 2026-11-05
+
+### Documentation
+
+- **changelog** — publish the changelog at the repository root ([#228](https://github.com/julienfroidefond/stripstream-librarian/pull/228))
+
+## v3.32.94 — 2026-11-05
 
 ### Documentation
 
@@ -18,7 +24,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ### Documentation
 
-- link the changelog from the landing page
 - **changelog** — restore the full release history ([#226](https://github.com/julienfroidefond/stripstream-librarian/pull/226))
 
 ## v3.32.92 — 2026-11-05
@@ -79,10 +84,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 </details>
 
 ## v3.32.85 — 2026-11-04
-
-### Corrections
-
-- **ci** — stop non-triggering events from cancelling opencode runs
 
 <details>
 <summary>Maintenance (1)</summary>
@@ -358,6 +359,12 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ## v3.32.53 — 2026-10-22
 
+### Corrections
+
+- **security** — corriger les alertes CodeQL
+
+## v3.32.52 — 2026-10-22
+
 ### Nouveautés
 
 - **backoffice** — unifier les barres de recherche et de filtres ([#161](https://github.com/julienfroidefond/stripstream-librarian/pull/161))
@@ -366,7 +373,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 ### Corrections
 
-- **security** — corriger les alertes CodeQL
 - **deploy** — ne plus geler le compteur de version sur un tag orphelin
 - **reading-lists** — fiabiliser positions, déplacements et suggestions IAG ([#166](https://github.com/julienfroidefond/stripstream-librarian/pull/166))
 - **api** — fiabiliser les recherches BDTheque des batchs de métadonnées ([#162](https://github.com/julienfroidefond/stripstream-librarian/pull/162))
@@ -394,7 +400,7 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - Fixed Prowlarr cold-start empty search.
 
 <details>
-<summary>Maintenance (10)</summary>
+<summary>Maintenance (11)</summary>
 
 - **deps** — bump postcss ([#164](https://github.com/julienfroidefond/stripstream-librarian/pull/164))
 - **ci** — attendre le recalcul de mergeabilité avant de merger
@@ -406,14 +412,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - **opencode** — stop bot comments from cancelling successful runs ([#143](https://github.com/julienfroidefond/stripstream-librarian/pull/143))
 - **deps** — migrate zip from 8.6.0 to 9.0.2 ([#140](https://github.com/julienfroidefond/stripstream-librarian/pull/140))
 - **deps** — bump lukemathwalker/cargo-chef in /apps/api ([#134](https://github.com/julienfroidefond/stripstream-librarian/pull/134))
-
-</details>
-
-## v3.32.52 — 2026-10-20
-
-<details>
-<summary>Maintenance (1)</summary>
-
 - **deps** — bump the rust-non-major group across 1 directory with 2 updates ([#135](https://github.com/julienfroidefond/stripstream-librarian/pull/135))
 
 </details>
@@ -529,12 +527,14 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 </details>
 
-## v3.32.38 — 2026-10-19
+## v3.32.39 — 2026-10-19
 
 ### Nouveautés
 
 - **backoffice** — redesign book and series cards, add list views and per-card shortcuts
 - **api** — expose file size, summary and publish date on book listings
+
+## v3.32.38 — 2026-10-19
 
 ### Documentation
 
@@ -735,20 +735,20 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 ## v3.32.18 — 2026-10-14
 
 <details>
-<summary>Maintenance (3)</summary>
+<summary>Maintenance (4)</summary>
 
 - surface pre-1.0 minor bumps as individual Dependabot PRs
 - fix Dependabot pre-1.0 minor ignore rules
 - **deps** — bump sha2 from 0.11.0 to 0.11.1
+- replace Renovate with Dependabot
 
 </details>
 
 ## v3.32.17 — 2026-10-14
 
 <details>
-<summary>Maintenance (2)</summary>
+<summary>Maintenance (1)</summary>
 
-- replace Renovate with Dependabot
 - **deps** — update rust non-major
 
 </details>
@@ -869,15 +869,17 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 
 - **backoffice** — apply the front factorization checklist
 
+## v3.32.5 — 2026-10-09
+
+### Performances
+
+- **api** — cache stats and make search/list queries index-backed
+
 ## v3.32.4 — 2026-10-09
 
 ### Nouveautés
 
 - **metadata** — add "no community rating" gap filter
-
-### Performances
-
-- **api** — cache stats and make search/list queries index-backed
 
 ## v3.32.3 — 2026-10-09
 
@@ -2932,6 +2934,7 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 - **books** — édition des métadonnées livres et séries + champ authors multi-valeurs
 - **api** — log info par requête HTTP (méthode, path, status, durée)
 - **backoffice** — afficher le format (cbz/cbr/pdf) au lieu du kind sur les cards
+- add sort parameter (title/latest) to books and series endpoints
 
 ### Corrections
 
@@ -2945,12 +2948,6 @@ Historique des versions publiées, de la plus récente à la plus ancienne.
 ### Refactoring
 
 - **pages** — déléguer l'extraction de pages au crate parsers
-
-## v1.1.0 — 2026-03-15
-
-### Nouveautés
-
-- add sort parameter (title/latest) to books and series endpoints
 
 ## v1.0.0 — 2026-03-15
 
