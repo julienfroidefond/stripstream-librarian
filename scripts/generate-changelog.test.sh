@@ -64,6 +64,10 @@ expect_absent "## v1.0.2" "$tmp/out.md"
 expect_contains "## v1.2.0 — " "$tmp/release.md"
 expect_absent "## À venir" "$tmp/release.md"
 
+"$generator" --repo "$repo" --out "$tmp/default.md" >/dev/null
+expect_contains "## v1.0.0" "$tmp/default.md"
+expect_absent "versions antérieures" "$tmp/default.md"
+
 "$generator" --repo "$repo" --out "$tmp/limited.md" --limit 1 >/dev/null
 expect_contains "## À venir" "$tmp/limited.md"
 expect_contains "## v1.1.0" "$tmp/limited.md"

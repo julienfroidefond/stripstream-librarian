@@ -17,7 +17,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 repo="$repo_root"
 out="apps/docs/src/content/docs/reference/changelog.md"
 release=""
-limit=50
+limit=0
 all=false
 check=false
 
@@ -27,8 +27,8 @@ Usage: scripts/generate-changelog.sh [options]
 
   --release VERSION  Label the commits since the last tag as this version
   --out PATH         Output file (default: apps/docs/src/content/docs/reference/changelog.md)
-  --limit N          Number of tagged releases to render (default: 50)
-  --all              Render every tagged release
+  --limit N          Number of tagged releases to render (default: all)
+  --all              Render every tagged release (default)
   --check            Exit 1 when the output differs from the committed file
   --repo DIR         Repository to read (default: this repository)
   -h, --help         Show this help
@@ -171,7 +171,7 @@ tags=$(git tag --list 'v*' --sort=-v:refname)
 count=0
 for _ in $tags; do count=$((count + 1)); done
 
-if [ "$all" = true ]; then
+if [ "$all" = true ] || [ "$limit" -le 0 ]; then
     rendered=$count
 elif [ "$limit" -lt "$count" ]; then
     rendered=$limit
@@ -199,6 +199,7 @@ mkdir -p "$(dirname "$out")"
 ---
 title: Changelog
 description: Historique des versions de Stripstream Librarian
+tableOfContents: false
 ---
 
 <!-- Généré par scripts/generate-changelog.sh — ne pas éditer à la main. -->
