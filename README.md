@@ -18,6 +18,7 @@ sur http://localhost:7084. Principales entrées :
 - [Configuration](apps/docs/src/content/docs/getting-started/configuration.md)
 - [Variables d'environnement](apps/docs/src/content/docs/reference/environment.md)
 - [Référence API](apps/docs/src/content/docs/reference/api.md)
+- [Changelog](CHANGELOG.md) — historique des versions, généré à chaque release.
 
 ## Démarrage rapide
 

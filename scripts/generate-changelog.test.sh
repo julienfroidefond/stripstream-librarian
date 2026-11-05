@@ -82,6 +82,24 @@ if "$generator" --repo "$repo" --out "$tmp/committed.md" --all --check >/dev/nul
     failures=$((failures + 1))
 fi
 
+# Default mode: root CHANGELOG.md (plain) + the docs page (frontmatter).
+"$generator" --repo "$repo" >/dev/null
+root="$repo/CHANGELOG.md"
+docs="$repo/apps/docs/src/content/docs/reference/changelog.md"
+expect_contains "# Changelog" "$root"
+expect_contains "## v1.1.0 — 2026-01-04" "$root"
+expect_absent "tableOfContents" "$root"
+expect_contains "tableOfContents: false" "$docs"
+expect_contains "## v1.1.0 — 2026-01-04" "$docs"
+
+"$generator" --repo "$repo" --check >/dev/null
+printf 'stale\n' >>"$root"
+if "$generator" --repo "$repo" --check >/dev/null 2>&1; then
+    echo "FAIL: --check accepted a stale root changelog" >&2
+    failures=$((failures + 1))
+fi
+"$generator" --repo "$repo" >/dev/null
+
 if [ "$failures" -gt 0 ]; then
     echo "$failures failure(s)" >&2
     exit 1

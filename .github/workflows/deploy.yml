@@ -233,7 +233,7 @@ jobs:
           # below).
           ./scripts/generate-changelog.sh --release "$new"
           git add Cargo.toml Cargo.lock apps/backoffice/package.json apps/backoffice/package-lock.json \
-            apps/docs/src/content/docs/reference/changelog.md
+            CHANGELOG.md apps/docs/src/content/docs/reference/changelog.md
           git commit -m "chore: bump version to $new"
           git tag "v$new"
 
