@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.94 — 2026-11-05
+
+### Documentation
+
+- link the changelog from the landing page ([#227](https://github.com/julienfroidefond/stripstream-librarian/pull/227))
+
 ## v3.32.93 — 2026-11-05
 
 ### Documentation
