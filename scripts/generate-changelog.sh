@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Generate the documentation changelog from git tags and conventional commits.
+# Generate the changelog from git tags and conventional commits.
 #
 #   scripts/generate-changelog.sh [--release VERSION] [--out PATH]
 #                                 [--limit N | --all] [--check] [--repo DIR]
+#
+# By default two files are written from the same body:
+#
+#   CHANGELOG.md                                      (repository root)
+#   apps/docs/src/content/docs/reference/changelog.md (documentation site)
 #
 # Releases are the `v*` tags, newest first. Commits are grouped by
 # conventional-commit type (feat → Nouveautés, fix → Corrections, …), the
@@ -10,12 +15,15 @@
 # linked to their pull request.
 #
 # Run by the deploy workflow with `--release <new version>` before committing
-# the version bump, so the docs image always ships an up-to-date changelog.
+# the version bump, so the repository and the docs image always ship an
+# up-to-date changelog.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 repo="$repo_root"
-out="apps/docs/src/content/docs/reference/changelog.md"
+docs_out="apps/docs/src/content/docs/reference/changelog.md"
+root_out="CHANGELOG.md"
+out=""
 release=""
 limit=0
 all=false
@@ -26,10 +34,10 @@ usage() {
 Usage: scripts/generate-changelog.sh [options]
 
   --release VERSION  Label the commits since the last tag as this version
-  --out PATH         Output file (default: apps/docs/src/content/docs/reference/changelog.md)
+  --out PATH         Write a single plain-Markdown file instead of the defaults
   --limit N          Number of tagged releases to render (default: all)
   --all              Render every tagged release (default)
-  --check            Exit 1 when the output differs from the committed file
+  --check            Exit 1 when an output differs from the committed file
   --repo DIR         Repository to read (default: this repository)
   -h, --help         Show this help
 EOF
@@ -58,10 +66,13 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
     exit 1
 fi
 
-case "$out" in
-    /*) ;;
-    *) out="$repo/$out" ;;
-esac
+for path in out docs_out root_out; do
+    value=${!path}
+    case "$value" in
+        "" | /*) ;;
+        *) printf -v "$path" '%s/%s' "$repo" "$value" ;;
+    esac
+done
 
 repo_url=${CHANGELOG_REPO_URL:-https://github.com/julienfroidefond/stripstream-librarian}
 types="feat fix perf refactor docs revert diverge"
@@ -193,9 +204,13 @@ for tag in $tags; do
     i=$((i + 1))
 done
 
-mkdir -p "$(dirname "$out")"
-{
-    cat <<EOF
+# render <path> <mode: docs | root>
+render() {
+    local path="$1" mode="$2"
+    mkdir -p "$(dirname "$path")"
+    {
+        if [ "$mode" = docs ]; then
+            cat <<'EOF'
 ---
 title: Changelog
 description: Historique des versions de Stripstream Librarian
@@ -207,19 +222,42 @@ tableOfContents: false
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
 EOF
-    cat "$work/body"
-    if [ "$rendered" -lt "$count" ]; then
-        printf '*Les versions antérieures sont listées dans les [tags du dépôt](%s/tags).*\n' "$repo_url"
-    fi
-} >"$work/changelog.md"
+        else
+            cat <<'EOF'
+# Changelog
 
-if [ "$check" = true ]; then
-    if ! diff -u "$out" "$work/changelog.md"; then
-        echo "changelog is stale: run scripts/generate-changelog.sh" >&2
-        exit 1
-    fi
-    exit 0
+<!-- Généré par scripts/generate-changelog.sh — ne pas éditer à la main. -->
+
+Historique des versions publiées, de la plus récente à la plus ancienne.
+
+EOF
+        fi
+        cat "$work/body"
+        if [ "$rendered" -lt "$count" ]; then
+            printf '*Les versions antérieures sont listées dans les [tags du dépôt](%s/tags).*\n' "$repo_url"
+        fi
+    } >"$path"
+}
+
+if [ -n "$out" ]; then
+    targets=("$out root")
+else
+    targets=("$root_out root" "$docs_out docs")
 fi
 
-cp "$work/changelog.md" "$out"
-echo "wrote $out"
+status=0
+for target in "${targets[@]}"; do
+    path=${target% *}
+    mode=${target##* }
+    if [ "$check" = true ]; then
+        render "$work/check.md" "$mode"
+        if ! diff -u "$path" "$work/check.md"; then
+            echo "changelog is stale: $path (run scripts/generate-changelog.sh)" >&2
+            status=1
+        fi
+    else
+        render "$path" "$mode"
+        echo "wrote $path"
+    fi
+done
+exit "$status"

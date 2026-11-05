@@ -50,12 +50,13 @@ Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro 
 
 ## Changelog
 
-`src/content/docs/reference/changelog.md` is generated from the git tags and the
-conventional commits — never edit it by hand.
+`src/content/docs/reference/changelog.md` (this site) and `CHANGELOG.md`
+(repository root) are generated from the git tags and the conventional
+commits — never edit them by hand.
 
 - Refresh locally: `./scripts/generate-changelog.sh` from the repository root.
-- The deploy workflow regenerates it on every release (`--release <version>`)
-  inside the version-bump commit, so the docs image always ships an up-to-date
-  changelog.
+- The deploy workflow regenerates both on every release (`--release <version>`)
+  inside the version-bump commit, so the repository and the docs image always
+  ship an up-to-date changelog.
 - Tests: `./scripts/generate-changelog.test.sh` (also run by the
   `Changelog generator` job of `ci-web.yml`).
