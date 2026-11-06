@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.96 — 2026-11-06
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump astro in /apps/docs in the docs-non-major group ([#229](https://github.com/julienfroidefond/stripstream-librarian/pull/229))
+
+</details>
+
 ## v3.32.95 — 2026-11-05
 
 ### Documentation
