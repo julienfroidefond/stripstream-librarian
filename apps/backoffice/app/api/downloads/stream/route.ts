@@ -14,6 +14,7 @@ const TORRENT_ACTIVE_STATUSES = new Set(["downloading", "completed", "importing"
 export async function GET(request: NextRequest) {
   return pollingStreams(request, {
     label: "downloads",
+    activeIntervalMs: 1000,
     sources: [
       { key: "torrent", path: "/torrent-downloads" },
       { key: "telegram", path: "/telegram-monitor/downloads" },
