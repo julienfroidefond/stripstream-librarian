@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -19,6 +19,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
 import { isTelegramDownloadRetryable, showsDownloadProgress } from "@/lib/download";
+import { useEventSource } from "@/lib/useEventSource";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
@@ -88,6 +89,12 @@ type DownloadItem =
   | { kind: "torrent"; data: TorrentDownloadDto }
   | { kind: "telegram"; data: TelegramDownloadItemDto }
   | { kind: "ddl"; data: DdlProviderDownloadDto };
+
+type DownloadsStreamPayload = {
+  torrent: TorrentDownloadDto[];
+  telegram: TelegramDownloadItemDto[];
+  ddl: DdlProviderDownloadDto[];
+};
 
 /** Statuses shared by the Telegram monitor and the DDL providers. */
 function secondaryMatchesFilter(status: string, filter: string): boolean {
@@ -305,17 +312,16 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
 
   const merged = mergeDownloads(downloads, telegramDownloads, ddlProviderDownloads);
 
-  // Auto-refresh every 2s while there are active downloads, telegram or DDL provider downloads in progress
-  const hasActive = merged.some(item =>
-    item.kind === "torrent"
-      ? STATUS_ACTIVE.has(item.data.status)
-      : item.data.status === "queued" || item.data.status === "downloading"
-  );
-  useEffect(() => {
-    if (!hasActive) return;
-    const id = setInterval(() => refresh(false), 2000);
-    return () => clearInterval(id);
-  }, [hasActive, refresh]);
+  // Progress fields are pushed by the shared SSE stream. Keep the full refresh
+  // for manual actions and the slower-changing availability sections only.
+  useEventSource<DownloadsStreamPayload>({
+    url: "/api/downloads/stream",
+    onMessage: ({ torrent, telegram, ddl }) => {
+      setDownloads(torrent);
+      setTelegramDownloads(telegram);
+      setDdlProviderDownloads(ddl);
+    },
+  });
 
   const statusFilters: Array<{ id: StatusFilter; label: string }> = [
     { id: "all", label: t("common.all") },
@@ -713,11 +719,17 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {volLabel && <span>{volLabel}</span>}
+              {item.file_size != null && item.file_size > 0 && <span>{formatSize(item.file_size)}</span>}
               <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
             </div>
           </div>
           {/* Filename secondary */}
-          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">
+            {item.filename}
+            {item.status !== "downloading" && item.file_size != null && item.file_size > 0 && (
+              <> · {formatSize(item.file_size)}</>
+            )}
+          </p>
           {/* Progress bar for active downloads */}
           {item.status === "downloading" && item.file_size && item.file_size > 0 && (
             <div className="mt-1.5 space-y-0.5">
@@ -903,11 +915,17 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {volLabel && <span>{volLabel}</span>}
               <span className="inline-flex items-center gap-1"><Icon name="globe" size="sm" className="text-success" />{item.provider}</span>
+              {item.file_size != null && item.file_size > 0 && <span>{formatSize(item.file_size)}</span>}
               <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
             </div>
           </div>
           {/* Filename secondary */}
-          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">
+            {item.filename}
+            {item.status !== "downloading" && item.file_size != null && item.file_size > 0 && (
+              <> · {formatSize(item.file_size)}</>
+            )}
+          </p>
           {/* Progress bar for active downloads */}
           {item.status === "downloading" && item.file_size && item.file_size > 0 && (
             <div className="mt-1.5 space-y-0.5">
@@ -1517,6 +1535,8 @@ export function AvailableDownloadsSection({
 
 function formatSize(bytes: number | null) {
   if (!bytes) return "";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
 }

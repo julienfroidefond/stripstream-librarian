@@ -207,7 +207,7 @@ describe("GET /api/downloads/stream", () => {
     expect(await readChunk(reader)).toBeNull();
   });
 
-  it("polls every 2s while one source is still active", async () => {
+  it("polls every 1s while one source is still active", async () => {
     vi.useFakeTimers();
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([{ status: "downloading" }])));
     const ac = new AbortController();
@@ -217,7 +217,7 @@ describe("GET /api/downloads/stream", () => {
     await vi.advanceTimersByTimeAsync(0);
     await readChunk(reader);
     fetchMock.mockClear();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     // One poll touches the three sources.
     expect(fetchMock).toHaveBeenCalledTimes(3);
     await readChunk(reader);
