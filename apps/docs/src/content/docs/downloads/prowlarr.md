@@ -38,7 +38,8 @@ Pour chaque release Prowlarr dans la liste dépliée :
 - Indexeur source
 - Nombre de seeders (vert ≥ 10, orange ≥ 3, rouge sinon)
 - Taille
-- **Bouton ↓ (bleu)** — envoie la release au client de téléchargement
+- **Bouton ↓ (bleu)** — envoie la release au client de téléchargement en ne prenant que les volumes manquants détectés
+- **Bouton ↻ (orange)** — télécharge tout le pack et remplace les fichiers existants (mode Replace)
 - **Bouton × (neutre)** — blacklist : masque définitivement cette release dans les *Releases masquées*
 - **Bouton poubelle** — supprime la release sans blacklister
 
@@ -58,7 +59,7 @@ Chaque ligne de l'historique affiche un badge avec le client qui a traité le t�
 
 ### Mode Replace
 
-L'option **Replace** importe tous les fichiers du torrent sans se limiter aux volumes manquants attendus. Utile pour remplacer des fichiers existants par une version de meilleure qualité.
+Le bouton **↻** est toujours disponible à côté du bouton ↓, y compris quand le pack ne contient que les volumes manquants. Il importe tous les fichiers du torrent sans se limiter aux volumes manquants attendus, après confirmation. Utile pour remplacer des fichiers existants par une version de meilleure qualité.
 
 ## Import automatique
 

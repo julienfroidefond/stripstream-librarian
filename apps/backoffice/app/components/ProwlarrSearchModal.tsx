@@ -344,7 +344,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                     seriesName={seriesName}
                                     expectedVolumes={release.matchedMissingVolumes ?? release.allVolumes ?? defaultExpectedVolumes}
                                     allVolumes={release.allVolumes}
-                                    alwaysShowReplace
                                     requiresReview={release.matchConfidence === "review"}
                                   />
                                 )}

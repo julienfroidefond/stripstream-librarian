@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -73,8 +73,8 @@ describe("DownloadClientProvider", () => {
       </DownloadClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByRole("button")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(screen.getAllByRole("button")).toHaveLength(2));
+    fireEvent.click(screen.getAllByRole("button")[0]);
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -177,7 +177,7 @@ describe("DownloadClientButton", () => {
       </DownloadClientProvider>
     );
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getAllByRole("button")[0]);
 
     await waitFor(() => expect(onDownloadStarted).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledWith(
@@ -209,10 +209,71 @@ describe("DownloadClientButton", () => {
       </DownloadClientProvider>
     );
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getAllByRole("button")[0]);
 
     await waitFor(() =>
-      expect(screen.getByRole("button")).toHaveAttribute("title", "bad magnet")
+      expect(screen.getAllByRole("button")[0]).toHaveAttribute("title", "bad magnet")
     );
+  });
+
+  it("always offers both download-missing and replace actions", () => {
+    render(
+      <DownloadClientProvider
+        initialClients={{ qbittorrent: true, alldebrid: false }}
+        initialClient={null}
+      >
+        <DownloadClientButton
+          downloadUrl="magnet:?x"
+          releaseId="r1"
+          expectedVolumes={[1, 2]}
+          allVolumes={[1, 2]}
+        />
+      </DownloadClientProvider>
+    );
+
+    // Even when the pack only contains the missing volumes, both actions are available.
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("replace sends every volume and replace_existing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, message: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <DownloadClientProvider
+        initialClients={{ qbittorrent: false, alldebrid: true }}
+        initialClient={null}
+      >
+        <DownloadClientButton
+          downloadUrl="magnet:?x"
+          releaseId="r1"
+          libraryId="l1"
+          seriesName="Série"
+          expectedVolumes={[1, 2]}
+          allVolumes={[1, 2, 3]}
+        />
+      </DownloadClientProvider>
+    );
+
+    fireEvent.click(screen.getAllByRole("button")[1]);
+    const panel = screen.getByTestId("modal-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "prowlarr.replaceAndDownload" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/alldebrid/add",
+      expect.objectContaining({ method: "POST" })
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({
+      url: "magnet:?x",
+      library_id: "l1",
+      series_name: "Série",
+      expected_volumes: [1, 2, 3],
+      replace_existing: true,
+    });
   });
 });

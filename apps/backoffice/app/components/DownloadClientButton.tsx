@@ -165,7 +165,6 @@ export function DownloadClientButton({
   seriesName,
   expectedVolumes,
   allVolumes,
-  alwaysShowReplace,
   requiresReview = false,
 }: {
   downloadUrl: string;
@@ -174,8 +173,6 @@ export function DownloadClientButton({
   seriesName?: string;
   expectedVolumes?: number[];
   allVolumes?: number[];
-  /** Show replace button even when allVolumes == expectedVolumes (e.g. in Prowlarr search modal) */
-  alwaysShowReplace?: boolean;
   /** Require a confirmation before downloading a weak title match. */
   requiresReview?: boolean;
 }) {
@@ -189,9 +186,6 @@ export function DownloadClientButton({
   if (!client) return null;
 
   const clientLabel = DOWNLOAD_CLIENT_LABELS[client];
-
-  const showReplaceButton = alwaysShowReplace
-    || (allVolumes && allVolumes.length > 0 && expectedVolumes && allVolumes.length > expectedVolumes.length);
 
   async function handleSend(volumes?: number[], replaceExisting = false) {
     setSending(true);
@@ -253,17 +247,15 @@ export function DownloadClientButton({
           )}
         </button>
 
-        {showReplaceButton && (
-          <button
-            type="button"
-            onClick={() => setConfirmMode("replace")}
-            disabled={sending}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 text-warning hover:bg-warning/10"
-            title={t("prowlarr.replaceAndDownload")}
-          >
-            <Icon name="refresh" size="sm" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setConfirmMode("replace")}
+          disabled={sending}
+          className="inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 text-warning hover:bg-warning/10"
+          title={t("prowlarr.replaceAndDownload")}
+        >
+          <Icon name="refresh" size="sm" />
+        </button>
       </div>
 
       <Modal isOpen={confirmMode !== null} onClose={() => setConfirmMode(null)} maxWidth="sm">
