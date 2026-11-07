@@ -14,6 +14,7 @@ use stripstream_core::http::build_http_client;
 use stripstream_core::paths::normalize_lexically;
 use stripstream_core::settings::load_setting;
 
+use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
 use crate::{error::ApiError, metadata, state::AppState};
 
@@ -302,11 +303,13 @@ pub async fn retry_torrent_import(
     Path(id): Path<Uuid>,
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     // Check the download exists and is in a retryable state
-    let row = sqlx::query("SELECT content_path, status FROM torrent_downloads WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("torrent download not found"))?;
+    let row = sqlx::query(
+        "SELECT content_path, status, client, external_id FROM torrent_downloads WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("torrent download not found"))?;
 
     let status: String = row.get("status");
     if !["importing", "error", "no_files_imported", "partial"].contains(&status.as_str()) {
@@ -314,8 +317,30 @@ pub async fn retry_torrent_import(
     }
 
     let content_path: Option<String> = row.get("content_path");
+    let client: String = row.get("client");
     if let Some(ref cp) = content_path {
         if !std::path::Path::new(cp).exists() {
+            if should_restart_missing_alldebrid_source(&client) {
+                let external_id: Option<String> = row.get("external_id");
+                let external_id = external_id
+                    .ok_or_else(|| ApiError::bad_request("AllDebrid magnet id is missing"))?;
+                let alldebrid = load_alldebrid_client(&state.pool).await?;
+                if let Err(e) = alldebrid.restart_magnet(&external_id).await {
+                    if !is_already_processing(&e.message) {
+                        return Err(e);
+                    }
+                }
+                sqlx::query(
+                    "UPDATE torrent_downloads SET status = 'downloading', error_message = NULL, \
+                     progress = 0, download_speed = 0, eta = 0, stall_started_at = NULL, updated_at = NOW() \
+                     WHERE id = $1",
+                )
+                .bind(id)
+                .execute(&state.pool)
+                .await?;
+                return Ok(Json(crate::responses::OkResponse::new()));
+            }
+
             // Files already cleaned up — mark as error
             sqlx::query(
                 "UPDATE torrent_downloads SET status = 'error', error_message = 'Source files no longer available (already cleaned up)', updated_at = NOW() WHERE id = $1",
@@ -337,6 +362,10 @@ pub async fn retry_torrent_import(
 
     info!("Retry import {id} launched");
     Ok(Json(crate::responses::OkResponse::new()))
+}
+
+fn should_restart_missing_alldebrid_source(client: &str) -> bool {
+    client == "alldebrid"
 }
 
 // ─── Background poller ────────────────────────────────────────────────────────
@@ -1016,5 +1045,11 @@ mod content_path_tests {
     fn rejects_empty_and_relative_paths() {
         assert!(validate_torrent_content_path("").is_err());
         assert!(validate_torrent_content_path("relative/path").is_err());
+    }
+
+    #[test]
+    fn restarts_alldebrid_when_cleaned_source_is_missing() {
+        assert!(should_restart_missing_alldebrid_source("alldebrid"));
+        assert!(!should_restart_missing_alldebrid_source("qbittorrent"));
     }
 }

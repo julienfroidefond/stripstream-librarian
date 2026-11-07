@@ -231,7 +231,11 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
         ));
     }
 
-    let path = Path::new(root_path);
+    let physical_root = std::env::var("LIBRARIES_ROOT_PATH")
+        .ok()
+        .map(|root| remap_picker_path(root_path, Path::new(&root)))
+        .unwrap_or_else(|| root_path.to_string());
+    let path = Path::new(&physical_root);
     if !path.is_absolute() {
         return Err(ApiError::bad_request("root_path must be absolute"));
     }
@@ -241,7 +245,7 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
     if !path.exists() {
         return Err(ApiError::bad_request(format!(
             "root_path does not exist: {}",
-            root_path
+            physical_root
         )));
     }
     if !path.is_dir() {
@@ -249,6 +253,20 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
     }
 
     Ok(path.to_path_buf())
+}
+
+/// Convert the virtual folder paths returned by `/folders` to the local path
+/// used by the API when running outside the container.
+fn remap_picker_path(root_path: &str, libraries_root: &Path) -> String {
+    if root_path == "/libraries" {
+        return libraries_root.to_string_lossy().into_owned();
+    }
+
+    if let Some(relative) = root_path.strip_prefix("/libraries/") {
+        return libraries_root.join(relative).to_string_lossy().into_owned();
+    }
+
+    root_path.to_string()
 }
 
 use crate::index_jobs::{IndexJobResponse, RebuildRequest};

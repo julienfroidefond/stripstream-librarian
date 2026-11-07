@@ -103,6 +103,24 @@ fn find_list(lists: &[LibraryResponse], id: Uuid) -> &LibraryResponse {
         .expect("library present in list response")
 }
 
+#[test]
+fn remaps_virtual_folder_paths_to_local_library_root() {
+    let local_root = std::path::Path::new("/workspace/libraries");
+
+    assert_eq!(
+        remap_picker_path("/libraries/manga", local_root),
+        "/workspace/libraries/manga"
+    );
+    assert_eq!(
+        remap_picker_path("/libraries", local_root),
+        "/workspace/libraries"
+    );
+    assert_eq!(
+        remap_picker_path("/Volumes/comics", local_root),
+        "/Volumes/comics"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // create_library
 // ---------------------------------------------------------------------------
