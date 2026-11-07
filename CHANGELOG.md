@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.101 — 2026-11-07
+
+### Corrections
+
+- **downloads** — expose torrent file size ([#234](https://github.com/julienfroidefond/stripstream-librarian/pull/234))
+
 ## v3.32.100 — 2026-11-07
 
 ### Corrections
