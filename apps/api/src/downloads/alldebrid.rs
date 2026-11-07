@@ -1138,6 +1138,7 @@ async fn handle_row(
 /// Live progress of an in-flight magnet, as reported by AllDebrid.
 struct InflightProgress<'a> {
     downloaded: i64,
+    file_size: i64,
     progress: f32,
     speed: i64,
     eta: i64,
@@ -1160,7 +1161,7 @@ async fn record_inflight_progress(
     if live.downloaded > 0 {
         let result = sqlx::query(
             "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-             seeders = $4, name = COALESCE($6, name), stall_started_at = NULL, updated_at = NOW() \
+             seeders = $4, file_size = NULLIF($6, 0), name = COALESCE($7, name), stall_started_at = NULL, updated_at = NOW() \
              WHERE id = $5 AND status = 'downloading'",
         )
         .bind(live.progress)
@@ -1168,6 +1169,7 @@ async fn record_inflight_progress(
         .bind(live.eta)
         .bind(live.seeders.map(|s| s as i32))
         .bind(tid)
+        .bind(live.file_size)
         .bind(live.name)
         .execute(pool)
         .await;
@@ -1179,7 +1181,7 @@ async fn record_inflight_progress(
 
     let stalled = sqlx::query_scalar::<_, DateTime<Utc>>(
         "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-         seeders = $4, name = COALESCE($6, name), \
+         seeders = $4, file_size = NULLIF($6, 0), name = COALESCE($7, name), \
          stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
          WHERE id = $5 AND status = 'downloading' \
          RETURNING stall_started_at",
@@ -1189,6 +1191,7 @@ async fn record_inflight_progress(
     .bind(live.eta)
     .bind(live.seeders.map(|s| s as i32))
     .bind(tid)
+    .bind(live.file_size)
     .bind(live.name)
     .fetch_optional(pool)
     .await;
@@ -1245,6 +1248,7 @@ async fn handle_magnet_status(
         // marker is cleared as soon as a byte arrives and on a manual restart.
         let live = InflightProgress {
             downloaded,
+            file_size: size,
             progress,
             speed,
             eta,
@@ -1778,6 +1782,7 @@ mod tests {
         // torrent name AllDebrid gave us...
         let stalled = InflightProgress {
             downloaded: 0,
+            file_size: 10,
             progress: 0.0,
             speed: 0,
             eta: 0,
@@ -1801,6 +1806,7 @@ mod tests {
         // As soon as a byte arrives the marker is cleared and seeders stored.
         let moving = InflightProgress {
             downloaded: 5,
+            file_size: 10,
             progress: 0.5,
             speed: 100,
             eta: 1,
@@ -1809,9 +1815,10 @@ mod tests {
         };
         assert!(record_inflight_progress(&pool, id, &moving).await.is_none());
 
-        let (stall, seeders, name): (Option<DateTime<Utc>>, Option<i32>, Option<String>) =
+        let (stall, seeders, file_size, name):
+            (Option<DateTime<Utc>>, Option<i32>, Option<i64>, Option<String>) =
             sqlx::query_as(
-                "SELECT stall_started_at, seeders, name FROM torrent_downloads WHERE id = $1",
+                "SELECT stall_started_at, seeders, file_size, name FROM torrent_downloads WHERE id = $1",
             )
             .bind(id)
             .fetch_one(&pool)
@@ -1819,6 +1826,7 @@ mod tests {
             .unwrap();
         assert!(stall.is_none());
         assert_eq!(seeders, Some(12));
+        assert_eq!(file_size, Some(10));
         assert_eq!(name.as_deref(), Some("Aposimz.cbz"));
     }
 

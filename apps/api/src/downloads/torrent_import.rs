@@ -52,6 +52,7 @@ pub struct TorrentDownloadDto {
     pub imported_files: Option<serde_json::Value>,
     pub error_message: Option<String>,
     pub progress: f32,
+    pub file_size: Option<i64>,
     pub download_speed: i64,
     pub eta: i64,
     /// Peers seeding the torrent on the debrid service (`None` for qBittorrent).
@@ -181,7 +182,7 @@ pub async fn list_torrent_downloads(
 ) -> Result<Json<Vec<TorrentDownloadDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.client, td.external_id, \
-         td.qb_hash, td.name, td.content_path, td.status, td.imported_files, td.error_message, td.progress, \
+         td.qb_hash, td.name, td.content_path, td.status, td.imported_files, td.error_message, td.progress, td.file_size, \
          td.download_speed, td.eta, td.seeders, td.created_at, td.updated_at, s.id AS series_id \
          FROM torrent_downloads td \
          LEFT JOIN series s ON s.library_id = td.library_id AND LOWER(s.name) = LOWER(td.series_name) \
@@ -214,6 +215,7 @@ pub async fn list_torrent_downloads(
                 imported_files: row.get("imported_files"),
                 error_message: row.get("error_message"),
                 progress: row.get("progress"),
+                file_size: row.get("file_size"),
                 download_speed: row.get("download_speed"),
                 eta: row.get("eta"),
                 seeders: row.get("seeders"),
@@ -525,12 +527,13 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
             let tid: Uuid = row.get("id");
             let global_progress = info.progress as f32;
             let _ = sqlx::query(
-                "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, updated_at = NOW() \
-                 WHERE id = $4 AND status = 'downloading'",
+                "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, file_size = NULLIF($4, 0), updated_at = NOW() \
+                 WHERE id = $5 AND status = 'downloading'",
             )
             .bind(global_progress)
             .bind(info.dlspeed)
             .bind(info.eta)
+            .bind(info.total_size)
             .bind(tid)
             .execute(pool)
             .await;

@@ -550,6 +550,9 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
               <span className="text-3xs font-medium text-foreground tabular-nums">
                 {Math.round(dl.progress * 100)}%
               </span>
+              {dl.file_size != null && dl.file_size > 0 && (
+                <span className="text-3xs text-muted-foreground">{formatSize(dl.file_size)}</span>
+              )}
               {dl.status === "downloading" && dl.download_speed > 0 && (
                 <span className="text-3xs text-muted-foreground hidden sm:inline">{formatSpeed(dl.download_speed)}</span>
               )}
