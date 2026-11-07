@@ -13,6 +13,7 @@ function makeSeries(overrides: Partial<SeriesDto> = {}): SeriesDto {
     name: "Series 1",
     book_count: 3,
     books_read_count: 1,
+    last_read_at: null,
     first_book_id: null,
     first_book_updated_at: null,
     library_id: "lib-1",

@@ -59,7 +59,7 @@ pub async fn ongoing_series(
                 s.library_id,
                 COUNT(b.id) AS book_count,
                 COUNT(up.book_id) FILTER (WHERE up.status = 'read') AS books_read_count,
-                MAX(up.last_read_at) AS last_read_at
+                MAX(up.last_read_at) FILTER (WHERE up.status IN ('read', 'reading')) AS last_read_at
             FROM active_series a_s
             JOIN series s ON s.id = a_s.series_id
             JOIN books b ON b.series_id = s.id
@@ -77,7 +77,7 @@ pub async fn ongoing_series(
             WHERE b.series_id IN (SELECT series_id FROM series_stats)
             ORDER BY b.series_id, b.volume NULLS LAST, b.title ASC
         )
-        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count,
+        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, ss.last_read_at,
                fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id,
                s.genres, s.authors, s.description
         FROM series_stats ss
@@ -103,6 +103,7 @@ pub async fn ongoing_series(
             series_id: row.get("series_id"),
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
+            last_read_at: row.get("last_read_at"),
             first_book_id: row.get("first_book_id"),
             first_book_updated_at: row.get("first_book_updated_at"),
             library_id: row.get("library_id"),
@@ -362,7 +363,8 @@ pub async fn get_series_by_id(
             SELECT
                 s.id as series_id, s.name, s.library_id, s.status as series_status,
                 COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
+                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
@@ -378,7 +380,7 @@ pub async fn get_series_by_id(
                 b.title ASC
             LIMIT 1
         )
-        SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count,
+        SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count, sc.last_read_at,
                fb.id as first_book_id,
                fb.updated_at as first_book_updated_at,
                sc.library_id, sc.series_status,
@@ -424,6 +426,7 @@ pub async fn get_series_by_id(
         series_id: row.get("series_id"),
         book_count: row.get("book_count"),
         books_read_count: row.get("books_read_count"),
+        last_read_at: row.get("last_read_at"),
         first_book_id: row.get("first_book_id"),
         first_book_updated_at: row.get("first_book_updated_at"),
         library_id: row.get("library_id"),

@@ -60,6 +60,10 @@ pub struct SeriesItem {
     pub series_id: Uuid,
     pub book_count: i64,
     pub books_read_count: i64,
+    /// Latest `read`/`reading` activity of the current user across the series' books.
+    /// Books reset to `unread` are ignored.
+    #[schema(value_type = Option<String>)]
+    pub last_read_at: Option<DateTime<Utc>>,
     #[schema(value_type = Option<String>)]
     pub first_book_id: Option<Uuid>,
     #[schema(value_type = Option<String>)]

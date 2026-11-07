@@ -127,7 +127,8 @@ pub async fn list_series(
                 s.id as series_id,
                 s.name,
                 COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
+                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
@@ -141,6 +142,7 @@ pub async fn list_series(
                 sc.series_id,
                 sc.book_count,
                 sc.books_read_count,
+                sc.last_read_at,
                 s.status as series_status,
                 mc.missing_count,
                 ml.provider as metadata_provider,
@@ -222,6 +224,7 @@ pub async fn list_series(
                 series_id,
                 book_count: row.get("book_count"),
                 books_read_count: row.get("books_read_count"),
+                last_read_at: row.get("last_read_at"),
                 first_book_id: row.get("first_book_id"),
                 first_book_updated_at: row.get("first_book_updated_at"),
                 library_id,
@@ -454,6 +457,7 @@ pub async fn list_all_series(
                 s.library_id,
                 COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
+                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at,
                 COALESCE(MAX(b.created_at), s.created_at) as latest_created_at
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
@@ -468,6 +472,7 @@ pub async fn list_all_series(
                 sc.series_id,
                 sc.book_count,
                 sc.books_read_count,
+                sc.last_read_at,
                 sc.library_id,
                 s.status as series_status,
                 mc.missing_count,
@@ -570,6 +575,7 @@ pub async fn list_all_series(
                 series_id,
                 book_count: row.get("book_count"),
                 books_read_count: row.get("books_read_count"),
+                last_read_at: row.get("last_read_at"),
                 first_book_id: row.get("first_book_id"),
                 first_book_updated_at: row.get("first_book_updated_at"),
                 library_id: row.get("library_id"),

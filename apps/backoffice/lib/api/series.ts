@@ -9,6 +9,7 @@ export type SeriesDto = {
   name: string;
   book_count: number;
   books_read_count: number;
+  last_read_at: string | null;
   first_book_id: string | null;
   first_book_updated_at: string | null;
   library_id: string;
