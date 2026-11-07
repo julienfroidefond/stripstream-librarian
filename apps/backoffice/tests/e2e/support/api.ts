@@ -11,6 +11,32 @@ import { loadEnvLocal } from "../env";
 export type ReadingListSummary = { id: string; name: string };
 export type TokenSummary = { id: string; name: string; revoked_at?: string | null };
 export type UserSummary = { id: string; username: string };
+export type LibrarySummary = {
+  id: string;
+  name: string;
+  root_path: string;
+  book_count?: number;
+  series_count?: number;
+};
+export type SeriesSummary = { series_id: string; name: string; library_id: string };
+export type ArchivedSeriesSummary = {
+  id: string;
+  name: string;
+  library_id?: string | null;
+};
+
+/** Erreur HTTP de l'API, avec le statut pour permettre des replis ciblés. */
+export class ApiRequestError extends Error {
+  constructor(
+    method: string,
+    path: string,
+    public readonly status: number,
+    public readonly body: string
+  ) {
+    super(`${method} ${path} a échoué (HTTP ${status}) : ${body}`);
+    this.name = "ApiRequestError";
+  }
+}
 
 function resolveEnv(): { baseUrl: string; token: string } {
   const env = loadEnvLocal();
@@ -47,7 +73,7 @@ export async function apiRequest<T>(
   });
 
   if (!res.ok) {
-    throw new Error(`${method} ${path} a échoué (HTTP ${res.status}) : ${await res.text()}`);
+    throw new ApiRequestError(method, path, res.status, await res.text());
   }
   if (res.status === 204) return undefined as T;
 
@@ -103,4 +129,49 @@ export async function deleteUsersByUsername(username: string): Promise<void> {
         apiRequest(`/admin/users/${user.id}`, { method: "DELETE" }).catch(() => undefined)
       )
   );
+}
+
+// ─── Bibliothèques ───────────────────────────────────────────────────────────
+
+export async function listLibraries(): Promise<LibrarySummary[]> {
+  return apiRequest<LibrarySummary[]>("/libraries");
+}
+
+export async function createLibrary(name: string, rootPath: string): Promise<LibrarySummary> {
+  return apiRequest<LibrarySummary>("/libraries", {
+    method: "POST",
+    body: { name, root_path: rootPath },
+  });
+}
+
+export async function deleteLibrary(id: string): Promise<void> {
+  await apiRequest<void>(`/libraries/${id}`, { method: "DELETE" });
+}
+
+// ─── Séries ──────────────────────────────────────────────────────────────────
+
+export async function createSeries(libraryId: string, name: string): Promise<SeriesSummary> {
+  return apiRequest<SeriesSummary>("/series/create", {
+    method: "POST",
+    body: { library_id: libraryId, name },
+  });
+}
+
+export async function updateSeries(
+  id: string,
+  body: {
+    new_name: string;
+    authors?: string[];
+    genres?: string[];
+  }
+): Promise<void> {
+  await apiRequest<void>(`/series/${id}`, { method: "PATCH", body });
+}
+
+export async function deleteSeries(id: string): Promise<void> {
+  await apiRequest<void>(`/series/${id}`, { method: "DELETE" });
+}
+
+export async function listArchivedSeries(): Promise<ArchivedSeriesSummary[]> {
+  return apiRequest<ArchivedSeriesSummary[]>("/admin/series/archived");
 }

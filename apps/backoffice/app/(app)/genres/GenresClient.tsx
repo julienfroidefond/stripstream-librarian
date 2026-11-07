@@ -109,6 +109,7 @@ function GenreSeriesModal({
         onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       >
         <div
+          data-testid="modal-panel"
           className="pointer-events-auto w-full max-w-lg max-h-[80vh] bg-background rounded-2xl border border-border shadow-2xl flex flex-col"
           onClick={(event) => event.stopPropagation()}
         >
