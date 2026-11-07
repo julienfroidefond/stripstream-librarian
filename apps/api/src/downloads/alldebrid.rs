@@ -332,7 +332,7 @@ impl AlldebridClient {
             .await
     }
 
-    async fn restart_magnet(&self, id: &str) -> Result<(), ApiError> {
+    pub(crate) async fn restart_magnet(&self, id: &str) -> Result<(), ApiError> {
         self.post_form_unit("/v4/magnet/restart", &[("id".to_string(), id.to_string())])
             .await
     }
@@ -614,7 +614,7 @@ fn stall_message(idle_minutes: i64, seeders: Option<i64>) -> String {
 /// AllDebrid refuses to "restart" a magnet it still considers active
 /// (`MAGNET_PROCESSING`) — which is exactly the case for a stalled but still
 /// alive magnet. Retry then means "keep watching it", not "surface an error".
-fn is_already_processing(message: &str) -> bool {
+pub(crate) fn is_already_processing(message: &str) -> bool {
     message.contains("MAGNET_PROCESSING")
 }
 
