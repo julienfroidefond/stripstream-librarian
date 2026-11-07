@@ -53,6 +53,9 @@ pas seulement les volumes manquants.
 
 ## Déroulement
 
+Les torrents suivis sont automatiquement surveillés et importés ; aucun réglage d'import distinct
+n'est nécessaire, y compris pour les installations qui avaient désactivé l'ancien réglage.
+
 1. Stripstream envoie le magnet (ou le fichier `.torrent`) à AllDebrid.
 2. AllDebrid télécharge sur ses serveurs ; le nom du torrent, la progression, la vitesse, l'ETA et le
    nombre de seeders remontent dans l'historique. Le nom s'affiche sous la ligne de série, comme pour
@@ -61,6 +64,9 @@ pas seulement les volumes manquants.
    temporaire (`/downloads/sl-<id>`) puis le magnet est supprimé d'AllDebrid.
 4. L'import enchaîne le pipeline habituel : extraction des volumes, matching de série, nommage,
    déduplication par format, scan et refresh des métadonnées.
+
+Pendant la copie locale, la taille et le pourcentage concernent les fichiers de livre récupérés ;
+la vitesse et le temps restant sont estimés à partir du transfert vers votre serveur.
 
 La barre de progression peut sembler plafonner pendant la phase AllDebrid (souvent ~97 %) : le
 pourcentage de cette phase porte sur le **torrent complet**, alors qu'AllDebrid ne récupère en

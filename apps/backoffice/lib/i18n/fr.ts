@@ -1527,9 +1527,6 @@ const fr = {
   "settings.aiTest": "Tester la connexion",
   "settings.aiTesting": "Test en cours...",
   "settings.aiTestError": "Le test de connexion a échoué.",
-  "settings.torrentImportDesc": "Lorsqu'activé, les torrents ajoutés via le backoffice sont suivis et les fichiers sont automatiquement importés dans la bibliothèque à la fin du téléchargement.",
-  "settings.torrentImportEnabled": "Activer l'import automatique",
-  "settings.torrentImportPollingInfo": "L'API interroge qBittorrent toutes les 30 secondes pour détecter les téléchargements terminés. Aucune configuration supplémentaire dans qBittorrent n'est nécessaire.",
 
   // Reading lists
   "nav.readingLists": "Listes",

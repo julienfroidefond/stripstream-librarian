@@ -125,7 +125,7 @@ masse, avec archivage préalable. Voir [Séries orphelines](/series/orphans/).
 :::note[Détails techniques]
 **Lecture / écriture** : `GET /settings/{clé}` et `POST /settings/{clé}` sont des routes
 génériques — chaque clé est un réglage nommé (`image_processing`, `cache`, `limits`, `thumbnail`,
-`ai_tagging`, mais aussi `prowlarr`, `qbittorrent`, `alldebrid`, `torrent_import`, `telegram`,
+`ai_tagging`, mais aussi `prowlarr`, `qbittorrent`, `alldebrid`, `telegram`,
 `anilist`, `komga`, `metadata_providers`, `status-mappings`, `download_client`,
 `downloads_enabled`, `rename_format`…).
 Il n'existe pas de handler distinct par intégration.

@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SettingsCard, SettingsRow, FormInput, Icon, Switch } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { isClientConfigured } from "@/lib/downloadClient";
 import { TestConnectionButton } from "./TestConnectionButton";
 
-export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initialTorrentImport, onConfiguredChange }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialQbittorrent: Record<string, unknown> | null; initialTorrentImport: Record<string, unknown> | null; onConfiguredChange?: (configured: boolean) => void }) {
+export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onConfiguredChange }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialQbittorrent: Record<string, unknown> | null; onConfiguredChange?: (configured: boolean) => void }) {
   const { t } = useTranslation();
   const [qbUrl, setQbUrl] = useState(initialQbittorrent?.url ? String(initialQbittorrent.url) : "");
   const [qbUsername, setQbUsername] = useState(initialQbittorrent?.username ? String(initialQbittorrent.username) : "");
   const [qbPassword, setQbPassword] = useState(initialQbittorrent?.password ? String(initialQbittorrent.password) : "");
   const [enabled, setEnabled] = useState(initialQbittorrent?.enabled !== false);
-  const [importEnabled, setImportEnabled] = useState(initialTorrentImport?.enabled === true);
 
   // Keep the parent (download-client picker) in sync with the local edits.
   useEffect(() => {
@@ -93,26 +92,6 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
         />
       </div>
 
-      <div className="space-y-3 pt-2">
-        <SettingsRow label={t("settings.torrentImportEnabled")}>
-          <Switch
-            checked={importEnabled}
-            aria-label={t("settings.torrentImportEnabled")}
-            onChange={(e) => {
-              const val = e.target.checked;
-              setImportEnabled(val);
-              handleUpdateSetting("torrent_import", { enabled: val });
-            }}
-          />
-        </SettingsRow>
-
-        {importEnabled && (
-          <div className="flex items-start gap-2 rounded-xl bg-success/10 p-3">
-            <Icon name="check" size="sm" mono className="mt-0.5 shrink-0 text-success" />
-            <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
-          </div>
-        )}
-      </div>
     </SettingsCard>
   );
 }

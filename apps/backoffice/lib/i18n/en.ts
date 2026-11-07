@@ -1529,9 +1529,6 @@ const en: Record<TranslationKey, string> = {
   "settings.aiTest": "Test connection",
   "settings.aiTesting": "Testing...",
   "settings.aiTestError": "Connection test failed.",
-  "settings.torrentImportDesc": "When enabled, torrents added via the backoffice are tracked and files are automatically imported into the library when the download completes.",
-  "settings.torrentImportEnabled": "Enable auto import",
-  "settings.torrentImportPollingInfo": "The API polls qBittorrent every 30 seconds to detect completed downloads. No additional configuration in qBittorrent is required.",
 
   // Reading lists
   "nav.readingLists": "Lists",

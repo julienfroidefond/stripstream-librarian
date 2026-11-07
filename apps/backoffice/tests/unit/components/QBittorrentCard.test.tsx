@@ -5,7 +5,6 @@ import { QBittorrentCard } from "@/app/(app)/settings/components/QBittorrentCard
 
 function renderCard(
   initialQbittorrent: Record<string, unknown> | null = null,
-  initialTorrentImport: Record<string, unknown> | null = null,
   onConfiguredChange?: (configured: boolean) => void
 ) {
   const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
@@ -13,7 +12,6 @@ function renderCard(
     <QBittorrentCard
       handleUpdateSetting={handleUpdateSetting}
       initialQbittorrent={initialQbittorrent}
-      initialTorrentImport={initialTorrentImport}
       onConfiguredChange={onConfiguredChange}
     />
   );
@@ -21,7 +19,6 @@ function renderCard(
 }
 
 const enabledSwitch = () => screen.getByRole("checkbox", { name: "settings.qbittorrentEnabled" });
-const importSwitch = () => screen.getByRole("checkbox", { name: "settings.torrentImportEnabled" });
 
 describe("QBittorrentCard", () => {
   it("renders the title and empty defaults", () => {
@@ -29,15 +26,13 @@ describe("QBittorrentCard", () => {
 
     expect(screen.getByText("settings.qbittorrent")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder")).toHaveValue("");
-    // Enabled by default, auto-import off.
     expect(enabledSwitch()).toBeChecked();
-    expect(importSwitch()).not.toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "settings.torrentImportEnabled" })).not.toBeInTheDocument();
   });
 
   it("prefills the connection details", () => {
     renderCard(
-      { url: "http://qb:8080", username: "admin", password: "pw", enabled: true },
-      { enabled: true }
+      { url: "http://qb:8080", username: "admin", password: "pw", enabled: true }
     );
 
     expect(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder")).toHaveValue(
@@ -47,7 +42,6 @@ describe("QBittorrentCard", () => {
     expect(inputs).toHaveLength(1);
     expect(screen.getByDisplayValue("pw")).toBeInTheDocument();
     expect(enabledSwitch()).toBeChecked();
-    expect(importSwitch()).toBeChecked();
   });
 
   it("reflects a disabled client from the initial data", () => {
@@ -113,21 +107,6 @@ describe("QBittorrentCard", () => {
     expect(enabledSwitch()).not.toBeChecked();
   });
 
-  it("saves the torrent import toggle and reveals the polling info", () => {
-    const { handleUpdateSetting } = renderCard();
-
-    expect(screen.queryByText("settings.torrentImportPollingInfo")).toBeNull();
-
-    fireEvent.click(importSwitch());
-
-    expect(handleUpdateSetting).toHaveBeenCalledWith("torrent_import", { enabled: true });
-    expect(screen.getByText("settings.torrentImportPollingInfo")).toBeInTheDocument();
-
-    fireEvent.click(importSwitch());
-    expect(handleUpdateSetting).toHaveBeenLastCalledWith("torrent_import", { enabled: false });
-    expect(screen.queryByText("settings.torrentImportPollingInfo")).toBeNull();
-  });
-
   it("disables the test button until a URL and username are set", () => {
     renderCard();
     const button = screen.getByRole("button", { name: "settings.testConnection" });
@@ -148,7 +127,7 @@ describe("QBittorrentCard", () => {
 
   it("reports its usability to the parent", () => {
     const onConfiguredChange = vi.fn();
-    renderCard(null, null, onConfiguredChange);
+    renderCard(null, onConfiguredChange);
 
     expect(onConfiguredChange).toHaveBeenLastCalledWith(false);
 
