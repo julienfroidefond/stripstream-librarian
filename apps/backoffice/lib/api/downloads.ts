@@ -146,6 +146,7 @@ export type TorrentDownloadDto = {
   imported_files: Array<{ volume: number; source: string; destination: string; already_existed?: boolean }> | null;
   error_message: string | null;
   progress: number;
+  file_size: number | null;
   download_speed: number;
   eta: number;
   /** Peers seeding the torrent on the debrid service (`null` for qBittorrent). */

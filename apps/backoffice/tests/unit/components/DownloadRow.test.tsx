@@ -30,6 +30,7 @@ function torrentDownload(overrides: Partial<TorrentDownloadDto> = {}): TorrentDo
     imported_files: null,
     error_message: null,
     progress: 0,
+    file_size: null,
     download_speed: 0,
     eta: 0,
     seeders: null,
