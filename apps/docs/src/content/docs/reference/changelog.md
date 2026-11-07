@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.106 — 2026-11-07
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **backoffice** — cover authors and genres with metadata fixtures ([#240](https://github.com/julienfroidefond/stripstream-librarian/pull/240))
+
+</details>
+
 ## v3.32.105 — 2026-11-07
 
 <details>
