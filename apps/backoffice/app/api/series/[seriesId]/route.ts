@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
 
@@ -12,6 +12,10 @@ export const PATCH = withRoute(async (request: NextRequest, { params }: { params
     method: "PATCH",
     body: JSON.stringify(body),
   });
+  revalidatePath("/series");
+  revalidatePath(`/series/${seriesId}`);
+  revalidateTag("series", { expire: 0 });
+  revalidateTag(`series:${seriesId}`, { expire: 0 });
   return NextResponse.json(data);
 }, { fallback: "Failed to update series" });
 
