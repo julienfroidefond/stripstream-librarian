@@ -1,5 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
 
+/**
+ * Smoke coverage: every top-level page must render without a server error, a
+ * broken layout, or an uncaught JavaScript error.
+ *
+ * Feature-specific assertions live in the domain folders (`dashboard/`,
+ * `catalog/`, `metadata/`, `reading/`, `libraries/`, `acquisition/`,
+ * `operations/`, `admin/`).
+ */
+
 const ROUTES: Array<{ path: string; name: string }> = [
   { path: "/", name: "dashboard" },
   { path: "/series", name: "series" },
@@ -24,7 +33,7 @@ function collectPageErrors(page: Page): string[] {
   return errors;
 }
 
-test.describe("smoke — toutes les pages se rendent", () => {
+test.describe("shell — toutes les pages se rendent", () => {
   for (const route of ROUTES) {
     test(`${route.name} (${route.path})`, async ({ page }) => {
       const errors = collectPageErrors(page);
@@ -32,22 +41,10 @@ test.describe("smoke — toutes les pages se rendent", () => {
       const res = await page.goto(route.path, { waitUntil: "domcontentloaded" });
       expect(res?.status(), `HTTP ${route.path}`).toBeLessThan(400);
 
-      await expect(page.locator("header")).toBeVisible();
+      await expect(page.getByRole("banner")).toBeVisible();
       await expect(page.locator("main")).toBeVisible();
 
       expect(errors, `erreurs JS non capturées sur ${route.path}`).toEqual([]);
     });
   }
-
-  test("le menu de navigation principal est présent", async ({ page }) => {
-    await page.goto("/");
-    const nav = page.locator("header nav");
-    await expect(nav.getByRole("link")).toHaveCount(4);
-    await expect(nav.getByRole("button")).toHaveCount(2);
-  });
-
-  test("le dashboard affiche des statistiques", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator("main")).toContainText(/\d/);
-  });
 });

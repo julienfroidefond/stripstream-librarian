@@ -99,26 +99,40 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
 - Le test de `lib/i18n/context` appelle `vi.unmock("@/lib/i18n/context")` pour rétablir le vrai provider (le setup le mocke globalement).
 - Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
 - Importer explicitement `describe`/`it`/`expect`/`vi` depuis `vitest` (pas de globals).
-- La CI (`.gitea/workflows/deploy.yml`) lance `npm ci`, `tsc --noEmit`, `npm run lint` et `npm run test:unit` sur tout changement `apps/backoffice/`, avant tout build d'image.
+- La CI GitHub Actions (`.github/workflows/ci-web.yml` sur PR, `deploy.yml` avant le build
+  d'image sur `main`) lance `npm ci`, `tsc --noEmit`, `npm run lint` et `npm run test:unit` sur
+  tout changement `apps/backoffice/`.
 
 ## Tests E2E (Playwright)
 
-Smoke tests bout-en-bout dans `tests/e2e/`. Ils nécessitent l'API (7080), l'indexer et la base Postgres démarrés (la stack tourne sous Docker), et lisent `ADMIN_USERNAME`/`ADMIN_PASSWORD` depuis `.env.local`.
+Suite Playwright organisée par **domaines fonctionnels** dans `tests/e2e/` (la matrice
+fonctionnalité → spec → lacunes est dans `tests/e2e/README.md`). Elle nécessite l'API (7080),
+l'indexer et PostgreSQL (stack Docker), et lit `ADMIN_USERNAME`/`ADMIN_PASSWORD` ainsi que
+`API_BOOTSTRAP_TOKEN` dans `.env.local`.
 
 ```bash
 npm run test:e2e         # headless, réutilise le dev server sur 7082 s'il tourne
 npm run test:e2e:headed  # avec navigateur visible
 npm run test:e2e:ui      # mode UI Playwright
+npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 ```
 
-- `helpers.ts` expose `openFirstSeries(page)` (partagé par les specs).
-- `auth.setup.ts` se connecte via `/api/auth/login` et enregistre la session dans `tests/e2e/.auth/state.json` (ignoré par git). Il ajoute aussi un cookie `as_user_id` pour rendre les UI « utilisateur actif ».
-- `smoke.spec.ts` vérifie que chaque page se rend (HTTP < 400, `main`/`header` visibles, zéro `pageerror`).
-- `interactions.spec.ts` couvre `ui/Modal` (ouverture/Escape/bouton), `DeleteConfirmButton`, `MarkReadButton`, `TestConnectionButton`, `JobsIndicator`.
-- `flows.spec.ts` couvre la recherche de séries (`?q=`), l'ajout/retrait d'un tag dans le formulaire d'édition (sans enregistrer) et l'ouverture d'une modale via le menu d'actions.
-- `flows-business.spec.ts` couvre liste → détail pour les livres et les jobs, les filtres de `/downloads`, la navigation `/libraries` → séries et la navigation par onglets de `/settings` (jusqu'au formulaire de tokens).
-- Tests conditionnels : `test.skip(await locator.count() === 0, "raison")` quand une donnée ou une fonctionnalité n'est pas configurée (ex. provider de statut de lecture, base vide).
-- Cibler un test : `npx playwright test smoke.spec.ts -g "series"`. Débug : `npx playwright test --debug`.
+- Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
+  `acquisition/`, `operations/`, `admin/`.
+- `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
+  `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, enregistre la session
+  dans `tests/e2e/.auth/state.json` (ignoré par git) et ajoute le cookie `as_user_id`.
+- `support/api.ts` appelle directement l'API Rust avec `API_BOOTSTRAP_TOKEN` (feature flags,
+  nettoyage listes/tokens/users) ; `support/library.ts` seed une mini-bibliothèque de fixtures
+  (`E2E_SEED_LIBRARY=1`) et attend l'indexation ; `helpers.ts` expose `openFirstSeries`,
+  `uniqueName`, `escapeRegExp`.
+- Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
+  Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
+- `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`) ou une
+  donnée absente (auteurs, jobs) — jamais pour masquer une régression.
+- L'UI est en anglais par défaut ; seuls les libellés de `/login` sont en français.
+- La suite n'est **pas exécutée en CI** : elle se lance en local, sur la stack de dev, quand on
+  en a besoin. Le rapport HTML est écrit dans `tests/e2e/.report/` (ignoré par git).
 
 ## Gotchas
 
