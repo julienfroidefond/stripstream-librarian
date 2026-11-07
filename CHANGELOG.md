@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.105 — 2026-11-07
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **backoffice** — organize E2E suite by domain ([#239](https://github.com/julienfroidefond/stripstream-librarian/pull/239))
+
+</details>
+
 ## v3.32.104 — 2026-11-07
 
 ### Corrections
