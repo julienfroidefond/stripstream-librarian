@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.107 — 2026-11-07
+
+### Nouveautés
+
+- **series** — exposer la date de dernière lecture ([#242](https://github.com/julienfroidefond/stripstream-librarian/pull/242))
+
 ## v3.32.106 — 2026-11-07
 
 <details>
