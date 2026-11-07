@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.100 — 2026-11-07
+
+### Corrections
+
+- **downloads** — show direct download size and live progress ([#233](https://github.com/julienfroidefond/stripstream-librarian/pull/233))
+
 ## v3.32.99 — 2026-11-07
 
 ### Nouveautés
