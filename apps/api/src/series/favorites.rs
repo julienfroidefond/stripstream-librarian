@@ -30,6 +30,7 @@ pub async fn list_favorites(
         SELECT s.name, s.id AS series_id, s.library_id, s.status AS series_status,
                COUNT(b.id)::bigint AS book_count,
                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read')::bigint AS books_read_count,
+               MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) AS last_read_at,
                fb.id AS first_book_id, fb.updated_at AS first_book_updated_at,
                ml.provider AS metadata_provider, asl.anilist_id, asl.anilist_url,
                s.cover_url, s.start_year, COALESCE(s.genres, ARRAY[]::text[]) AS genres,
@@ -145,6 +146,7 @@ fn series_item_from_row(row: &sqlx::postgres::PgRow) -> SeriesItem {
         series_id: row.get("series_id"),
         book_count: row.get("book_count"),
         books_read_count: row.get("books_read_count"),
+        last_read_at: row.get("last_read_at"),
         first_book_id: row.get("first_book_id"),
         first_book_updated_at: row.get("first_book_updated_at"),
         library_id: row.get("library_id"),
@@ -171,6 +173,8 @@ mod tests {
         delete_series_rating, get_series_ratings, set_series_rating, SetRatingRequest,
     };
     use crate::state::test_state;
+    use chrono::{DateTime, Utc};
+
     async fn create_user(pool: &sqlx::PgPool, username: &str) -> Uuid {
         sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
             .bind(username)
@@ -198,6 +202,39 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    async fn create_book(pool: &sqlx::PgPool, series_id: Uuid, title: &str) -> Uuid {
+        sqlx::query_scalar(
+            "INSERT INTO books \
+                 (id, library_id, kind, title, series_id, volume, volume_type, authors, page_count) \
+             SELECT gen_random_uuid(), library_id, 'comic', $2, id, 1, 'regular', '{}', 10 \
+             FROM series WHERE id = $1 RETURNING id",
+        )
+        .bind(series_id)
+        .bind(title)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn set_read(
+        pool: &sqlx::PgPool,
+        book_id: Uuid,
+        user_id: Uuid,
+        last_read_at: DateTime<Utc>,
+    ) {
+        sqlx::query(
+            "INSERT INTO book_reading_progress \
+                 (book_id, user_id, status, last_read_at, updated_at) \
+             VALUES ($1, $2, 'read', $3, $3)",
+        )
+        .bind(book_id)
+        .bind(user_id)
+        .bind(last_read_at)
+        .execute(pool)
+        .await
+        .unwrap();
     }
 
     fn auth_user(user_id: Uuid) -> Option<Extension<AuthUser>> {
@@ -268,6 +305,36 @@ mod tests {
         assert_eq!(first_favorites.len(), 1);
         assert_eq!(first_favorites[0].series_id, series_id);
         assert!(second_favorites.is_empty());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn list_favorites_exposes_current_user_last_read_at(pool: sqlx::PgPool) {
+        let state = test_state(pool.clone());
+        let reader = create_user(&pool, "favorite-reader").await;
+        let other = create_user(&pool, "favorite-other").await;
+        let series_id = create_series(&pool, "Favorite series", &[]).await;
+        let vol1 = create_book(&pool, series_id, "Vol 1").await;
+        let vol2 = create_book(&pool, series_id, "Vol 2").await;
+
+        let reader_read = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let other_read = DateTime::parse_from_rfc3339("2026-02-01T10:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        set_read(&pool, vol1, reader, reader_read).await;
+        set_read(&pool, vol2, other, other_read).await;
+        add_favorite(State(state.clone()), auth_user(reader), Path(series_id))
+            .await
+            .unwrap();
+
+        let Json(favorites) = list_favorites(State(state), auth_user(reader))
+            .await
+            .unwrap();
+
+        assert_eq!(favorites.len(), 1);
+        assert_eq!(favorites[0].last_read_at, Some(reader_read));
+        assert_eq!(favorites[0].books_read_count, 1);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

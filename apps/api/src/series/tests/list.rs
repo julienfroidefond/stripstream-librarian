@@ -5,11 +5,16 @@
 //! and `total` semantics after the count/data queries were merged into one.
 
 use axum::extract::{Path, Query, State};
-use axum::Json;
+use axum::{Extension, Json};
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::super::{list_all_series, list_series, ListAllSeriesQuery, ListSeriesQuery};
+use super::super::{
+    get_series_by_id, list_all_series, list_series, ongoing_series, ListAllSeriesQuery,
+    ListSeriesQuery, OngoingQuery,
+};
+use crate::auth::AuthUser;
 use crate::state::test_state;
 
 async fn create_library(pool: &PgPool, name: &str) -> Uuid {
@@ -71,6 +76,41 @@ async fn create_book_with(
     .fetch_one(pool)
     .await
     .unwrap()
+}
+
+async fn create_user(pool: &PgPool, username: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO users (id, username) VALUES (gen_random_uuid(), $1) RETURNING id",
+    )
+    .bind(username)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn set_progress(
+    pool: &PgPool,
+    book_id: Uuid,
+    user_id: Uuid,
+    status: &str,
+    last_read_at: DateTime<Utc>,
+) {
+    sqlx::query(
+        "INSERT INTO book_reading_progress \
+             (book_id, user_id, status, last_read_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $4)",
+    )
+    .bind(book_id)
+    .bind(user_id)
+    .bind(status)
+    .bind(last_read_at)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn set_read(pool: &PgPool, book_id: Uuid, user_id: Uuid, last_read_at: DateTime<Utc>) {
+    set_progress(pool, book_id, user_id, "read", last_read_at).await;
 }
 
 fn series_query(page: Option<i64>, limit: Option<i64>) -> Query<ListSeriesQuery> {
@@ -243,6 +283,202 @@ async fn list_all_series_first_book_prefers_regular_then_lowest_volume(pool: PgP
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].book_count, 3);
     assert_eq!(page.items[0].first_book_id, Some(vol1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_exposes_latest_reading_activity(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let vol2 = create_book(&pool, library, series, "Vol 2").await;
+    let user = create_user(&pool, "reader").await;
+
+    let older = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let newer = DateTime::parse_from_rfc3339("2026-02-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, older).await;
+    set_read(&pool, vol2, user, newer).await;
+
+    let Json(page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].books_read_count, 2);
+    assert_eq!(page.items[0].last_read_at, Some(newer));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_last_read_at_is_user_scoped(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let vol2 = create_book(&pool, library, series, "Vol 2").await;
+    let alice = create_user(&pool, "alice").await;
+    let bob = create_user(&pool, "bob").await;
+
+    let alice_read = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let bob_read = DateTime::parse_from_rfc3339("2026-02-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, alice, alice_read).await;
+    set_read(&pool, vol2, bob, bob_read).await;
+
+    let Json(alice_page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: alice })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+    let Json(bob_page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: bob })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(alice_page.items[0].last_read_at, Some(alice_read));
+    assert_eq!(alice_page.items[0].books_read_count, 1);
+    assert_eq!(bob_page.items[0].last_read_at, Some(bob_read));
+    assert_eq!(bob_page.items[0].books_read_count, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_last_read_at_is_null_without_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(page) = list_all_series(State(state), None, all_query(None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(page.items[0].last_read_at, None);
+    assert_eq!(page.items[0].books_read_count, 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_last_read_at_ignores_unread_reset(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let vol2 = create_book(&pool, library, series, "Vol 2").await;
+    let user = create_user(&pool, "reader").await;
+
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let reset_at = DateTime::parse_from_rfc3339("2026-02-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+    set_progress(&pool, vol2, user, "unread", reset_at).await;
+
+    let Json(page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.items[0].last_read_at, Some(read_at));
+    assert_eq!(page.items[0].books_read_count, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_exposes_last_read_at_for_current_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(page) = list_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(library),
+        series_query(None, None),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.items[0].last_read_at, Some(read_at));
+    assert_eq!(page.items[0].books_read_count, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_by_id_exposes_last_read_at_for_current_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book(&pool, library, series, "Vol 1").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(item) = get_series_by_id(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(series),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(item.last_read_at, Some(read_at));
+    assert_eq!(item.books_read_count, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn ongoing_series_exposes_last_read_at_for_current_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(items) = ongoing_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(OngoingQuery { limit: None }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].last_read_at, Some(read_at));
+    assert_eq!(items[0].books_read_count, 1);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

@@ -98,5 +98,7 @@ Voir [AniList](/integrations/anilist/) et [Komga](/integrations/komga/) pour le 
 :::note[Détails techniques]
 Les états de lecture sont stockés par triplet `(book_id, user_id, status)` avec `last_read_at` mis à jour à chaque changement. La page courante est mémorisée pour l'état `reading`.
 
+Les réponses des endpoints `/series` (liste, favoris, série en cours, détails) exposent aussi un `last_read_at` par série : la date de la dernière activité de lecture (`read` ou `reading`) de l'utilisateur courant sur l'un des tomes. Un tome repassé en `unread` n'est pas pris en compte. `last_read_at` vaut `null` sans utilisateur authentifié ou si aucun tome n'a été lu.
+
 Quand une application externe (ex. KOReader, Panels) ouvre un livre via l'API, elle peut mettre à jour le statut et la page courante en temps réel.
 :::

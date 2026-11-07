@@ -291,6 +291,7 @@ pub async fn untagged_series(
             cover_url: r.get("cover_url"),
             book_count: r.get("book_count"),
             books_read_count: r.get("books_read_count"),
+            last_read_at: None,
             missing_count: r.get("missing_count"),
             metadata_provider: r.get("metadata_provider"),
             anilist_id: r.get("anilist_id"),
