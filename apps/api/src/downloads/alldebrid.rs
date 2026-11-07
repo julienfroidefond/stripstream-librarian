@@ -1161,7 +1161,7 @@ async fn record_inflight_progress(
     if live.downloaded > 0 {
         let result = sqlx::query(
             "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-             seeders = $4, file_size = NULLIF($6, 0), name = COALESCE($7, name), stall_started_at = NULL, updated_at = NOW() \
+             seeders = $4, file_size = COALESCE(NULLIF($6, 0), file_size), name = COALESCE($7, name), stall_started_at = NULL, updated_at = NOW() \
              WHERE id = $5 AND status = 'downloading'",
         )
         .bind(live.progress)
@@ -1181,7 +1181,7 @@ async fn record_inflight_progress(
 
     let stalled = sqlx::query_scalar::<_, DateTime<Utc>>(
         "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-         seeders = $4, file_size = NULLIF($6, 0), name = COALESCE($7, name), \
+         seeders = $4, file_size = COALESCE(NULLIF($6, 0), file_size), name = COALESCE($7, name), \
          stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
          WHERE id = $5 AND status = 'downloading' \
          RETURNING stall_started_at",
@@ -1796,12 +1796,21 @@ mod tests {
         // and a missing name must not overwrite the one already stored.
         let nameless = InflightProgress {
             name: None,
+            file_size: 0,
             ..stalled
         };
         let kept = record_inflight_progress(&pool, id, &nameless)
             .await
             .unwrap();
         assert_eq!(armed, kept);
+
+        let preserved_size: Option<i64> =
+            sqlx::query_scalar("SELECT file_size FROM torrent_downloads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(preserved_size, Some(10));
 
         // As soon as a byte arrives the marker is cleared and seeders stored.
         let moving = InflightProgress {
