@@ -25,6 +25,9 @@ Depuis la page d'une série ou la page Téléchargements, cliquez sur le bouton 
 
 ## Suivi et import automatique
 
+Le suivi et l'import des torrents gérés sont toujours actifs, même si l'ancien réglage d'import
+automatique avait été désactivé.
+
 Une fois le téléchargement terminé dans qBittorrent, Stripstream le détecte automatiquement et importe les fichiers dans votre bibliothèque :
 
 1. Les fichiers sont copiés dans le dossier de la série

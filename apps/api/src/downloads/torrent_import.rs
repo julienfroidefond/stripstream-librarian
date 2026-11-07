@@ -12,7 +12,6 @@ use uuid::Uuid;
 
 use stripstream_core::http::build_http_client;
 use stripstream_core::paths::normalize_lexically;
-use stripstream_core::settings::load_setting;
 
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
@@ -127,14 +126,6 @@ pub async fn notify_torrent_done(
     }
 
     let content_path = validate_torrent_content_path(&body.save_path)?;
-
-    if !is_torrent_import_enabled(&state.pool).await {
-        info!(
-            "Torrent import disabled, ignoring notification for hash {}",
-            body.hash
-        );
-        return Ok(Json(crate::responses::OkResponse::new()));
-    }
 
     let row = sqlx::query(
         "SELECT id FROM torrent_downloads \
@@ -432,10 +423,6 @@ pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
 
 /// Returns Ok(true) if there are active downloads, Ok(false) otherwise.
 async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
-    if !is_torrent_import_enabled(pool).await {
-        return Ok(false);
-    }
-
     let rows = sqlx::query(
         "SELECT id, qb_hash, created_at FROM torrent_downloads \
          WHERE status = 'downloading' AND client = 'qbittorrent'",
@@ -688,15 +675,6 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 }
 
 // ─── Import processing ────────────────────────────────────────────────────────
-
-pub(super) async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
-    load_setting::<serde_json::Value>(pool, "torrent_import")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()))
-        .unwrap_or(false)
-}
 
 pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
@@ -1018,6 +996,35 @@ use super::import_pipeline::{do_import, remap_downloads_path};
 mod content_path_tests {
     use super::*;
     use axum::http::StatusCode;
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn poller_ignores_legacy_import_setting(pool: PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')",
+        )
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO torrent_downloads (library_id, series_name, client, status) VALUES ($1, 'Test', 'qbittorrent', 'downloading')")
+            .bind(library_id).execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM app_settings WHERE key = 'qbittorrent'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for legacy in [None, Some(false)] {
+            sqlx::query("DELETE FROM app_settings WHERE key = 'torrent_import'")
+                .execute(&pool)
+                .await
+                .unwrap();
+            if legacy.is_some() {
+                sqlx::query("INSERT INTO app_settings (key, value) VALUES ('torrent_import', '{\"enabled\":false}')").execute(&pool).await.unwrap();
+            }
+            let err = poll_qbittorrent_downloads(&pool).await.unwrap_err();
+            assert!(err.to_string().contains("qBittorrent config"));
+        }
+    }
 
     #[test]
     fn accepts_paths_inside_downloads_root() {

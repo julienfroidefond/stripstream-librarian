@@ -38,9 +38,10 @@ use super::qbittorrent::{
     extract_magnet_hash, infer_managed_context, resolve_torrent_url, QBittorrentAddRequest,
     QBittorrentAddResponse, QBittorrentTestResponse, ResolvedTorrent,
 };
+use super::rate::TransferRate;
 use super::settings::DownloadSettings;
 use super::target::{sanitize_filename, DownloadProgress};
-use super::torrent_import::{is_torrent_import_enabled, process_torrent_import};
+use super::torrent_import::process_torrent_import;
 use crate::error::ApiError;
 use crate::responses::OkResponse;
 use crate::state::AppState;
@@ -983,7 +984,7 @@ async fn poll_alldebrid_downloads(
     fetch_attempts: &mut HashMap<Uuid, u32>,
     settings: &DownloadSettings,
 ) -> anyhow::Result<PollOutcome> {
-    if !alldebrid_enabled(pool).await || !is_torrent_import_enabled(pool).await {
+    if !alldebrid_enabled(pool).await {
         return Ok(PollOutcome {
             active: false,
             status_errors: 0,
@@ -1338,9 +1339,16 @@ async fn download_files_to(
         .await
         .with_context(|| format!("cannot create staging directory {}", staging_dir.display()))?;
 
-    let total: i64 = files.iter().map(|f| f.size.max(0)).sum();
+    let total: i64 = if files.iter().all(|f| f.size > 0) {
+        files.iter().map(|f| f.size).sum()
+    } else {
+        0
+    };
     let mut progress = DownloadProgress::new();
+    let mut rate = TransferRate::new();
+    let mut last_sample = std::time::Instant::now();
     let mut used_names: HashSet<String> = HashSet::new();
+    report_progress(pool, tid, 0, total, &rate).await;
 
     for (index, file) in files.iter().enumerate() {
         let link = resolve_unlocked_link(client, &file.link).await?;
@@ -1372,7 +1380,11 @@ async fn download_files_to(
                 .await
                 .with_context(|| format!("cannot write to {}", tmp.display()))?;
             if let Some(written) = progress.advance(chunk.len() as i64) {
-                report_progress(pool, tid, written, total).await;
+                if last_sample.elapsed() >= Duration::from_secs(1) {
+                    rate.sample(written);
+                    last_sample = std::time::Instant::now();
+                }
+                report_progress(pool, tid, written, total, &rate).await;
             }
         }
         out.flush()
@@ -1381,7 +1393,11 @@ async fn download_files_to(
         tokio::fs::rename(&tmp, &dest)
             .await
             .with_context(|| format!("cannot move {} into place", tmp.display()))?;
-        report_progress(pool, tid, progress.written(), total).await;
+        if last_sample.elapsed() >= Duration::from_secs(1) {
+            rate.sample(progress.written());
+            last_sample = std::time::Instant::now();
+        }
+        report_progress(pool, tid, progress.written(), total, &rate).await;
     }
 
     Ok(())
@@ -1441,17 +1457,27 @@ fn unique_name(original: &str, index: usize, used: &mut HashSet<String>) -> Stri
     fallback
 }
 
-async fn report_progress(pool: &PgPool, tid: Uuid, written: i64, total: i64) {
+async fn report_progress(pool: &PgPool, tid: Uuid, written: i64, total: i64, rate: &TransferRate) {
     let fraction = if total > 0 {
         (written as f64 / total as f64).clamp(0.0, 1.0) as f32
     } else {
         0.0
     };
+    let speed = rate.speed();
+    let eta = if total > written && speed > 0 {
+        ((total - written) as f64 / speed as f64).ceil() as i64
+    } else {
+        0
+    };
     if let Err(e) = sqlx::query(
-        "UPDATE torrent_downloads SET progress = $1, updated_at = NOW() \
-         WHERE id = $2 AND status = 'downloading'",
+        "UPDATE torrent_downloads SET progress = $1, file_size = NULLIF($2, 0), \
+         download_speed = $3, eta = $4, updated_at = NOW() \
+         WHERE id = $5 AND status = 'downloading'",
     )
     .bind(fraction)
+    .bind(total)
+    .bind(speed)
+    .bind(eta)
     .bind(tid)
     .execute(pool)
     .await
@@ -1681,6 +1707,28 @@ mod tests {
             .await
             .unwrap();
         library_id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn poller_ignores_legacy_import_setting(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        sqlx::query("INSERT INTO torrent_downloads (library_id, series_name, client, status, external_id) VALUES ($1, 'Test', 'alldebrid', 'downloading', '42')")
+            .bind(library_id).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE app_settings SET value = '{\"enabled\":true,\"api_key\":\"\"}' WHERE key = 'alldebrid'")
+            .execute(&pool).await.unwrap();
+        for legacy in [None, Some(false)] {
+            sqlx::query("DELETE FROM app_settings WHERE key = 'torrent_import'")
+                .execute(&pool)
+                .await
+                .unwrap();
+            if legacy.is_some() {
+                sqlx::query("INSERT INTO app_settings (key, value) VALUES ('torrent_import', '{\"enabled\":false}')").execute(&pool).await.unwrap();
+            }
+            let result =
+                poll_alldebrid_downloads(&pool, &mut HashMap::new(), &DownloadSettings::default())
+                    .await;
+            assert!(result.err().unwrap().to_string().contains("API key"));
+        }
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
@@ -2015,6 +2063,32 @@ mod tests {
         .await
         .unwrap();
         id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn local_transfer_reports_size_speed_and_eta(pool: PgPool) {
+        let id = seed_downloading_row(&pool).await;
+        let mut rate = TransferRate::new();
+        rate.sample_after(400, Duration::from_secs(2));
+        report_progress(&pool, id, 500, 1000, &rate).await;
+
+        let (progress, size, speed, eta): (f32, Option<i64>, i64, i64) = sqlx::query_as(
+            "SELECT progress, file_size, download_speed, eta FROM torrent_downloads WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((progress, size, speed, eta), (0.5, Some(1000), 200, 3));
+
+        report_progress(&pool, id, 500, 0, &rate).await;
+        let (size, eta): (Option<i64>, i64) =
+            sqlx::query_as("SELECT file_size, eta FROM torrent_downloads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!((size, eta), (None, 0));
     }
 
     /// Mount `/v4/link/unlock` so it hands out a link to `file_path` on the

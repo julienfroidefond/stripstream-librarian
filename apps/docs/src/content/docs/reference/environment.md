@@ -41,6 +41,7 @@ Exemples :
 
 :::note[Détails techniques]
 Les chemins de fichiers stockés en base de données commencent par `/libraries/` (et `/downloads` pour les téléchargements). En développement local sans Docker, définissez `LIBRARIES_ROOT_PATH` et `DOWNLOADS_PATH` pour pointer vers les dossiers réels.
+Le script `scripts/dev-local.sh` utilise par défaut le dossier `downloads` à la racine du projet et le crée au démarrage ; `DOWNLOADS_PATH` permet de choisir un autre emplacement.
 
 Le répertoire du cache de pages et les réglages des miniatures (format, dimensions, qualité, répertoire) se modifient **à chaud** dans **Paramètres → Images & cache** : ces valeurs en base prennent le dessus sur `IMAGE_CACHE_DIR`, qui ne sert que de repli au premier démarrage. Les variables `THUMBNAIL_*` ne pilotent pas la génération des miniatures — configurez-les dans l'interface.
 :::

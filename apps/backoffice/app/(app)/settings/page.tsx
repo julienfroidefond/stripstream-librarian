@@ -30,7 +30,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
   const { tab, created: createdToken } = await searchParams;
   // The reading overview moved out of Settings into its own top-level page.
   if (tab === "readingOverview") redirect("/progress");
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, alldebrid, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, downloadClientSetting, libraries] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, alldebrid, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, downloadClientSetting, libraries] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
@@ -44,7 +44,6 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     apiFetch<Record<string, unknown>>("/settings/prowlarr").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/qbittorrent").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/alldebrid").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/torrent_import").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/telegram").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/anilist").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/komga").catch(() => null),
@@ -80,7 +79,6 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialProwlarr={prowlarr}
       initialQbittorrent={qbittorrent}
       initialAlldebrid={alldebrid}
-      initialTorrentImport={torrentImport}
       initialTelegram={telegram}
       initialAnilist={anilist}
       initialKomga={komga}

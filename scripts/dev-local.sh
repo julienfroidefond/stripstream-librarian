@@ -15,6 +15,11 @@ if [ -f "$ROOT/.env" ]; then
 fi
 export DATABASE_URL="$DB_URL"     # priorité sur le .env (postgres → localhost)
 export API_BASE_URL="http://localhost:7080"
+export DOWNLOADS_PATH="${DOWNLOADS_PATH:-$ROOT/downloads}"
+mkdir -p "$DOWNLOADS_PATH"
+if [ -f "$ROOT/data/pdfium/lib/libpdfium.dylib" ]; then
+  export DYLD_LIBRARY_PATH="$ROOT/data/pdfium/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
 
 # ─── Postgres ────────────────────────────────────────────────────────────────
 echo "==> Starting postgres..."

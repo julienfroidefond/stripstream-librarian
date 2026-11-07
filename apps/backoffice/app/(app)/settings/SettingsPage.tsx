@@ -36,7 +36,6 @@ interface SettingsPageProps {
   initialProwlarr: Record<string, unknown> | null;
   initialQbittorrent: Record<string, unknown> | null;
   initialAlldebrid: Record<string, unknown> | null;
-  initialTorrentImport: Record<string, unknown> | null;
   initialTelegram: Record<string, unknown> | null;
   initialAnilist: Record<string, unknown> | null;
   initialKomga: Record<string, unknown> | null;
@@ -55,7 +54,7 @@ interface SettingsPageProps {
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialDownloadClient, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialDownloadClient, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -636,7 +635,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             />
             <SettingsColumns>
               <SettingsColumn>
-                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} onConfiguredChange={setQbConfigured} />
+                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} onConfiguredChange={setQbConfigured} />
               </SettingsColumn>
               <SettingsColumn>
                 <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} limits={settings.limits} onSaveLimits={saveDownloadLimits} onConfiguredChange={setAlldebridConfigured} />
