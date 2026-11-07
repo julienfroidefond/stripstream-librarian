@@ -26,6 +26,8 @@ pub async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<
         "UPDATE telegram_book_links b
          SET status = 'available',
              bytes_downloaded = 0,
+             download_speed = 0,
+             eta = 0,
              error_message = NULL,
              updated_at = NOW()
          FROM telegram_sources src
@@ -295,7 +297,7 @@ pub async fn list_downloads(
 
     let rows = sqlx::query(
         "SELECT b.id, b.series_name, src.channel_username, b.filename, b.file_size,
-                b.bytes_downloaded, b.volume_number, b.status, b.error_message, b.created_at, b.updated_at,
+                b.bytes_downloaded, b.download_speed, b.eta, b.volume_number, b.status, b.error_message, b.created_at, b.updated_at,
                 COALESCE(b.library_id, src.library_id) AS resolved_library_id,
                 l.name AS library_name,
                 sr.id AS series_id
@@ -325,6 +327,8 @@ pub async fn list_downloads(
             filename: r.get("filename"),
             file_size: r.get("file_size"),
             bytes_downloaded: r.get::<i64, _>("bytes_downloaded"),
+            download_speed: r.get::<i64, _>("download_speed"),
+            eta: r.get::<i64, _>("eta"),
             volume_number: r.get("volume_number"),
             status: r.get("status"),
             error_message: r.get("error_message"),
@@ -407,7 +411,7 @@ pub async fn download_book(
 
     // Mark as queued (will switch to 'downloading' once the semaphore permit is acquired)
     sqlx::query(
-        "UPDATE telegram_book_links SET status = 'queued', bytes_downloaded = 0, updated_at = NOW() WHERE id = $1",
+        "UPDATE telegram_book_links SET status = 'queued', bytes_downloaded = 0, download_speed = 0, eta = 0, updated_at = NOW() WHERE id = $1",
     )
     .bind(id)
     .execute(&state.pool)
@@ -538,7 +542,7 @@ pub async fn do_download(
         .collect();
 
     let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(&tmp_path, total_size).await?);
-    let reporter = Arc::new(LinkProgress::new(pool.clone(), link_id));
+    let reporter = Arc::new(LinkProgress::new(pool.clone(), link_id, total_size));
 
     let result = download_ranged(
         fetchers,
@@ -570,7 +574,7 @@ pub async fn do_download(
 
     // Mark imported
     sqlx::query(
-        "UPDATE telegram_book_links SET status = 'imported', error_message = NULL, updated_at = NOW() WHERE id = $1",
+        "UPDATE telegram_book_links SET status = 'imported', download_speed = 0, eta = 0, error_message = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(link_id)
     .execute(&pool)
@@ -615,7 +619,7 @@ pub async fn dismiss_book(
             .await?;
     } else {
         sqlx::query(
-            "UPDATE telegram_book_links SET status = 'dismissed', updated_at = NOW() WHERE id = $1",
+            "UPDATE telegram_book_links SET status = 'dismissed', download_speed = 0, eta = 0, updated_at = NOW() WHERE id = $1",
         )
         .bind(id)
         .execute(&state.pool)

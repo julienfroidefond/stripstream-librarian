@@ -163,6 +163,16 @@ describe("DownloadsIndicator", () => {
     expect(badgeCount()).toBe(3);
   });
 
+  it("shows the transfer rate and ETA of a DDL download", () => {
+    render(<DownloadsIndicator />);
+
+    emit({ ddl: [ddlDownload({ download_speed: 1_500_000, eta: 90 })] });
+    fireEvent.click(screen.getByTitle(/downloadsIndicator\.downloadCount/));
+
+    expect(screen.getByText("1.4 MB/s")).toBeInTheDocument();
+    expect(screen.getByText("ETA 1m30s")).toBeInTheDocument();
+  });
+
   it("drops DDL downloads once they are imported", () => {
     render(<DownloadsIndicator />);
 

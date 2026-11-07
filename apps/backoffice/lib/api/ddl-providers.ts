@@ -56,6 +56,8 @@ export type DdlProviderDownloadDto = {
   filename: string;
   file_size: number | null;
   bytes_downloaded: number;
+  download_speed: number;
+  eta: number;
   series_name: string | null;
   series_id: string | null;
   volume_number: number | null;

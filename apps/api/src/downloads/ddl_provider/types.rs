@@ -94,6 +94,10 @@ pub struct DdlProviderDownloadDto {
     pub filename: String,
     pub file_size: Option<i64>,
     pub bytes_downloaded: i64,
+    /// Smoothed transfer rate in bytes per second.
+    pub download_speed: i64,
+    /// Remaining seconds, `0` when it cannot be estimated.
+    pub eta: i64,
     pub series_name: Option<String>,
     pub series_id: Option<String>,
     pub volume_number: Option<i32>,

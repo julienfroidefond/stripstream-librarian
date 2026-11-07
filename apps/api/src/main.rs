@@ -717,7 +717,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Reset downloads that were left in 'downloading' state by a previous server run
     if let Err(e) = sqlx::query(
-        "UPDATE telegram_book_links SET status = 'available', bytes_downloaded = 0, error_message = NULL, updated_at = NOW() WHERE status = 'downloading'",
+        "UPDATE telegram_book_links SET status = 'available', bytes_downloaded = 0, download_speed = 0, eta = 0, error_message = NULL, updated_at = NOW() WHERE status = 'downloading'",
     )
     .execute(&state.pool)
     .await {

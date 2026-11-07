@@ -714,8 +714,17 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
               <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+                {item.download_speed > 0 && <>{" · "}{formatSpeed(item.download_speed)}</>}
+                {item.eta > 0 && item.eta < 8640000 && <>{" · ETA "}{formatEta(item.eta)}</>}
               </p>
             </div>
+          )}
+          {item.status === "downloading" && (!item.file_size || item.file_size <= 0) && (item.download_speed > 0 || item.eta > 0) && (
+            <p className="mt-1 text-3xs text-muted-foreground tabular-nums">
+              {item.download_speed > 0 && formatSpeed(item.download_speed)}
+              {item.download_speed > 0 && item.eta > 0 && item.eta < 8640000 && " · "}
+              {item.eta > 0 && item.eta < 8640000 && <>ETA {formatEta(item.eta)}</>}
+            </p>
           )}
           {item.error_message && (
             <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
@@ -896,8 +905,17 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
               <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+                {item.download_speed > 0 && <>{" · "}{formatSpeed(item.download_speed)}</>}
+                {item.eta > 0 && item.eta < 8640000 && <>{" · ETA "}{formatEta(item.eta)}</>}
               </p>
             </div>
+          )}
+          {item.status === "downloading" && (!item.file_size || item.file_size <= 0) && (item.download_speed > 0 || item.eta > 0) && (
+            <p className="mt-1 text-3xs text-muted-foreground tabular-nums">
+              {item.download_speed > 0 && formatSpeed(item.download_speed)}
+              {item.download_speed > 0 && item.eta > 0 && item.eta < 8640000 && " · "}
+              {item.eta > 0 && item.eta < 8640000 && <>ETA {formatEta(item.eta)}</>}
+            </p>
           )}
           {item.error_message && (
             <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>

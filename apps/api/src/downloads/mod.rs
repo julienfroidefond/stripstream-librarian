@@ -11,6 +11,7 @@ mod missing;
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod ranged;
+pub mod rate;
 pub mod rss_poll;
 pub mod settings;
 mod store;
