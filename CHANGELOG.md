@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.104 — 2026-11-07
+
+### Corrections
+
+- **downloads** — always show download-missing and replace buttons ([#238](https://github.com/julienfroidefond/stripstream-librarian/pull/238))
+
 ## v3.32.103 — 2026-11-07
 
 ### Corrections
