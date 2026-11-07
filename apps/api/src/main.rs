@@ -716,12 +716,8 @@ async fn main() -> anyhow::Result<()> {
         ));
 
     // Reset downloads that were left in 'downloading' state by a previous server run
-    if let Err(e) = sqlx::query(
-        "UPDATE telegram_book_links SET status = 'available', bytes_downloaded = 0, download_speed = 0, eta = 0, error_message = NULL, updated_at = NOW() WHERE status = 'downloading'",
-    )
-    .execute(&state.pool)
-    .await {
-        tracing::warn!("Failed to reset stale telegram downloads: {e}");
+    if let Err(e) = downloads::recovery::reset_stale_downloads(&state.pool).await {
+        tracing::warn!("Failed to reset stale downloads: {e}");
     }
 
     // Mark API jobs left running by a previous process as failed
