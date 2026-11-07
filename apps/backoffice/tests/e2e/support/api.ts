@@ -8,6 +8,7 @@ import { loadEnvLocal } from "../env";
  * without going through the UI under test.
  */
 
+export type ReadingStatus = "unread" | "reading" | "read";
 export type ReadingListSummary = { id: string; name: string };
 export type TokenSummary = { id: string; name: string; revoked_at?: string | null };
 export type UserSummary = { id: string; username: string };
@@ -23,6 +24,23 @@ export type ArchivedSeriesSummary = {
   id: string;
   name: string;
   library_id?: string | null;
+};
+export type BookSummary = {
+  id: string;
+  title: string;
+  reading_status: ReadingStatus;
+  reading_current_page: number | null;
+};
+export type BooksPageSummary = {
+  items: BookSummary[];
+  total: number;
+  page: number;
+  limit: number;
+};
+export type ReadingProgressSummary = {
+  status: ReadingStatus;
+  current_page: number | null;
+  last_read_at: string | null;
 };
 
 /** Erreur HTTP de l'API, avec le statut pour permettre des replis ciblés. */
@@ -60,7 +78,7 @@ export function bootstrapToken(): string {
 
 export async function apiRequest<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {}
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
 ): Promise<T> {
   const method = options.method ?? "GET";
   const res = await fetch(`${apiBaseUrl()}${path}`, {
@@ -68,6 +86,7 @@ export async function apiRequest<T>(
     headers: {
       Authorization: `Bearer ${bootstrapToken()}`,
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...options.headers,
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -131,6 +150,12 @@ export async function deleteUsersByUsername(username: string): Promise<void> {
   );
 }
 
+/** Exact username lookup; the admin users endpoint returns every account. */
+export async function findUserByUsername(username: string): Promise<UserSummary | null> {
+  const users = await apiRequest<UserSummary[]>("/admin/users");
+  return users.find((user) => user.username === username) ?? null;
+}
+
 // ─── Bibliothèques ───────────────────────────────────────────────────────────
 
 export async function listLibraries(): Promise<LibrarySummary[]> {
@@ -174,4 +199,42 @@ export async function deleteSeries(id: string): Promise<void> {
 
 export async function listArchivedSeries(): Promise<ArchivedSeriesSummary[]> {
   return apiRequest<ArchivedSeriesSummary[]>("/admin/series/archived");
+}
+
+// ─── Lecture ─────────────────────────────────────────────────────────────────
+
+/** List books as seen by a reader (X-As-User), default title order. */
+export async function listBooksForUser(
+  userId: string,
+  options: { limit?: number; sort?: "title" | "latest" } = {}
+): Promise<BooksPageSummary> {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 50) });
+  if (options.sort) params.set("sort", options.sort);
+  return apiRequest<BooksPageSummary>(`/books?${params.toString()}`, {
+    headers: { "X-As-User": userId },
+  });
+}
+
+export async function getBookReadingProgress(
+  bookId: string,
+  userId: string
+): Promise<ReadingProgressSummary> {
+  return apiRequest<ReadingProgressSummary>(`/books/${bookId}/progress`, {
+    headers: { "X-As-User": userId },
+  });
+}
+
+export async function updateBookReadingProgress(
+  bookId: string,
+  userId: string,
+  status: ReadingStatus,
+  currentPage?: number
+): Promise<ReadingProgressSummary> {
+  const body: { status: ReadingStatus; current_page?: number } = { status };
+  if (currentPage !== undefined) body.current_page = currentPage;
+  return apiRequest<ReadingProgressSummary>(`/books/${bookId}/progress`, {
+    method: "PATCH",
+    headers: { "X-As-User": userId },
+    body,
+  });
 }
