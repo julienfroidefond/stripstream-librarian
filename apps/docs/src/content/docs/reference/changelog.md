@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.99 — 2026-11-07
+
+### Nouveautés
+
+- **downloads** — afficher la vitesse et l'ETA Telegram/DDL ([#232](https://github.com/julienfroidefond/stripstream-librarian/pull/232))
+
 ## v3.32.98 — 2026-11-06
 
 <details>
