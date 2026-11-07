@@ -8,6 +8,19 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.103 — 2026-11-07
+
+### Corrections
+
+- track and import torrent downloads automatically ([#236](https://github.com/julienfroidefond/stripstream-librarian/pull/236))
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- run CodeQL after merge ([#237](https://github.com/julienfroidefond/stripstream-librarian/pull/237))
+
+</details>
+
 ## v3.32.102 — 2026-11-07
 
 ### Corrections
