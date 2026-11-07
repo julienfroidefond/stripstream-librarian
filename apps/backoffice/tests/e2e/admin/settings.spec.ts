@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const TABS: Array<{ id: string; label: string; marker?: string }> = [
+const TABS: Array<{ id: string; label: string; marker?: string | RegExp }> = [
   { id: "general", label: "General" },
   { id: "media", label: "Images & Cache" },
   { id: "downloadTools", label: "Download Tools" },
@@ -9,7 +9,9 @@ const TABS: Array<{ id: string; label: string; marker?: string }> = [
   { id: "readingStatus", label: "Reading Status" },
   { id: "notifications", label: "Notifications" },
   { id: "tokens", label: "Tokens", marker: "API Tokens" },
-  { id: "archives", label: "Archives", marker: "No archived series." },
+  // Match both the empty state and the count description so transient archives
+  // created by the metadata fixtures never make this tab flaky.
+  { id: "archives", label: "Archives", marker: /archived series/i },
   { id: "orphans", label: "Orphan series", marker: "Orphan series" },
 ];
 
@@ -29,7 +31,8 @@ test.describe("paramètres — navigation par onglets", () => {
       await expect(button).toHaveAttribute("aria-current", "page");
 
       if (tab.marker) {
-        await expect(page.locator("main").getByText(tab.marker, { exact: true }).first()).toBeVisible();
+        const options = typeof tab.marker === "string" ? { exact: true } : undefined;
+        await expect(page.locator("main").getByText(tab.marker, options).first()).toBeVisible();
       }
     }
   });

@@ -4,6 +4,7 @@ import { test as setup, expect, type APIRequestContext } from "@playwright/test"
 
 import { getAdminCredentials, loadEnvLocal } from "./env";
 import { isLibrarySeedingEnabled, seedLibrary } from "./support/library";
+import { prepareMetadataLibrary } from "./support/metadata";
 
 const authFile = path.resolve(__dirname, ".auth/state.json");
 
@@ -108,6 +109,7 @@ setup("authenticate", async ({ request }) => {
   const { baseUrl, token } = resolveApi();
   const reader = await ensureReaderUser(request, baseUrl, token);
   await cleanupPreviousRuns(request, baseUrl, token);
+  await prepareMetadataLibrary();
 
   if (isLibrarySeedingEnabled()) {
     await seedLibrary(request, baseUrl, token);

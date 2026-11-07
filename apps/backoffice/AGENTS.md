@@ -120,16 +120,19 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
-  `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, enregistre la session
-  dans `tests/e2e/.auth/state.json` (ignoré par git) et ajoute le cookie `as_user_id`.
+  `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée la bibliothèque
+  temporaire `e2e-metadata`, enregistre la session dans `tests/e2e/.auth/state.json` (ignoré par
+  git) et ajoute le cookie `as_user_id`.
+- `global-teardown.ts` supprime `e2e-metadata` et purge ses archives en fin de run.
 - `support/api.ts` appelle directement l'API Rust avec `API_BOOTSTRAP_TOKEN` (feature flags,
-  nettoyage listes/tokens/users) ; `support/library.ts` seed une mini-bibliothèque de fixtures
-  (`E2E_SEED_LIBRARY=1`) et attend l'indexation ; `helpers.ts` expose `openFirstSeries`,
-  `uniqueName`, `escapeRegExp`.
+  nettoyage listes/tokens/users, CRUD bibliothèques/séries) ; `support/library.ts` seed une
+  mini-bibliothèque de fixtures (`E2E_SEED_LIBRARY=1`) et attend l'indexation ;
+  `support/metadata.ts` crée des séries éphémères avec auteurs/genres uniques dans
+  `e2e-metadata` ; `helpers.ts` expose `openFirstSeries`, `uniqueName`, `escapeRegExp`.
 - Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
   Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
 - `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`) ou une
-  donnée absente (auteurs, jobs) — jamais pour masquer une régression.
+  donnée absente (livres, jobs, bibliothèques) — jamais pour masquer une régression.
 - L'UI est en anglais par défaut ; seuls les libellés de `/login` sont en français.
 - La suite n'est **pas exécutée en CI** : elle se lance en local, sur la stack de dev, quand on
   en a besoin. Le rapport HTML est écrit dans `tests/e2e/.report/` (ignoré par git).

@@ -4,6 +4,7 @@ const baseURL = process.env.E2E_BASE_URL || "http://localhost:7082";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
