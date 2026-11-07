@@ -70,6 +70,8 @@ export type TelegramDownloadItemDto = {
   filename: string;
   file_size: number | null;
   bytes_downloaded: number;
+  download_speed: number;
+  eta: number;
   volume_number: number | null;
   status: "queued" | "downloading" | "imported" | "failed";
   error_message: string | null;

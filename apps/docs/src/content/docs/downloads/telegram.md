@@ -53,7 +53,7 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 | Statut | Description |
 |--------|-------------|
 | **En attente** | En file d'attente (icône horloge) |
-| **Téléchargement** | En cours depuis Telegram (barre de progression) |
+| **Téléchargement** | En cours depuis Telegram (barre de progression, vitesse et ETA) |
 | **Importé** | Fichier copié dans la bibliothèque |
 | **Erreur** | Échec du téléchargement ou de la copie |
 

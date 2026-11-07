@@ -34,6 +34,8 @@ interface TelegramDownload {
   filename: string;
   file_size: number | null;
   bytes_downloaded: number;
+  download_speed?: number;
+  eta?: number;
   volume_number: number | null;
   status: "downloading" | "imported" | "failed";
   error_message: string | null;
@@ -45,6 +47,8 @@ interface DdlProviderDownload {
   filename: string;
   file_size: number | null;
   bytes_downloaded: number;
+  download_speed?: number;
+  eta?: number;
   series_name: string | null;
   series_id: string | null;
   library_id: string | null;
@@ -84,8 +88,8 @@ function normalizeTelegramDownload(download: TelegramDownload): Download {
     expected_volumes: download.volume_number != null ? [download.volume_number] : [],
     status: download.status === "failed" ? "error" : download.status,
     progress,
-    download_speed: 0,
-    eta: 0,
+    download_speed: download.download_speed ?? 0,
+    eta: download.eta ?? 0,
     error_message: download.error_message,
   };
 }
@@ -107,8 +111,8 @@ function normalizeDdlDownload(download: DdlProviderDownload): Download {
     expected_volumes: download.volume_number != null ? [download.volume_number] : [],
     status: download.status === "downloading" ? "downloading" : "queued",
     progress,
-    download_speed: 0,
-    eta: 0,
+    download_speed: download.download_speed ?? 0,
+    eta: download.eta ?? 0,
     error_message: download.error_message,
   };
 }

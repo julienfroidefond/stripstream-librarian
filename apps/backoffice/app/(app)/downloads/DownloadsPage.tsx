@@ -620,6 +620,22 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
   );
 }
 
+/** True when a download has a rate or an ETA worth showing. */
+function hasTransferStats(speed: number, eta: number): boolean {
+  return speed > 0 || formatEta(eta) !== "";
+}
+
+/** Speed + ETA fragment shared by the Telegram and DDL download rows. */
+function TransferStats({ speed, eta }: { speed: number; eta: number }) {
+  const etaLabel = formatEta(eta);
+  return (
+    <>
+      {speed > 0 && <>{formatSpeed(speed)}{etaLabel && " · "}</>}
+      {etaLabel && <>ETA {etaLabel}</>}
+    </>
+  );
+}
+
 function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDto; onRefresh: () => void }) {
   const { t } = useTranslation();
   const [retrying, setRetrying] = useState(false);
@@ -714,8 +730,16 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
               <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+                {hasTransferStats(item.download_speed, item.eta) && (
+                  <>{" · "}<TransferStats speed={item.download_speed} eta={item.eta} /></>
+                )}
               </p>
             </div>
+          )}
+          {item.status === "downloading" && (!item.file_size || item.file_size <= 0) && hasTransferStats(item.download_speed, item.eta) && (
+            <p className="mt-1 text-3xs text-muted-foreground tabular-nums">
+              <TransferStats speed={item.download_speed} eta={item.eta} />
+            </p>
           )}
           {item.error_message && (
             <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
@@ -896,8 +920,16 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
               <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+                {hasTransferStats(item.download_speed, item.eta) && (
+                  <>{" · "}<TransferStats speed={item.download_speed} eta={item.eta} /></>
+                )}
               </p>
             </div>
+          )}
+          {item.status === "downloading" && (!item.file_size || item.file_size <= 0) && hasTransferStats(item.download_speed, item.eta) && (
+            <p className="mt-1 text-3xs text-muted-foreground tabular-nums">
+              <TransferStats speed={item.download_speed} eta={item.eta} />
+            </p>
           )}
           {item.error_message && (
             <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>

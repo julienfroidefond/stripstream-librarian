@@ -62,7 +62,8 @@ pub const DDL_DOWNLOAD_QUEUE: SqlDownloadQueue = SqlDownloadQueue::new("ddl_prov
 impl DownloadQueue for SqlDownloadQueue {
     async fn claim(&self, pool: &PgPool, id: Uuid) -> bool {
         let sql = format!(
-            "UPDATE {} SET status = 'downloading', error_message = NULL, updated_at = NOW() \
+            "UPDATE {} SET status = 'downloading', download_speed = 0, eta = 0, \
+             error_message = NULL, updated_at = NOW() \
              WHERE id = $1 AND status = 'queued'",
             self.table
         );
@@ -77,7 +78,8 @@ impl DownloadQueue for SqlDownloadQueue {
     async fn mark_failed(&self, pool: &PgPool, id: Uuid, error: &str) {
         // Never resurrect a download the user dismissed while it was failing.
         let sql = format!(
-            "UPDATE {} SET status = 'failed', error_message = $1, updated_at = NOW() \
+            "UPDATE {} SET status = 'failed', download_speed = 0, eta = 0, \
+             error_message = $1, updated_at = NOW() \
              WHERE id = $2 AND status <> 'dismissed'",
             self.table
         );
@@ -355,6 +357,47 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(status, "dismissed");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn sql_queue_claim_and_failure_clear_the_rate(pool: PgPool) {
+        let id = insert_ddl_download(&pool, "queued").await;
+        seed_rate(&pool, id, 1000, 42).await;
+
+        assert!(DDL_DOWNLOAD_QUEUE.claim(&pool, id).await);
+        assert_eq!(
+            read_rate(&pool, id).await,
+            (0, 0),
+            "a claim restarts the clock"
+        );
+
+        seed_rate(&pool, id, 1000, 42).await;
+        DDL_DOWNLOAD_QUEUE.mark_failed(&pool, id, "boom").await;
+        assert_eq!(
+            read_rate(&pool, id).await,
+            (0, 0),
+            "a failure stops the clock"
+        );
+    }
+
+    async fn seed_rate(pool: &PgPool, id: Uuid, speed: i64, eta: i64) {
+        sqlx::query(
+            "UPDATE ddl_provider_downloads SET download_speed = $2, eta = $3 WHERE id = $1",
+        )
+        .bind(id)
+        .bind(speed)
+        .bind(eta)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn read_rate(pool: &PgPool, id: Uuid) -> (i64, i64) {
+        sqlx::query_as("SELECT download_speed, eta FROM ddl_provider_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
     }
 
     /// Insert a `telegram_book_links` row with the given status.

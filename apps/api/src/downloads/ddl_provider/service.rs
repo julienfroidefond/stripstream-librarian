@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use sqlx::Row;
 use tokio::io::AsyncWriteExt;
@@ -25,6 +25,7 @@ use crate::downloads::http_range::{probe_remote_file, HttpRangeFetcher};
 use crate::downloads::ranged::{
     download_ranged, FileSink, ProgressReporter, RangeFetcher, RangeSink,
 };
+use crate::downloads::rate::TransferRate;
 use crate::downloads::settings::DownloadSettings;
 use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
 use crate::downloads::worker::DDL_DOWNLOAD_QUEUE;
@@ -320,7 +321,8 @@ pub(super) async fn queue_ddl_download(
             (id, provider, external_id, filename, file_size, series_name, volume_number, library_id, status) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued') \
          ON CONFLICT (provider, external_id) DO UPDATE SET \
-            status = 'queued', bytes_downloaded = 0, error_message = NULL, \
+            status = 'queued', bytes_downloaded = 0, download_speed = 0, eta = 0, \
+            error_message = NULL, \
             filename = EXCLUDED.filename, file_size = EXCLUDED.file_size, \
             series_name = EXCLUDED.series_name, volume_number = EXCLUDED.volume_number, \
             library_id = EXCLUDED.library_id, updated_at = NOW() \
@@ -400,6 +402,7 @@ async fn do_download(
     sqlx::query(
         "UPDATE ddl_provider_downloads \
          SET status = 'imported', bytes_downloaded = $2, file_size = COALESCE(file_size, $2), \
+             download_speed = 0, eta = 0, \
              volume_number = COALESCE(volume_number, $3), error_message = NULL, updated_at = NOW() \
          WHERE id = $1",
     )
@@ -478,7 +481,7 @@ async fn download_ranged_to_file(
         .map(|_| Arc::new(HttpRangeFetcher::new(client.clone(), url)) as Arc<dyn RangeFetcher>)
         .collect();
     let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(tmp_path, total_size).await?);
-    let reporter = Arc::new(DdlProgress::new(pool.clone(), download_id));
+    let reporter = Arc::new(DdlProgress::new(pool.clone(), download_id, total_size));
 
     let result = download_ranged(
         fetchers,
@@ -532,13 +535,17 @@ async fn stream_to_file(
 
     let mut file = tokio::fs::File::create(tmp_path).await?;
     let mut progress = DownloadProgress::new();
+    // The single-stream fallback does not know the file size, so only the rate
+    // is reported; the ETA stays 0.
+    let mut rate = TransferRate::new();
 
     loop {
         match response.chunk().await {
             Ok(Some(chunk)) => {
                 file.write_all(&chunk).await?;
                 if let Some(written) = progress.advance(chunk.len() as i64) {
-                    store_progress(pool, download_id, written).await;
+                    rate.sample(written);
+                    store_progress(pool, download_id, written, rate.speed(), 0).await;
                 }
             }
             Ok(None) => break,
@@ -550,13 +557,17 @@ async fn stream_to_file(
     Ok(progress.written())
 }
 
-/// Persist a transfer's byte count, best-effort: a progress update that fails
-/// must never fail the download itself.
-async fn store_progress(pool: &sqlx::PgPool, download_id: Uuid, bytes: i64) {
+/// Persist a transfer's byte count, rate and ETA, best-effort: a progress update
+/// that fails must never fail the download itself.
+async fn store_progress(pool: &sqlx::PgPool, download_id: Uuid, bytes: i64, speed: i64, eta: i64) {
     let _ = sqlx::query(
-        "UPDATE ddl_provider_downloads SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
+        "UPDATE ddl_provider_downloads \
+         SET bytes_downloaded = $1, download_speed = $2, eta = $3, updated_at = NOW() \
+         WHERE id = $4",
     )
     .bind(bytes)
+    .bind(speed)
+    .bind(eta)
     .bind(download_id)
     .execute(pool)
     .await;
@@ -570,15 +581,25 @@ async fn store_progress(pool: &sqlx::PgPool, download_id: Uuid, bytes: i64) {
 struct DdlProgress {
     pool: sqlx::PgPool,
     download_id: Uuid,
-    progress: std::sync::Mutex<DownloadProgress>,
+    total_size: i64,
+    state: Mutex<DdlProgressState>,
+}
+
+struct DdlProgressState {
+    bytes: DownloadProgress,
+    rate: TransferRate,
 }
 
 impl DdlProgress {
-    fn new(pool: sqlx::PgPool, download_id: Uuid) -> Self {
+    fn new(pool: sqlx::PgPool, download_id: Uuid, total_size: i64) -> Self {
         Self {
             pool,
             download_id,
-            progress: std::sync::Mutex::new(DownloadProgress::new()),
+            total_size,
+            state: Mutex::new(DdlProgressState {
+                bytes: DownloadProgress::new(),
+                rate: TransferRate::new(),
+            }),
         }
     }
 }
@@ -589,15 +610,22 @@ impl ProgressReporter for DdlProgress {
         // Scope the guard so it is released before the `await`: a `MutexGuard`
         // held across an await point would make this future non-`Send` and break
         // the engine's `JoinSet`.
-        let due = {
-            let Ok(mut progress) = self.progress.lock() else {
+        let update = {
+            let Ok(mut state) = self.state.lock() else {
                 return;
             };
-            let delta = bytes_written - progress.written();
-            progress.advance(delta).is_some()
+            state.rate.sample(bytes_written);
+            let delta = bytes_written - state.bytes.written();
+            state.bytes.advance(delta).map(|bytes| {
+                (
+                    bytes,
+                    state.rate.speed(),
+                    state.rate.eta(Some(self.total_size)),
+                )
+            })
         };
-        if due {
-            store_progress(&self.pool, self.download_id, bytes_written).await;
+        if let Some((bytes, speed, eta)) = update {
+            store_progress(&self.pool, self.download_id, bytes, speed, eta).await;
         }
     }
 }
@@ -609,6 +637,7 @@ impl ProgressReporter for DdlProgress {
 pub async fn list_ddl_downloads(state: &AppState) -> Result<Vec<DdlProviderDownloadDto>, ApiError> {
     let rows = sqlx::query(
         "SELECT d.id, d.provider, d.external_id, d.filename, d.file_size, d.bytes_downloaded, \
+                d.download_speed, d.eta, \
                 d.series_name, d.volume_number, d.status, d.error_message, d.created_at, d.updated_at, \
                 d.library_id, l.name AS library_name, sr.id AS series_id \
          FROM ddl_provider_downloads d \
@@ -631,6 +660,8 @@ pub async fn list_ddl_downloads(state: &AppState) -> Result<Vec<DdlProviderDownl
             filename: row.get("filename"),
             file_size: row.get("file_size"),
             bytes_downloaded: row.get("bytes_downloaded"),
+            download_speed: row.get("download_speed"),
+            eta: row.get("eta"),
             series_name: row.get("series_name"),
             series_id: row
                 .get::<Option<Uuid>, _>("series_id")
@@ -663,7 +694,7 @@ pub async fn dismiss_ddl_download(state: &AppState, id: Uuid, hard: bool) -> Res
             .rows_affected()
     } else {
         sqlx::query(
-            "UPDATE ddl_provider_downloads SET status = 'dismissed', updated_at = NOW() WHERE id = $1",
+            "UPDATE ddl_provider_downloads SET status = 'dismissed', download_speed = 0, eta = 0, updated_at = NOW() WHERE id = $1",
         )
         .bind(id)
         .execute(&state.pool)
@@ -932,6 +963,30 @@ mod tests {
         );
         assert_eq!(results[0].download_status.as_deref(), Some("imported"));
         assert!(results[1].download_id.is_none());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn store_progress_persists_the_rate_and_eta(pool: sqlx::PgPool) {
+        let library_id = seed_library(&pool).await;
+        let download_id = queue_ddl_download(&pool, "fourtoutici", &start_request(), library_id)
+            .await
+            .unwrap()
+            .expect("the file is queued");
+
+        store_progress(&pool, download_id, 4 * 1024 * 1024, 2_000_000, 12).await;
+
+        let (bytes, speed, eta): (i64, i64, i64) = sqlx::query_as(
+            "SELECT bytes_downloaded, download_speed, eta \
+             FROM ddl_provider_downloads WHERE id = $1",
+        )
+        .bind(download_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(bytes, 4 * 1024 * 1024);
+        assert_eq!(speed, 2_000_000);
+        assert_eq!(eta, 12);
     }
 
     fn start_request() -> StartDdlProviderDownloadRequest {

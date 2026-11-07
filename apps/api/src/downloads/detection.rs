@@ -699,7 +699,7 @@ pub async fn unblacklist_release(
         "WITH deleted AS ( \
              DELETE FROM release_blacklist WHERE id = $1 RETURNING tg_book_id \
          ) \
-         UPDATE telegram_book_links SET status = 'available', updated_at = NOW() \
+         UPDATE telegram_book_links SET status = 'available', download_speed = 0, eta = 0, updated_at = NOW() \
          WHERE id = (SELECT tg_book_id FROM deleted) AND status = 'dismissed'",
     )
     .bind(id)

@@ -65,7 +65,7 @@ Prowlarr/TG en attente sont conservés) : pas d'accumulation entre deux passages
 |--------|-------------------|
 | (aucun) | **Télécharger** |
 | En attente | Icône horloge |
-| Téléchargement | Indicateur de progression |
+| Téléchargement | Indicateur de progression (barre, vitesse et ETA quand la taille est connue) |
 | Importé | ✓ + **Relancer** |
 | Erreur | **Relancer** |
 | Ignoré | **Télécharger** (relance) |

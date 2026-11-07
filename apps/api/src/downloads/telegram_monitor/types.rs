@@ -96,6 +96,10 @@ pub struct TelegramDownloadItemDto {
     pub filename: String,
     pub file_size: Option<i64>,
     pub bytes_downloaded: i64,
+    /// Smoothed transfer rate in bytes per second.
+    pub download_speed: i64,
+    /// Remaining seconds, `0` when it cannot be estimated.
+    pub eta: i64,
     pub volume_number: Option<i32>,
     pub status: String,
     pub error_message: Option<String>,

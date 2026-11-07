@@ -4,6 +4,7 @@
 //! progress reporting.
 
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,6 +15,7 @@ use uuid::Uuid;
 
 use crate::downloads::limit::DynamicLimitPermit;
 use crate::downloads::ranged::{FetchError, ProgressReporter, RangeFetcher};
+use crate::downloads::rate::TransferRate;
 
 use super::flood;
 
@@ -258,25 +260,47 @@ fn classify_rpc(code: i32, name: &str, value: Option<u32>) -> (FetchError, Optio
     (FetchError::fatal(format!("rpc error {code}: {name}")), None)
 }
 
-/// Persists download progress to `telegram_book_links.bytes_downloaded`.
+/// Persists download progress to `telegram_book_links`: byte count, smoothed
+/// transfer rate and remaining time.
 pub struct LinkProgress {
     pool: sqlx::PgPool,
     link_id: Uuid,
+    total_size: i64,
+    rate: Mutex<TransferRate>,
 }
 
 impl LinkProgress {
-    pub fn new(pool: sqlx::PgPool, link_id: Uuid) -> Self {
-        Self { pool, link_id }
+    pub fn new(pool: sqlx::PgPool, link_id: Uuid, total_size: i64) -> Self {
+        Self {
+            pool,
+            link_id,
+            total_size,
+            rate: Mutex::new(TransferRate::new()),
+        }
     }
 }
 
 #[async_trait]
 impl ProgressReporter for LinkProgress {
     async fn report(&self, bytes_written: i64) {
+        // Scope the guard so it is released before the `await`: a `MutexGuard`
+        // held across an await point would make this future non-`Send`.
+        let (speed, eta) = {
+            let Ok(mut rate) = self.rate.lock() else {
+                return;
+            };
+            rate.sample(bytes_written);
+            (rate.speed(), rate.eta(Some(self.total_size)))
+        };
+
         if let Err(err) = sqlx::query(
-            "UPDATE telegram_book_links SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
+            "UPDATE telegram_book_links \
+             SET bytes_downloaded = $1, download_speed = $2, eta = $3, updated_at = NOW() \
+             WHERE id = $4",
         )
         .bind(bytes_written)
+        .bind(speed)
+        .bind(eta)
         .bind(self.link_id)
         .execute(&self.pool)
         .await
@@ -344,5 +368,45 @@ mod tests {
             let (error, _) = classify_rpc(code, name, None);
             assert_eq!(error.kind, FetchErrorKind::Fatal, "{code} {name}");
         }
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn progress_reports_the_rate_and_eta(pool: sqlx::PgPool) {
+        let source_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO telegram_sources (id, channel_username) VALUES ($1, $2)")
+            .bind(source_id)
+            .bind(format!("chan-{source_id}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let link_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO telegram_book_links (id, source_id, message_id, filename, status) \
+             VALUES ($1, $2, 1, 'a.cbz', 'downloading')",
+        )
+        .bind(link_id)
+        .bind(source_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let reporter = LinkProgress::new(pool.clone(), link_id, 10 * 1024 * 1024);
+        reporter.report(1024 * 1024).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        reporter.report(2 * 1024 * 1024).await;
+
+        let (bytes, speed, eta): (i64, i64, i64) = sqlx::query_as(
+            "SELECT bytes_downloaded, download_speed, eta \
+             FROM telegram_book_links WHERE id = $1",
+        )
+        .bind(link_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(bytes, 2 * 1024 * 1024);
+        assert!(speed > 0, "a transfer with bytes must report a rate");
+        assert!(eta > 0, "remaining bytes and a rate yield an ETA");
     }
 }
