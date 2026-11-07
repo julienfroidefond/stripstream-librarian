@@ -14,10 +14,9 @@ name: CodeQL
 #   javascript-typescript     apps/backoffice, apps/docs
 #   actions                   .github/workflows
 #
-# A docs-only pull request therefore runs no CodeQL job at all, a backoffice-only
-# one no longer analyzes Rust, and a workflow-only one skips the 13 min Rust job
-# entirely. The weekly `schedule` scan analyzes every language, whatever the
-# paths.
+# CodeQL runs after changes reach main, with path filters selecting the relevant
+# languages. The weekly `schedule` scan analyzes every language, whatever the
+# paths. Pull requests run the regular CI without waiting for CodeQL.
 #
 # The three jobs repeat the same three steps instead of sharing one `matrix`:
 # `jobs.<job_id>.if` cannot read the `matrix` context, so a matrix would have to
@@ -26,8 +25,6 @@ name: CodeQL
 # place.
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
   schedule:
@@ -35,7 +32,7 @@ on:
     # queries ship continuously, so unchanged code still gets re-analyzed.
     - cron: '20 4 * * 1'
 
-# A new push on the same branch/PR cancels the previous analysis instead of
+# A new push to the same branch cancels the previous analysis instead of
 # letting two full Rust runs finish concurrently.
 concurrency:
   group: codeql-${{ github.ref }}
@@ -45,16 +42,13 @@ permissions:
   contents: read
   # Required to upload the SARIF results of the analyze job.
   security-events: write
-  # `dorny/paths-filter` lists the changed files through the API.
-  pull-requests: read
 
 jobs:
   changes:
     name: Detect changed surfaces
     runs-on: ubuntu-latest
     outputs:
-      # `schedule` has no diff to compute (and `dorny/paths-filter` needs a push
-      # or pull request event): analyze everything instead.
+      # `schedule` has no diff to compute: analyze everything instead.
       rust: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.rust }}
       web: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.web }}
       actions: ${{ github.event_name == 'schedule' && 'true' || steps.filter.outputs.actions }}

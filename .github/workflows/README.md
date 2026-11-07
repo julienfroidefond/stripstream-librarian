@@ -11,7 +11,7 @@ this page: it is not needed to write code, only to understand a pipeline failure
 | `ci-web.yml` | every pull request | backoffice and docs validation |
 | `dependabot-automerge.yml` | Dependabot pull requests | merges patch/minor and digest-only image bumps (see below) |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
-| `codeql.yml` | PR, push to `main`, weekly | CodeQL analysis per language, path-filtered (see below) |
+| `codeql.yml` | push to `main`, weekly | CodeQL analysis per language, path-filtered (see below) |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
 The merge to `main` is deliberately **not re-validated**, so the PR checks must stay
@@ -112,8 +112,9 @@ then again on the merge commit).
 
 `codeql.yml` keeps one job per language, each gated on the surfaces it covers (Rust → `apps/api`,
 `apps/indexer`, `crates`, `Cargo.*`, `infra/migrations`; `javascript-typescript` →
-`apps/backoffice`, `apps/docs`; `actions` → `.github/workflows`). A skipped job reports in ~5 s, a
-docs-only PR analyzes nothing, and the weekly `schedule` run still analyzes everything. Rust keeps
+`apps/backoffice`, `apps/docs`; `actions` → `.github/workflows`). Analyses run after the merge,
+so security findings do not gate PRs and can be reported after deployment. Unchanged surfaces are
+skipped on pushes, and the weekly `schedule` run still analyzes everything. Rust keeps
 `build-mode: none`, the mode default setup already used: the extractor reads the sources without
 compiling, so there is no toolchain or cargo cache to wire and a broken build cannot fail the scan.
 
