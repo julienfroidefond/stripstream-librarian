@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.102 — 2026-11-07
+
+### Corrections
+
+- **api** — support local library picker paths ([#235](https://github.com/julienfroidefond/stripstream-librarian/pull/235))
+
 ## v3.32.101 — 2026-11-07
 
 ### Corrections
