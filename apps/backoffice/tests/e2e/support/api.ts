@@ -193,6 +193,16 @@ export async function getReadingList(id: string): Promise<ReadingListDetailSumma
   return apiRequest<ReadingListDetailSummary>(`/reading-lists/${id}`);
 }
 
+/** Reading list as filtered for a restricted reader (X-As-User). */
+export async function getReadingListForUser(
+  id: string,
+  userId: string
+): Promise<ReadingListDetailSummary> {
+  return apiRequest<ReadingListDetailSummary>(`/reading-lists/${id}`, {
+    headers: { "X-As-User": userId },
+  });
+}
+
 export async function addSeriesToReadingList(listId: string, seriesId: string): Promise<void> {
   await apiRequest<void>(`/reading-lists/${listId}/series`, {
     method: "POST",
@@ -253,6 +263,24 @@ export async function deleteUsersByUsername(username: string): Promise<void> {
 export async function findUserByUsername(username: string): Promise<UserSummary | null> {
   const users = await apiRequest<UserSummary[]>("/admin/users");
   return users.find((user) => user.username === username) ?? null;
+}
+
+export async function createUser(username: string): Promise<UserSummary> {
+  return apiRequest<UserSummary>("/admin/users", {
+    method: "POST",
+    body: { username },
+  });
+}
+
+/** Replace every blocked genre for a reader. */
+export async function setGenreRestrictions(
+  userId: string,
+  blockedGenres: string[]
+): Promise<void> {
+  await apiRequest(`/admin/users/${userId}/genre-restrictions`, {
+    method: "PUT",
+    body: { blocked_genres: blockedGenres },
+  });
 }
 
 // ─── Bibliothèques ───────────────────────────────────────────────────────────

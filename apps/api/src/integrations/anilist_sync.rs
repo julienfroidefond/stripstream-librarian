@@ -496,6 +496,8 @@ pub async fn pull_from_anilist(
         updated += 1;
     }
 
+    state.stats_cache.invalidate();
+
     Ok(Json(AnilistPullReport {
         updated,
         skipped,

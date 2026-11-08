@@ -304,6 +304,8 @@ pub async fn sync_komga_read_books(
     .fetch_one(&state.pool)
     .await?;
 
+    state.stats_cache.invalidate();
+
     Ok(Json(KomgaSyncResponse {
         id: report_row.get("id"),
         komga_url: url,

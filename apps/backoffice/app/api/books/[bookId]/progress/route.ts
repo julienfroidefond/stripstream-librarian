@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { updateReadingProgress, apiFetch, BookDto } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
 
@@ -14,6 +14,10 @@ export const PATCH = withRoute(async (
   ]);
   revalidatePath("/series");
   revalidatePath(`/books/${bookId}`);
+  // Le dashboard met en cache ses statistiques 30 s ; une progression de
+  // lecture doit s'y refléter immédiatement (listes « en cours » / « récents »).
+  revalidateTag("stats", { expire: 0 });
+  revalidatePath("/");
   if (book?.series_id) {
     revalidatePath(`/series/${book.series_id}`);
   }

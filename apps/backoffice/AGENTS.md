@@ -119,21 +119,15 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
-- Parcours d'écriture : `catalog/books-write.spec.ts` (édition, téléchargement, suppression,
-  verrouillage d'un champ), `catalog/series-write.spec.ts` (édition/verrouillage, renommage,
-  suppression via Actions), `catalog/authors-genres.spec.ts` (affectation en masse d'un genre,
-  filtre « sans genre » et suppression),
-  `catalog/series-merge.spec.ts` (fusion et déplacement du lien de métadonnées),
-  `catalog/ratings.spec.ts` (note puis retrait), `libraries/settings-write.spec.ts` (réglages
-  restaurés via l'API), `metadata/search-approve.spec.ts` (recherche mockée, approbation,
-  déliaison), `metadata/sync-write.spec.ts` (promotion d'un provider et synchronisation depuis
-  les métadonnées stockées), `operations/jobs-write.spec.ts` (rebuild ciblé + replay),
-  `operations/diagnostics.spec.ts` (purge de cache), `admin/connection-test.spec.ts` (intégrations
-  mockées), `admin/tokens.spec.ts` (réassignation de token + renommage inline),
-  `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif + genre bloqué),
-  `admin/archives-orphans.spec.ts` (orphelin → archive, suppressions), `reading/lists.spec.ts`
-  (renommage/réordonnancement/groupement), `reading/progress-write.spec.ts` (lu/non lu, série
-  entière avec statut par tome, état d'origine restauré via l'API).
+- Parcours d'écriture et d'action : `catalog/` (books-write, series-write, authors-genres,
+  series-merge, ratings, list-controls, card-actions, genres-actions, series-create,
+  series-rename, series-related), `libraries/settings-write`, `metadata/` (search-approve,
+  sync-write, lock-sync), `operations/` (jobs-write, jobs-actions, jobs-thumbnails,
+  diagnostics, diagnostics-actions), `admin/` (connection-test, tokens, user-restrictions,
+  archives-orphans, settings-actions, settings-providers), `reading/` (lists, lists-entrypoints,
+  lists-restrictions, lists-autosort, progress-write, progress-admin),
+  `acquisition/discovery-actions`, `dashboard/dashboard` et `dashboard/links`,
+  `shell/edge-cases`.
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
   `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée les bibliothèques
   temporaires `e2e-metadata`, `e2e-books` et `e2e-jobs`, enregistre la session dans
@@ -146,9 +140,10 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
   `support/metadata.ts` crée des séries éphémères avec auteurs/genres uniques dans
   `e2e-metadata` et fournit les racines dédiées `e2e-books` / `e2e-jobs` ; `support/books.ts`
   crée un livre ou une série multi-tomes scannée dans `e2e-books` ; `helpers.ts` expose
-  `openFirstSeries`, `openSeriesDetail`, `uniqueName`, `escapeRegExp`.
-- Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
-  Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
+  `waitForHydration`, `openSeriesDetail`, `uniqueName`, `escapeRegExp`.
+- Les tests sont autonomes et compatibles `fullyParallel` : noms uniques, fixtures jetables et
+  nettoyage `finally`. Ne pas dépendre du premier élément d'une liste (il peut appartenir à un
+  worker parallèle et disparaître) et ne pas modifier les réglages globaux (langue, feature flags).
 - `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`,
   AllDebrid non configuré) ou une donnée absente (livres, jobs, bibliothèques) — jamais pour
   masquer une régression.

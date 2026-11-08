@@ -26,6 +26,16 @@ impl StatsCache {
             breakdown: TtlCache::new(STATS_CACHE_TTL),
         }
     }
+
+    /// Drop every cached dashboard response. Reading-progress mutations call
+    /// this so the next dashboard request recomputes the aggregates instead of
+    /// serving a response built before the write (the TTL is only 20 s, but
+    /// that is long enough for the UI to look broken right after a click).
+    pub fn invalidate(&self) {
+        self.full.clear();
+        self.overview.clear();
+        self.breakdown.clear();
+    }
 }
 
 impl Default for StatsCache {

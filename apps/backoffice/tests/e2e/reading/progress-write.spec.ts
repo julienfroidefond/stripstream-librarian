@@ -4,43 +4,35 @@ import { openSeriesDetail } from "../helpers";
 import {
   findUserByUsername,
   getBookReadingProgress,
-  listBooksForUser,
   updateBookReadingProgress,
 } from "../support/api";
-import { createDisposableSeries, removeDisposableSeries } from "../support/books";
+import {
+  createDisposableBook,
+  createDisposableSeries,
+  removeDisposableBook,
+  removeDisposableSeries,
+} from "../support/books";
 import { BOOK_LIBRARY_NAME } from "../support/metadata";
 
 /**
- * Écritures de progression sur un livre réel, avec le lecteur `e2e-reader`
- * préparé par le setup. Le statut et la page d'origine sont capturés puis
- * restaurés via l'API dans `finally` ; les tests ne doivent pas laisser de
- * progression modifiée derrière eux.
- *
- * Seul le statut et la page courante sont restaurés : `last_read_at` est mis à
- * jour par chaque PATCH et n'est pas réversible.
+ * Écritures de progression sur un livre jetable, avec le lecteur `e2e-reader`
+ * préparé par le setup. Le livre est créé dans `e2e-books` et supprimé dans
+ * `finally`, donc aucune progression partagée n'est laissée derrière.
  */
 
 const READER_USERNAME = "e2e-reader";
 
 test.describe("progression de lecture — écritures", () => {
-  test("marque lu puis non lu, persiste après rechargement et restaure l'état", async ({
-    page,
-  }) => {
+  test("marque lu puis non lu et persiste après rechargement", async ({ page }) => {
+    test.setTimeout(120_000);
+
     const reader = await findUserByUsername(READER_USERNAME);
     if (!reader) {
       test.skip(true, `lecteur ${READER_USERNAME} introuvable`);
       return;
     }
 
-    const books = await listBooksForUser(reader.id, { limit: 1 });
-    const book = books.items[0];
-    if (!book) {
-      test.skip(true, "aucun livre disponible pour tester la progression");
-      return;
-    }
-
-    const original = await getBookReadingProgress(book.id, reader.id);
-    await updateBookReadingProgress(book.id, reader.id, "unread");
+    const book = await createDisposableBook();
 
     try {
       await page.goto(`/books/${book.id}`);
@@ -76,16 +68,7 @@ test.describe("progression de lecture — écritures", () => {
         page.locator("main h1 + div").getByText("Unread", { exact: true })
       ).toBeVisible();
     } finally {
-      if (original.status === "reading") {
-        await updateBookReadingProgress(
-          book.id,
-          reader.id,
-          "reading",
-          original.current_page ?? 1
-        );
-      } else {
-        await updateBookReadingProgress(book.id, reader.id, original.status);
-      }
+      await removeDisposableBook(book);
     }
   });
 

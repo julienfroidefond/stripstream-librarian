@@ -102,4 +102,91 @@ describe("Modal", () => {
 
     expect(screen.getByTestId("modal-panel")).toHaveClass("max-w-4xl");
   });
+
+  it("moves focus into the panel and traps Tab navigation", () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "open";
+    document.body.append(trigger);
+    trigger.focus();
+
+    try {
+      render(
+        <Modal isOpen onClose={vi.fn()} title="My title">
+          <button type="button">first</button>
+          <button type="button">last</button>
+        </Modal>
+      );
+
+      const close = screen.getByTestId("modal-close");
+      const last = screen.getByRole("button", { name: "last" });
+      expect(close).toHaveFocus();
+
+      last.focus();
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(close).toHaveFocus();
+
+      close.focus();
+      fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+      expect(last).toHaveFocus();
+    } finally {
+      trigger.remove();
+    }
+  });
+
+  it("restores focus to the trigger when closed", () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "open";
+    document.body.append(trigger);
+    trigger.focus();
+
+    try {
+      const { rerender } = render(
+        <Modal isOpen onClose={vi.fn()} title="My title">
+          <p>body</p>
+        </Modal>
+      );
+      expect(screen.getByTestId("modal-close")).toHaveFocus();
+
+      rerender(
+        <Modal isOpen={false} onClose={vi.fn()} title="My title">
+          <p>body</p>
+        </Modal>
+      );
+      expect(trigger).toHaveFocus();
+    } finally {
+      trigger.remove();
+    }
+  });
+
+  it("restores the trigger even when an autoFocus field moves focus on open", () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "open";
+    document.body.append(trigger);
+
+    try {
+      const { rerender } = render(
+        <Modal isOpen={false} onClose={vi.fn()} title="My title">
+          <input aria-label="search" autoFocus />
+        </Modal>
+      );
+      trigger.focus();
+      fireEvent.pointerDown(trigger);
+
+      rerender(
+        <Modal isOpen onClose={vi.fn()} title="My title">
+          <input aria-label="search" autoFocus />
+        </Modal>
+      );
+      expect(screen.getByRole("textbox", { name: "search" })).toHaveFocus();
+
+      rerender(
+        <Modal isOpen={false} onClose={vi.fn()} title="My title">
+          <input aria-label="search" autoFocus />
+        </Modal>
+      );
+      expect(trigger).toHaveFocus();
+    } finally {
+      trigger.remove();
+    }
+  });
 });

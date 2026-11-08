@@ -98,6 +98,7 @@ export function OffsetPagination({
         <span className="text-sm text-muted-foreground">{t("pagination.show")}</span>
         <select
           value={pageSize.toString()}
+          aria-label={t("common.perPage")}
           onChange={(e) => changePageSize(Number(e.target.value))}
           className="w-20 px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
         >

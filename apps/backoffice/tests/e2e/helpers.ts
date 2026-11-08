@@ -1,17 +1,5 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Navigate to the first series detail page and return its id. */
-export async function openFirstSeries(page: Page): Promise<string> {
-  await page.goto("/series");
-  const firstCard = page.locator('a[href^="/series/"]').first();
-  await expect(firstCard).toBeVisible();
-  const href = await firstCard.getAttribute("href");
-  const id = href!.split("/").pop()!;
-  await page.goto(`/series/${id}`);
-  await expect(page.locator("main h1")).toBeVisible();
-  return id;
-}
-
 /** Unique per-run name so parallel workers never collide. */
 export function uniqueName(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
@@ -20,6 +8,28 @@ export function uniqueName(prefix: string): string {
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Wait until React has hydrated a server-rendered control before interacting.
+ *
+ * Playwright can resolve and act on form controls as soon as the HTML streams
+ * in, before React attaches their event handlers. A `selectOption` landing in
+ * that window changes the DOM without triggering the filter navigation, which
+ * makes URL assertions hang. React adds internal props/fiber keys on hydration.
+ */
+export async function waitForHydration(page: Page, selector = "form"): Promise<void> {
+  await page.waitForFunction(
+    (sel) => {
+      const element = document.querySelector(sel);
+      if (!element) return false;
+      return Object.keys(element).some(
+        (key) => key.startsWith("__reactProps$") || key.startsWith("__reactFiber$")
+      );
+    },
+    selector,
+    { timeout: 15_000 }
+  );
 }
 
 /**
