@@ -16,14 +16,28 @@ export const dynamic = "force-dynamic";
 function OverviewSkeleton() {
   return (
     <div className="space-y-6">
+      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-xl" />
+          <Skeleton key={i} className="h-[4.5rem] rounded-lg" />
         ))}
       </div>
+      {/* Currently reading + recently read */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-64 rounded-lg" />
+        ))}
+      </div>
+      {/* Distribution charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-64 rounded-xl" />
+          <Skeleton key={i} className="h-64 rounded-lg" />
+        ))}
+      </div>
+      {/* Metadata quality + provider */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-64 rounded-lg" />
         ))}
       </div>
     </div>
@@ -31,14 +45,21 @@ function OverviewSkeleton() {
 }
 
 function TimeSeriesSkeleton() {
-  return <Skeleton className="h-80 rounded-xl" />;
+  // One card per chart, same stack and rhythm as `TimeSeriesCharts`.
+  return (
+    <div className="space-y-6">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-[17rem] rounded-lg" />
+      ))}
+    </div>
+  );
 }
 
 function BreakdownSkeleton() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Skeleton className="h-64 rounded-xl" />
-      <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-64 rounded-lg" />
+      <Skeleton className="h-64 rounded-lg" />
     </div>
   );
 }
