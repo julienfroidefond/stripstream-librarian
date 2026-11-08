@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.108 — 2026-11-08
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **backoffice** — cover write flows across catalog, admin and reading ([#241](https://github.com/julienfroidefond/stripstream-librarian/pull/241))
+
+</details>
+
 ## v3.32.107 — 2026-11-07
 
 ### Nouveautés
