@@ -50,6 +50,31 @@ admin.
 | Opérations | `operations/` | Jobs : filtres, détail, palette d'actions (recherche, Échap), **lancement d'un rebuild ciblé puis replay avec vérification des statuts terminaux**. Diagnostics : indicateurs, sections, rafraîchissement. | Annulation de job, purge de cache, téléchargements réels. |
 | Admin | `admin/` | Matrice des onglets Paramètres, présence des tests de connexion, **test AllDebrid mocké avec rendu du résultat**, CRUD token (création → révocation → suppression), CRUD utilisateur lecteur, **bascule d'utilisateur actif + restrictions de genres (série masquée puis réaffichée pour Admin)**, **fixtures déterministes Orphan series → Archives**. | Enregistrement de réglages globaux, réassignation de token, connexions externes réelles. |
 
+## Backlog — parcours documentés non couverts
+
+Recensement issu de `apps/docs/`. Ces parcours ne sont pas des exclusions volontaires : ils
+correspondent à des actions visibles du backoffice qui n'ont pas encore de test Playwright. Les
+providers externes réels, les réglages globaux et les règles métier pures (matching ISBN,
+restauration d'archives, internes de conversion) restent hors périmètre E2E.
+
+| Priorité | Parcours | Doc | Spec cible | Statut |
+|----------|----------|-----|------------|--------|
+| Haute | Actions livre : édition, téléchargement, renommage, suppression (dernier livre → série archivée), conversion CBR → CBZ | `books/*` | `catalog/book-write.spec.ts` + fixture livre jetable | À faire |
+| Haute | Édition et verrouillage des champs d'une série | `series/management`, `metadata/sync` | `catalog/series-write.spec.ts` | À faire |
+| Haute | Fusion de deux séries | `series/management` | `catalog/series-merge.spec.ts` | À faire |
+| Haute | Volumes manquants et bascule d'affichage | `series/missing-volumes` | `metadata/missing-volumes.spec.ts` | À faire |
+| Haute | Notation d'une série par le lecteur actif | `series/ratings` | `catalog/ratings.spec.ts` | À faire |
+| Haute | Réglages d'une bibliothèque (scan, watcher, providers, tags) | `libraries/management` | `libraries/settings-write.spec.ts` | À faire |
+| Haute | Recherche, approbation et rejet de métadonnées | `metadata/sync`, `metadata/providers` | `metadata/search.spec.ts` | À faire |
+| Quick win | Réassignation d'un token et renommage inline d'un utilisateur | `reference/users-tokens` | `admin/tokens.spec.ts` | À faire |
+| Quick win | Suppression unitaire et par page des séries orphelines | `series/orphans` | `admin/archives-orphans.spec.ts` | À faire |
+| Quick win | Purge du cache depuis les diagnostics | `getting-started/diagnostics` | `operations/diagnostics.spec.ts` | À faire |
+| Quick win | Tests de connexion Prowlarr, qBittorrent, Telegram et DDL mockés | `integrations/*`, `downloads/*` | `admin/connection-test.spec.ts` | À faire |
+| Quick win | Renommage, réordonnancement et groupement des listes de lecture | `series/reading-lists` | `reading/lists.spec.ts` | À faire |
+| Quick win | Wishlist : série à zéro livre et filtre par bibliothèque | `discovery/wishlist` | `acquisition/discovery.spec.ts` | À faire |
+| Après fixture livre | Séries liées et recommandations | `series/related` | `catalog/series-related.spec.ts` | À faire |
+| Après fixture livre | Vue admin de progression multi-utilisateurs | `series/reading-progress` | `reading/progress-admin.spec.ts` | À faire |
+
 ## Conventions
 
 - **Tests autonomes et parallèles** (`fullyParallel: true`) : noms uniques via `uniqueName()`,
