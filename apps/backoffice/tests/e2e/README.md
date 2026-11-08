@@ -25,7 +25,7 @@ npx playwright test catalog/series.spec.ts -g "recherche"
 | `auth.setup.ts` | Projet `setup` : connexion admin, création/réutilisation du lecteur `e2e-reader`, nettoyage des ressources `e2e-*` orphelines, préparation de la bibliothèque temporaire de métadonnées, sauvegarde de `storageState` + cookie `as_user_id`. |
 | `env.ts` | Lecture de `.env.local` (identifiants admin). |
 | `helpers.ts` | `openFirstSeries`, `uniqueName`, `escapeRegExp`. |
-| `support/api.ts` | Appels directs à l'API Rust avec le token bootstrap : feature flags, nettoyage listes/tokens/users, CRUD bibliothèques/séries, archives. |
+| `support/api.ts` | Appels directs à l'API Rust avec le token bootstrap : feature flags, nettoyage listes/tokens/users, CRUD bibliothèques/séries, archives et progression de lecture (`X-As-User`). |
 | `support/library.ts` | Seed local optionnel (`E2E_SEED_LIBRARY=1`) : copie les CBZ de `fixtures/library/`, crée la bibliothèque via l'API, déclenche un scan et attend l'indexation. |
 | `support/metadata.ts` | Bibliothèque temporaire `e2e-metadata` : séries de test avec auteurs/genres uniques, nettoyage et purge des archives. |
 | `global-teardown.ts` | Suppression de la bibliothèque temporaire et de ses archives en fin de run. |
@@ -42,13 +42,13 @@ admin.
 |---------|---------|---------|----------------------------|
 | Shell / navigation | `shell/` | Rendu des 15 routes, menus desktop et tiroir mobile, liens directs, thème clair/sombre, pastille jobs, redirection auth, login invalide/valide, logout, modale générique (Escape / bouton). | Bascule de langue (réglage global persistant). |
 | Dashboard | `dashboard/` | Cartes de statistiques, répartitions, sélecteurs de période des graphiques. | — |
-| Catalogue | `catalog/` | Recherche séries (`?q=`), édition de tags (ajout/retrait sans sauvegarde), modale métadonnées, confirmation de suppression annulée, lecture (bouton, volumes), liste/détail livre + infos techniques, recherche vide, auteurs (recherche + fiche via fixture), genres (stats/filtres + renommage réel via fixture). | Soumission des formulaires d'édition et suppression réelle de série (destructif/global). |
+| Catalogue | `catalog/` | Recherche séries (`?q=`), édition de tags (ajout/retrait sans sauvegarde), modale métadonnées, confirmation de suppression annulée, **renommage réel + suppression via Actions et vérification de l'archive avec auteurs/genres**, lecture (bouton, volumes), liste/détail livre + infos techniques, recherche vide, auteurs (recherche + fiche via fixture), genres (stats/filtres + renommage réel via fixture). | Synchronisation métadonnées vers un provider externe. |
 | Métadonnées | `metadata/` | Onglets Séries/Livres, filtre par gap, compteur de résultats, recherche sans résultat. | Synchronisation réelle vers un provider externe. |
-| Lecture | `reading/` | Progression de l'utilisateur actif (vide ou peuplée), cycle complet liste de lecture : création, ajout/retrait de série, suppression (dialogue natif), nettoyage API. | Renommage de liste, suggestions IA, provider de statut de lecture. |
+| Lecture | `reading/` | Progression de l'utilisateur actif (vide ou peuplée), **marquage lu/non lu avec persistance après rechargement et restauration de l'état d'origine via l'API**, cycle complet liste de lecture : création, ajout/retrait de série, suppression (dialogue natif), nettoyage API. | Renommage de liste, suggestions IA, provider de statut de lecture. |
 | Bibliothèques | `libraries/` | Cartes, formulaire d'ajout, navigation vers les séries et les livres d'une bibliothèque. | Création/suppression réelle de bibliothèque (volume hôte). |
 | Acquisition | `acquisition/` | Drapeau `downloads_enabled` (page ou redirection), découverte : onglets Trending/Wishlist, panneau des séries masquées. | Prowlarr/Telegram/DDL et téléchargements réels (configuration externe). |
 | Opérations | `operations/` | Jobs : filtres, détail, palette d'actions (recherche, Échap). Diagnostics : indicateurs, sections, rafraîchissement. | Lancement/replay de job, purge de cache (écritures). |
-| Admin | `admin/` | Matrice des onglets Paramètres, présence des tests de connexion, CRUD token (création → révocation → suppression), CRUD utilisateur lecteur. | Enregistrement de réglages globaux, réassignation de token, restrictions de genres, archives/orphelins peuplés. |
+| Admin | `admin/` | Matrice des onglets Paramètres, présence des tests de connexion, CRUD token (création → révocation → suppression), CRUD utilisateur lecteur, **bascule d'utilisateur actif + restrictions de genres (série masquée puis réaffichée pour Admin)**, **fixtures déterministes Orphan series → Archives**. | Enregistrement de réglages globaux, réassignation de token. |
 
 ## Conventions
 
@@ -99,8 +99,5 @@ produit tous les livres avant de démarrer les specs.
 
 ## Prochaines étapes
 
-1. Ajouter des fixtures d'archives et d'orphelins pour couvrir ces onglets avec des données
-   déterministes.
-2. Couvrir les parcours d'écriture métier : édition/suppression de série, synchronisation
-   métadonnées, lancement de job, test de connexion téléchargement.
-3. Tester le changement d'utilisateur actif et les restrictions de genres.
+1. Couvrir les parcours d'écriture restants : synchronisation métadonnées, lancement de job,
+   test de connexion téléchargement.

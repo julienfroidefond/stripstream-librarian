@@ -119,6 +119,10 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
+- Parcours d'écriture : `catalog/series-write.spec.ts` (renommage, suppression via Actions,
+  vérification de l'archive), `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif +
+  genre bloqué), `admin/archives-orphans.spec.ts` (orphelin → archive avec métadonnées),
+  `reading/progress-write.spec.ts` (lu/non lu, état d'origine restauré via l'API).
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
   `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée la bibliothèque
   temporaire `e2e-metadata`, enregistre la session dans `tests/e2e/.auth/state.json` (ignoré par

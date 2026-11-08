@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { NextRequest } from "next/server";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
@@ -34,6 +35,8 @@ import {
 } from "@/app/api/series/[seriesId]/anilist/route";
 
 const mockApi = vi.mocked(apiFetch);
+const mockRevalidatePath = vi.mocked(revalidatePath);
+const mockRevalidateTag = vi.mocked(revalidateTag);
 
 const ID_A = "11111111-1111-4111-8111-111111111111";
 const ID_B = "22222222-2222-4222-8222-222222222222";
@@ -347,13 +350,17 @@ describe("/api/series", () => {
     expect(res.status).toBe(500);
   });
 
-  it("PATCH series forwards body", async () => {
+  it("PATCH series forwards body and revalidates series caches", async () => {
     mockApi.mockResolvedValue({ id: "s1" });
     const res = await patchSeries(
       jsonRequest("/api/series/s1", { method: "PATCH", body: { name: "New" } }),
       routeCtx({ seriesId: "s1" })
     );
     expect(mockApi).toHaveBeenCalledWith("/series/s1", expect.objectContaining({ method: "PATCH" }));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series/s1");
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
     expect(res.status).toBe(200);
   });
 
