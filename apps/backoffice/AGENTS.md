@@ -120,8 +120,11 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
 - Parcours d'écriture : `catalog/series-write.spec.ts` (renommage, suppression via Actions,
-  vérification de l'archive), `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif +
-  genre bloqué), `admin/archives-orphans.spec.ts` (orphelin → archive avec métadonnées),
+  vérification de l'archive), `metadata/sync-write.spec.ts` (promotion d'un provider et
+  synchronisation depuis les métadonnées stockées), `operations/jobs-write.spec.ts` (lancement
+  d'un rebuild ciblé + replay), `admin/connection-test.spec.ts` (test AllDebrid mocké),
+  `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif + genre bloqué),
+  `admin/archives-orphans.spec.ts` (orphelin → archive avec métadonnées),
   `reading/progress-write.spec.ts` (lu/non lu, état d'origine restauré via l'API).
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
   `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée la bibliothèque
@@ -129,14 +132,16 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
   git) et ajoute le cookie `as_user_id`.
 - `global-teardown.ts` supprime `e2e-metadata` et purge ses archives en fin de run.
 - `support/api.ts` appelle directement l'API Rust avec `API_BOOTSTRAP_TOKEN` (feature flags,
-  nettoyage listes/tokens/users, CRUD bibliothèques/séries) ; `support/library.ts` seed une
-  mini-bibliothèque de fixtures (`E2E_SEED_LIBRARY=1`) et attend l'indexation ;
+  nettoyage listes/tokens/users, CRUD bibliothèques/séries, liens et métadonnées de série,
+  jobs) ; `support/library.ts` seed une mini-bibliothèque de fixtures (`E2E_SEED_LIBRARY=1`) et
+  attend l'indexation ;
   `support/metadata.ts` crée des séries éphémères avec auteurs/genres uniques dans
   `e2e-metadata` ; `helpers.ts` expose `openFirstSeries`, `uniqueName`, `escapeRegExp`.
 - Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
   Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
-- `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`) ou une
-  donnée absente (livres, jobs, bibliothèques) — jamais pour masquer une régression.
+- `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`,
+  AllDebrid non configuré) ou une donnée absente (livres, jobs, bibliothèques) — jamais pour
+  masquer une régression.
 - L'UI est en anglais par défaut ; seuls les libellés de `/login` sont en français.
 - La suite n'est **pas exécutée en CI** : elle se lance en local, sur la stack de dev, quand on
   en a besoin. Le rapport HTML est écrit dans `tests/e2e/.report/` (ignoré par git).

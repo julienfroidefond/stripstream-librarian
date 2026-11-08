@@ -41,6 +41,7 @@ describe("metadata approve/reject", () => {
       body: JSON.stringify({ volume: 1 }),
     });
     expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
+    expect(revalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
     expect(res.status).toBe(200);
   });
 
@@ -128,6 +129,8 @@ describe("metadata refresh", () => {
     mockApi.mockResolvedValue({ refreshed: true });
     await refreshLink(jsonRequest("/api/metadata/refresh-link/m1", { method: "POST" }), routeCtx({ id: "m1" }));
     expect(mockApi).toHaveBeenCalledWith("/metadata/refresh-link/m1", { method: "POST" });
+    expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
+    expect(revalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
   });
 });
 
@@ -163,6 +166,7 @@ describe("metadata providers & search & links", () => {
     await deleteLink(jsonRequest("/api/metadata/links?id=9", { method: "DELETE" }));
     expect(mockApi).toHaveBeenCalledWith("/metadata/links/9", { method: "DELETE" });
     expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
+    expect(revalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
   });
 
   it("PATCH links requires an id", async () => {
@@ -184,5 +188,6 @@ describe("metadata providers & search & links", () => {
       body: JSON.stringify({ is_primary: true, sync_series: true, sync_books: true }),
     });
     expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
+    expect(revalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
   });
 });

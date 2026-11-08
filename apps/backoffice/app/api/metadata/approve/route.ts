@@ -11,5 +11,6 @@ export const POST = withRoute(async (request: NextRequest) => {
     body: JSON.stringify(rest),
   });
   revalidateTag("metadata", { expire: 0 });
+  revalidateTag("series", { expire: 0 });
   return NextResponse.json(data);
 }, { fallback: "Failed to approve metadata" });
