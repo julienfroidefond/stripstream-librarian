@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.109 — 2026-11-08
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **backoffice** — cover metadata sync, job replay and AllDebrid test
+
+</details>
+
 ## v3.32.108 — 2026-11-08
 
 <details>
