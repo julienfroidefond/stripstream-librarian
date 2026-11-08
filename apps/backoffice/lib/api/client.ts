@@ -26,8 +26,10 @@ export async function apiFetch<T>(
   }
 
   // Impersonation : injecte X-As-User si un user est sélectionné dans le backoffice
+  let activeUserId: string | null = null;
   try {
     const { userId } = await getActiveUser();
+    activeUserId = userId;
     if (userId) headers.set("X-As-User", userId);
   } catch {
     // Hors contexte Next.js (tests, etc.)
@@ -35,10 +37,19 @@ export async function apiFetch<T>(
 
   const { next: nextOptions, ...restInit } = init ?? {};
 
+  // A user-scoped response must never be shared through Next's data cache: the
+  // cache key only contains the URL. While impersonating a reader, always
+  // bypass it even when the caller asked for `next.revalidate`.
+  const cacheOptions = activeUserId
+    ? { cache: "no-store" as const }
+    : nextOptions
+      ? { next: nextOptions }
+      : { cache: "no-store" as const };
+
   const res = await fetch(`${baseUrl}${path}`, {
     ...restInit,
     headers,
-    ...(nextOptions ? { next: nextOptions } : { cache: "no-store" as const }),
+    ...cacheOptions,
   });
 
   if (!res.ok) {

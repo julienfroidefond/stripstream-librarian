@@ -195,6 +195,8 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
               </div>
               <button
                 onClick={() => setEditMode(true)}
+                title={t("readingLists.editTitle")}
+                aria-label={t("readingLists.editTitle")}
                 className="mt-0.5 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { uniqueName } from "../helpers";
+import { type Page } from "@playwright/test";
+
+import { openSeriesDetail, uniqueName } from "../helpers";
 import {
   ApiRequestError,
   createLibrary,
@@ -15,18 +17,40 @@ import {
 } from "./api";
 
 /**
- * Bibliothèque réservée aux fixtures de métadonnées (auteurs, genres).
+ * Bibliothèques temporaires réservées aux fixtures.
  *
- * Les tests ne doivent pas modifier les données réelles : cette bibliothèque
- * temporaire ne contient que des séries créées par la suite. Elle est recréée
- * par `auth.setup.ts`, puis supprimée par le teardown global. Les séries de
- * test sont archivées à la suppression (comportement de l'API) ; leurs
- * métadonnées sont donc vidées avant, et les archives restantes sont purgées
- * en recréant les séries avant de supprimer la bibliothèque.
+ * `e2e-metadata` ne contient que des séries vides (auteurs, genres). Les
+ * parcours qui déclenchent un scan ou un rebuild utilisent des racines
+ * séparées (`e2e-books`, `e2e-jobs`) : l'indexer supprime les séries orphelines
+ * après chaque scan, ce qui effacerait les fixtures créées en parallèle par les
+ * autres specs si elles partageaient la même bibliothèque.
+ *
+ * Les trois bibliothèques sont recréées par `auth.setup.ts`, puis supprimées
+ * par le teardown global. Les séries de test sont archivées à la suppression
+ * (comportement de l'API) ; les archives restantes sont purgées en recréant les
+ * séries avant de supprimer chaque bibliothèque.
  */
 
 export const METADATA_LIBRARY_NAME = "e2e-metadata";
+export const BOOK_LIBRARY_NAME = "e2e-books";
+export const JOBS_LIBRARY_NAME = "e2e-jobs";
+
 const TEMP_DIR_NAME = "stripstream-e2e-metadata";
+
+const AUXILIARY_LIBRARIES = [
+  { name: BOOK_LIBRARY_NAME, dirName: "stripstream-e2e-books" },
+  { name: JOBS_LIBRARY_NAME, dirName: "stripstream-e2e-jobs" },
+] as const;
+
+const MANAGED_LIBRARY_NAMES = new Set<string>([
+  METADATA_LIBRARY_NAME,
+  ...AUXILIARY_LIBRARIES.map((library) => library.name),
+]);
+
+const MANAGED_ROOT_NAMES = new Set<string>([
+  TEMP_DIR_NAME,
+  ...AUXILIARY_LIBRARIES.map((library) => library.dirName),
+]);
 
 export type MetadataSeries = {
   libraryId: string;
@@ -53,9 +77,9 @@ function candidateRoots(): string[] {
   ];
 }
 
-async function findMetadataLibrary(): Promise<LibrarySummary | null> {
+async function findLibraryByName(name: string): Promise<LibrarySummary | null> {
   const libraries = await listLibraries();
-  return libraries.find((library) => library.name === METADATA_LIBRARY_NAME) ?? null;
+  return libraries.find((library) => library.name === name) ?? null;
 }
 
 /**
@@ -72,7 +96,7 @@ async function purgeArchivedSeries(libraryId: string): Promise<void> {
 }
 
 function removeManagedRoot(rootPath: string): void {
-  if (path.basename(rootPath) !== TEMP_DIR_NAME) return;
+  if (!MANAGED_ROOT_NAMES.has(path.basename(rootPath))) return;
   try {
     fs.rmSync(rootPath, { recursive: true, force: true });
   } catch {
@@ -80,16 +104,21 @@ function removeManagedRoot(rootPath: string): void {
   }
 }
 
-/** Supprime la bibliothèque temporaire et purge ses archives. */
-export async function removeMetadataLibrary(): Promise<void> {
-  const library = await findMetadataLibrary();
-  if (!library) return;
-
+async function removeLibrary(library: LibrarySummary): Promise<void> {
   // Toujours purger avant de supprimer : `DELETE /libraries` ne nettoie pas
   // `archived_series` (pas de clé étrangère).
   await purgeArchivedSeries(library.id);
   await deleteLibrary(library.id);
   removeManagedRoot(library.root_path);
+}
+
+/** Supprime les bibliothèques temporaires et purge leurs archives. */
+export async function removeMetadataLibrary(): Promise<void> {
+  const libraries = await listLibraries();
+  for (const library of libraries) {
+    if (!MANAGED_LIBRARY_NAMES.has(library.name)) continue;
+    await removeLibrary(library);
+  }
 }
 
 /**
@@ -100,6 +129,7 @@ export async function prepareMetadataLibrary(): Promise<LibrarySummary> {
   await removeMetadataLibrary();
 
   const failures: string[] = [];
+  let metadataLibrary: LibrarySummary | null = null;
   for (const candidate of candidateRoots()) {
     try {
       fs.mkdirSync(candidate, { recursive: true });
@@ -109,7 +139,8 @@ export async function prepareMetadataLibrary(): Promise<LibrarySummary> {
     }
 
     try {
-      return await createLibrary(METADATA_LIBRARY_NAME, candidate);
+      metadataLibrary = await createLibrary(METADATA_LIBRARY_NAME, candidate);
+      break;
     } catch (error) {
       if (error instanceof ApiRequestError && [400, 409].includes(error.status)) {
         failures.push(`${candidate} : ${error.message}`);
@@ -119,24 +150,57 @@ export async function prepareMetadataLibrary(): Promise<LibrarySummary> {
     }
   }
 
-  throw new Error(
-    `Impossible de créer la bibliothèque ${METADATA_LIBRARY_NAME}. ` +
-      `L'API et les tests doivent voir le même système de fichiers, ou définis ` +
-      `E2E_METADATA_LIBRARY_ROOT vers un répertoire existant côté API.\n` +
-      failures.join("\n")
-  );
+  if (!metadataLibrary) {
+    throw new Error(
+      `Impossible de créer la bibliothèque ${METADATA_LIBRARY_NAME}. ` +
+        `L'API et les tests doivent voir le même système de fichiers, ou définis ` +
+        `E2E_METADATA_LIBRARY_ROOT vers un répertoire existant côté API.\n` +
+        failures.join("\n")
+    );
+  }
+
+  // Par défaut, les racines auxiliaires sont des sœurs de `e2e-metadata`.
+  // Pour un chemin forcé (ou le repli sur `/tmp` lui-même), on les imbrique
+  // sous la racine de métadonnées afin de rester dans un répertoire visible.
+  const parent = path.dirname(metadataLibrary.root_path);
+  const useParent =
+    parent !== path.parse(parent).root &&
+    path.basename(metadataLibrary.root_path) === TEMP_DIR_NAME;
+  const auxiliaryBase = useParent ? parent : metadataLibrary.root_path;
+
+  for (const auxiliary of AUXILIARY_LIBRARIES) {
+    const rootPath = path.join(auxiliaryBase, auxiliary.dirName);
+    fs.mkdirSync(rootPath, { recursive: true });
+    await createLibrary(auxiliary.name, rootPath);
+  }
+
+  return metadataLibrary;
 }
 
-/** Retrouve la bibliothèque créée par le setup (garde-fou explicite). */
-export async function ensureMetadataLibrary(): Promise<LibrarySummary> {
-  const library = await findMetadataLibrary();
+async function ensureLibrary(name: string): Promise<LibrarySummary> {
+  const library = await findLibraryByName(name);
   if (!library) {
     throw new Error(
-      `Bibliothèque ${METADATA_LIBRARY_NAME} introuvable. Le projet « setup » ` +
+      `Bibliothèque ${name} introuvable. Le projet « setup » ` +
         `(auth.setup.ts) doit la créer avant les specs.`
     );
   }
   return library;
+}
+
+/** Retrouve la bibliothèque créée par le setup (garde-fou explicite). */
+export async function ensureMetadataLibrary(): Promise<LibrarySummary> {
+  return ensureLibrary(METADATA_LIBRARY_NAME);
+}
+
+/** Bibliothèque dédiée aux livres jetables (scan réel, pas de fixtures partagées). */
+export async function ensureBookLibrary(): Promise<LibrarySummary> {
+  return ensureLibrary(BOOK_LIBRARY_NAME);
+}
+
+/** Bibliothèque vide dédiée aux rebuilds : aucun orphelin d'autres specs. */
+export async function ensureJobsLibrary(): Promise<LibrarySummary> {
+  return ensureLibrary(JOBS_LIBRARY_NAME);
 }
 
 /**
@@ -175,4 +239,13 @@ export async function removeMetadataSeries(series: MetadataSeries): Promise<void
     genres: [],
   }).catch(() => undefined);
   await deleteSeries(series.seriesId).catch(() => undefined);
+}
+
+/** Open a fixture series detail page from the metadata library. */
+export async function openMetadataSeries(page: Page, series: MetadataSeries): Promise<void> {
+  await openSeriesDetail(page, {
+    name: series.name,
+    seriesId: series.seriesId,
+    libraryName: METADATA_LIBRARY_NAME,
+  });
 }

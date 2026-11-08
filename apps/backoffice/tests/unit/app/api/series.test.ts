@@ -405,12 +405,15 @@ describe("/api/series", () => {
     mockApi.mockResolvedValue(undefined);
     const res = await putRating(jsonRequest("/api/series/s1/rating", { method: "PUT", body: { rating: 4 } }), routeCtx({ seriesId: "s1" }));
     expect(mockApi).toHaveBeenCalledWith("/series/s1/rating", expect.objectContaining({ method: "PUT" }));
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
     expect(res.status).toBe(204);
   });
 
   it("DELETE rating returns 204", async () => {
     mockApi.mockResolvedValue(undefined);
     const res = await deleteRating(jsonRequest("/api/series/s1/rating", { method: "DELETE" }), routeCtx({ seriesId: "s1" }));
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
     expect(res.status).toBe(204);
   });
 

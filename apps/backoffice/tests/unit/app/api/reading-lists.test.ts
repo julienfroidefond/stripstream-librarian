@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonRequest, routeCtx } from "./helpers";
 
 const revalidateTag = vi.hoisted(() => vi.fn());
-vi.mock("next/cache", () => ({ revalidateTag }));
+const revalidatePath = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 
 vi.mock("@/lib/api", async () => {
   const { createApiMock } = await import("./helpers");
@@ -28,6 +29,7 @@ const mockApi = vi.mocked(apiFetch);
 
 beforeEach(() => {
   revalidateTag.mockClear();
+  revalidatePath.mockClear();
 });
 
 describe("/api/reading-lists", () => {
@@ -47,6 +49,8 @@ describe("/api/reading-lists", () => {
     mockApi.mockResolvedValue({ id: "1" });
     expect((await createList(jsonRequest("/api/reading-lists", { method: "POST", body: { name: "x" } }))).status).toBe(200);
     expect(revalidateTag).toHaveBeenCalledWith("reading-lists", { expire: 0 });
+    expect(revalidatePath).toHaveBeenCalledWith("/series");
+    expect(revalidatePath).toHaveBeenCalledWith("/reading-lists");
   });
 
   it("POST returns 500 on error without invalidating the cache", async () => {

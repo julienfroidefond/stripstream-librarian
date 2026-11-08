@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 import { uniqueName } from "../helpers";
-import { deleteSeries, listArchivedSeries } from "../support/api";
+import { deleteSeries, listArchivedSeries, seriesExists } from "../support/api";
 import { createMetadataSeries, removeMetadataSeries } from "../support/metadata";
 
 /**
@@ -84,6 +84,83 @@ test.describe("paramètres — orphelins et archives", () => {
       await expect(archiveRow).toBeVisible();
       await expect(archiveRow).toContainText(author);
       await expect(archiveRow).toContainText(genre);
+
+      // Détail dépliable : cette fixture orpheline n'a aucun tome archivé.
+      await archiveRow.click();
+      await expect(page.getByText("No archived volume.", { exact: true })).toBeVisible();
+    } finally {
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("annule puis confirme la suppression d'un orphelin", async ({ page }) => {
+    const series = await createMetadataSeries();
+
+    try {
+      await page.goto("/settings?tab=orphans");
+      await waitForOrphansLoaded(page);
+
+      const row = await findOrphanRow(page, series.name);
+      expect(row, "la série orpheline doit apparaître avant suppression").not.toBeNull();
+
+      // Cancel must leave both the row and the database untouched.
+      await row!.getByRole("button", { name: "Delete", exact: true }).click();
+      const modal = page.getByTestId("modal-panel");
+      await expect(modal.getByText("Delete this series?", { exact: true })).toBeVisible();
+      await expect(modal).toContainText(series.name);
+      await modal.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(modal).toBeHidden();
+      await expect(row!).toBeVisible();
+      expect(await seriesExists(series.seriesId)).toBe(true);
+
+      // Confirming deletes this disposable fixture only.
+      await row!.getByRole("button", { name: "Delete", exact: true }).click();
+      await expect(modal.getByText("Delete this series?", { exact: true })).toBeVisible();
+      await modal.getByRole("button", { name: "Delete", exact: true }).click();
+
+      await expect
+        .poll(async () => seriesExists(series.seriesId), { timeout: 10_000 })
+        .toBe(false);
+      await expect(page.getByText("1 series deleted", { exact: true })).toBeVisible();
+      await expect(page.getByRole("row").filter({ hasText: series.name })).toHaveCount(0);
+    } finally {
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("annule la suppression en masse des orphelins", async ({ page }) => {
+    const series = await createMetadataSeries();
+
+    try {
+      await page.goto("/settings?tab=orphans");
+      await waitForOrphansLoaded(page);
+
+      const bulkButton = page.getByRole("button", {
+        name: "Delete this page's selection",
+        exact: true,
+      });
+      await expect(bulkButton).toBeEnabled();
+      await bulkButton.click();
+
+      const modal = page.getByTestId("modal-panel");
+      await expect(
+        modal.getByText("Delete the orphan series on this page?", { exact: true })
+      ).toBeVisible();
+      await expect(modal).toContainText("will be archived then deleted");
+
+      let deleteRequests = 0;
+      const countDelete = (request: { method(): string; url(): string }) => {
+        if (request.method() === "DELETE" && request.url().endsWith("/api/series/orphans")) {
+          deleteRequests += 1;
+        }
+      };
+      page.on("request", countDelete);
+      await modal.getByRole("button", { name: "Cancel", exact: true }).click();
+      page.off("request", countDelete);
+
+      await expect(modal).toBeHidden();
+      expect(deleteRequests).toBe(0);
+      expect(await seriesExists(series.seriesId)).toBe(true);
     } finally {
       await removeMetadataSeries(series);
     }

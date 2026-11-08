@@ -10,7 +10,13 @@ import { loadEnvLocal } from "../env";
 
 export type ReadingStatus = "unread" | "reading" | "read";
 export type ReadingListSummary = { id: string; name: string };
-export type TokenSummary = { id: string; name: string; revoked_at?: string | null };
+export type TokenSummary = {
+  id: string;
+  name: string;
+  user_id?: string | null;
+  revoked_at?: string | null;
+};
+export type CreatedTokenSummary = TokenSummary & { token: string; prefix: string; scope: string };
 export type UserSummary = { id: string; username: string };
 export type LibrarySummary = {
   id: string;
@@ -18,6 +24,16 @@ export type LibrarySummary = {
   root_path: string;
   book_count?: number;
   series_count?: number;
+  monitor_enabled?: boolean;
+  scan_mode?: string;
+  watcher_enabled?: boolean;
+  metadata_provider?: string | null;
+  fallback_metadata_provider?: string | null;
+  metadata_refresh_mode?: string;
+  reading_status_provider?: string | null;
+  reading_status_push_mode?: string;
+  download_detection_mode?: string;
+  tags?: string[];
 };
 export type SeriesSummary = { series_id: string; name: string; library_id: string };
 export type SeriesMetadataSummary = {
@@ -25,13 +41,32 @@ export type SeriesMetadataSummary = {
   authors: string[];
   genres: string[];
   description: string | null;
+  publishers: string[];
+  start_year: number | null;
+  total_volumes: number | null;
+  status: string | null;
+  book_author: string | null;
+  book_language: string | null;
+  locked_fields: Record<string, boolean>;
 };
 export type MetadataLinkSummary = {
   id: string;
+  series_id?: string;
   series_name: string;
   provider: string;
+  external_id?: string;
   status: string;
   is_primary: boolean;
+};
+export type SeriesRatingsSummary = {
+  user_rating: number | null;
+  anilist_pulled_rating: number | null;
+  provider_ratings: Array<{
+    provider: string;
+    rating: number;
+    rating_scale: number;
+    rating_count: number | null;
+  }>;
 };
 export type ArchivedSeriesSummary = {
   id: string;
@@ -139,6 +174,32 @@ export async function deleteReadingList(id: string): Promise<void> {
   await apiRequest<void>(`/reading-lists/${id}`, { method: "DELETE" });
 }
 
+export type ReadingListItemSummary = {
+  id: string;
+  name: string;
+  position: number;
+  library_id: string;
+  book_count: number;
+};
+
+export type ReadingListDetailSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  items: ReadingListItemSummary[];
+};
+
+export async function getReadingList(id: string): Promise<ReadingListDetailSummary> {
+  return apiRequest<ReadingListDetailSummary>(`/reading-lists/${id}`);
+}
+
+export async function addSeriesToReadingList(listId: string, seriesId: string): Promise<void> {
+  await apiRequest<void>(`/reading-lists/${listId}/series`, {
+    method: "POST",
+    body: { series_id: seriesId },
+  });
+}
+
 /** Remove every reading list carrying this exact name (test leftovers). */
 export async function deleteReadingListsByName(name: string): Promise<void> {
   const lists = await apiRequest<ReadingListSummary[]>("/reading-lists");
@@ -147,6 +208,24 @@ export async function deleteReadingListsByName(name: string): Promise<void> {
       .filter((list) => list.name === name)
       .map((list) => deleteReadingList(list.id).catch(() => undefined))
   );
+}
+
+/** Create a read-scoped token attached to a user; the plaintext is only returned once. */
+export async function createToken(
+  name: string,
+  userId: string,
+  scope: "read" | "admin" = "read"
+): Promise<CreatedTokenSummary> {
+  return apiRequest<CreatedTokenSummary>("/admin/tokens", {
+    method: "POST",
+    body: { name, scope, ...(scope === "read" ? { user_id: userId } : {}) },
+  });
+}
+
+/** Exact token lookup; the admin list exposes the current user assignment. */
+export async function findTokenByName(name: string): Promise<TokenSummary | null> {
+  const tokens = await apiRequest<TokenSummary[]>("/admin/tokens");
+  return tokens.find((token) => token.name === name) ?? null;
 }
 
 /** Revoke then hard-delete every token carrying this exact name. */
@@ -182,6 +261,39 @@ export async function listLibraries(): Promise<LibrarySummary[]> {
   return apiRequest<LibrarySummary[]>("/libraries");
 }
 
+export async function findLibraryByName(name: string): Promise<LibrarySummary | null> {
+  const libraries = await listLibraries();
+  return libraries.find((library) => library.name === name) ?? null;
+}
+
+/** Restore library scheduling flags through the public API (test cleanup). */
+export async function updateLibraryMonitoring(
+  id: string,
+  body: {
+    monitor_enabled: boolean;
+    scan_mode: string;
+    watcher_enabled?: boolean;
+    metadata_refresh_mode?: string;
+    download_detection_mode?: string;
+  }
+): Promise<void> {
+  await apiRequest(`/libraries/${id}/monitoring`, { method: "PATCH", body });
+}
+
+export async function updateLibraryProviders(
+  id: string,
+  body: {
+    metadata_provider: string | null;
+    fallback_metadata_provider: string | null;
+  }
+): Promise<void> {
+  await apiRequest(`/libraries/${id}/metadata-provider`, { method: "PATCH", body });
+}
+
+export async function updateLibraryTags(id: string, tags: string[]): Promise<void> {
+  await apiRequest(`/libraries/${id}/tags`, { method: "PATCH", body: { tags } });
+}
+
 export async function createLibrary(name: string, rootPath: string): Promise<LibrarySummary> {
   return apiRequest<LibrarySummary>("/libraries", {
     method: "POST",
@@ -208,6 +320,11 @@ export async function updateSeries(
     new_name: string;
     authors?: string[];
     genres?: string[];
+    description?: string | null;
+    start_year?: number | null;
+    total_volumes?: number | null;
+    status?: string | null;
+    locked_fields?: Record<string, boolean>;
   }
 ): Promise<void> {
   await apiRequest<void>(`/series/${id}`, { method: "PATCH", body });
@@ -221,10 +338,45 @@ export async function listArchivedSeries(): Promise<ArchivedSeriesSummary[]> {
   return apiRequest<ArchivedSeriesSummary[]>("/admin/series/archived");
 }
 
+export type SeriesDetailsSummary = {
+  id: string;
+  name: string;
+  library_id: string;
+  book_count?: number;
+};
+
+export async function getSeriesDetails(id: string): Promise<SeriesDetailsSummary> {
+  return apiRequest<SeriesDetailsSummary>(`/series/${id}/details`);
+}
+
+/** Check existence without throwing: used after destructive UI actions. */
+export async function seriesExists(id: string): Promise<boolean> {
+  try {
+    await getSeriesDetails(id);
+    return true;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return false;
+    throw error;
+  }
+}
+
 // ─── Métadonnées ─────────────────────────────────────────────────────────────
 
 export async function getSeriesMetadata(id: string): Promise<SeriesMetadataSummary> {
   return apiRequest<SeriesMetadataSummary>(`/series/${id}/metadata`);
+}
+
+export async function listMetadataLinksForSeries(seriesId: string): Promise<MetadataLinkSummary[]> {
+  return apiRequest<MetadataLinkSummary[]>(`/metadata/links?series_id=${seriesId}`);
+}
+
+export async function getSeriesRatings(
+  seriesId: string,
+  userId: string
+): Promise<SeriesRatingsSummary> {
+  return apiRequest<SeriesRatingsSummary>(`/series/${seriesId}/ratings`, {
+    headers: { "X-As-User": userId },
+  });
 }
 
 export async function createMetadataMatch(body: {

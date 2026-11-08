@@ -102,6 +102,14 @@ describe("apiFetch", () => {
     expect(cookieStore.get).toHaveBeenCalledWith("as_user_id");
   });
 
+  it("bypasses the data cache for impersonated responses", async () => {
+    cookieStore.get.mockReturnValue({ value: "user-42" });
+    await apiFetch("/series", { next: { revalidate: 30, tags: ["series"] } });
+    const init = lastFetchInit();
+    expect(init.cache).toBe("no-store");
+    expect(init.next).toBeUndefined();
+  });
+
   it("does not inject X-As-User without the cookie", async () => {
     await apiFetch("/libraries");
     expect((lastFetchInit().headers as Headers).get("X-As-User")).toBeNull();

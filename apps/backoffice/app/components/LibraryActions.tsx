@@ -130,6 +130,8 @@ export function LibraryActions({
         variant="ghost"
         size="sm"
         onClick={() => setIsOpen(true)}
+        aria-label={t("libraryActions.settingsTitle")}
+        title={t("libraryActions.settingsTitle")}
         className={isOpen ? "bg-accent" : ""}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -150,7 +152,13 @@ export function LibraryActions({
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
             onClick={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}
           >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("libraryActions.settingsTitle")}
+              data-testid="library-settings-panel"
+              className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in"
+            >
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30">
                 <div className="flex items-center gap-2.5">
