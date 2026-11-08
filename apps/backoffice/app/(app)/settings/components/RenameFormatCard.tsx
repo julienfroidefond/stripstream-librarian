@@ -134,6 +134,7 @@ export function RenameFormatCard({
             <code
               key={v.name}
               className="settings-well cursor-pointer rounded-full px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => appendVar(v.name)}
               title={v.example}
             >

@@ -8,7 +8,8 @@ vi.mock("@/lib/api", async () => {
   return createApiMock();
 });
 const revalidatePath = vi.hoisted(() => vi.fn());
-vi.mock("next/cache", () => ({ revalidatePath, revalidateTag: vi.fn() }));
+const revalidateTag = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 
 import { apiFetch, convertBook, updateBook, updateReadingProgress } from "@/lib/api";
 import {
@@ -101,6 +102,8 @@ describe("/api/books/[bookId]/progress", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/series");
     expect(revalidatePath).toHaveBeenCalledWith("/books/b1");
     expect(revalidatePath).toHaveBeenCalledWith("/series/s1");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(revalidateTag).toHaveBeenCalledWith("stats", { expire: 0 });
     expect(res.status).toBe(200);
   });
 

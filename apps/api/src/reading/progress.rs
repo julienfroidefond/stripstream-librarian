@@ -172,6 +172,11 @@ pub async fn update_reading_progress(
     .fetch_one(&state.pool)
     .await?;
 
+    // The dashboard aggregates (currently reading, recently read, status
+    // donut) are cached for 20 s in-process; a progress write must be visible
+    // immediately in the backoffice.
+    state.stats_cache.invalidate();
+
     Ok(Json(ReadingProgressResponse {
         status: row.get("status"),
         current_page: row.get("current_page"),
@@ -294,6 +299,8 @@ pub async fn mark_series_read(
             .execute(&state.pool)
             .await?
     };
+
+    state.stats_cache.invalidate();
 
     Ok(Json(MarkSeriesReadResponse {
         updated: result.rows_affected() as i64,

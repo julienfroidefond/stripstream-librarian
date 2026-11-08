@@ -16,16 +16,11 @@ import { createMetadataSeries, removeMetadataSeries } from "../support/metadata"
  * `fullyParallel` only parallelizes tests, not steps.
  */
 
-type SeriesPage = { items: Array<{ series_id: string; name: string }> };
-
 test.describe("listes de lecture — cycle de vie", () => {
   test("crée une liste, ajoute une série, retire la série puis supprime la liste", async ({
     page,
   }) => {
-    const seriesPage = await apiRequest<SeriesPage>("/series?limit=1&page=1");
-    const series = seriesPage.items[0];
-    test.skip(!series, "Aucune série en base");
-
+    const series = await createMetadataSeries({ name: uniqueName("E2E reading list series") });
     const name = `e2e-list-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     page.on("dialog", (dialog) => dialog.accept());
 
@@ -54,15 +49,15 @@ test.describe("listes de lecture — cycle de vie", () => {
       // Add a series
       await page.getByRole("button", { name: "Add a series" }).click();
       await expect(panel).toBeVisible();
-      await panel.getByPlaceholder("Search for a series...").fill(series!.name);
-      const result = panel.getByRole("button").filter({ hasText: series!.name }).first();
+      await panel.getByPlaceholder("Search for a series...").fill(series.name);
+      const result = panel.getByRole("button").filter({ hasText: series.name }).first();
       await expect(result).toBeVisible();
       await result.click();
       await expect(panel.getByText("Already in list")).toBeVisible();
       await panel.getByTestId("modal-close").click();
       await expect(panel).toBeHidden();
 
-      await expect(page.locator("main").getByText(series!.name, { exact: true }).first()).toBeVisible();
+      await expect(page.locator("main").getByText(series.name, { exact: true }).first()).toBeVisible();
 
       // Remove the series
       await page.locator('button[title="Remove from list"]').first().click({ force: true });
@@ -88,6 +83,7 @@ test.describe("listes de lecture — cycle de vie", () => {
             apiRequest(`/reading-lists/${list.id}`, { method: "DELETE" }).catch(() => undefined)
           )
       );
+      await removeMetadataSeries(series);
     }
   });
 

@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::*;
 use crate::auth::AuthUser;
 use crate::error::ApiError;
+use crate::reading::progress::{update_reading_progress, UpdateReadingProgressRequest};
 use crate::series::activity::get_series_user_activity;
 use crate::state::test_state;
 
@@ -1609,9 +1610,47 @@ async fn get_stats_reuses_cached_response_until_cleared(pool: PgPool) {
     assert_eq!(cached.overview.total_books, 1);
 
     // After an explicit invalidation the aggregate is recomputed.
-    state.stats_cache.full.clear();
+    state.stats_cache.invalidate();
     let Json(refreshed) = get_stats(State(state), stats_query(None), None)
         .await
         .unwrap();
     assert_eq!(refreshed.overview.total_books, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reading_progress_update_invalidates_cached_overview(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let user = create_user(&pool, "reader").await;
+    let book = create_simple_book(&pool, library, Some(series), "B1", 20).await;
+
+    // Prime the per-user overview cache before the progress write.
+    let Json(before) = get_stats_overview(State(state.clone()), auth_user(user))
+        .await
+        .unwrap();
+    assert_eq!(before.reading_status.reading, 0);
+    assert!(before.currently_reading.is_empty());
+
+    let Json(updated) = update_reading_progress(
+        State(state.clone()),
+        auth_user(user),
+        Path(book),
+        Json(UpdateReadingProgressRequest {
+            status: "reading".to_string(),
+            current_page: Some(3),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.status, "reading");
+    assert_eq!(updated.current_page, Some(3));
+
+    let Json(after) = get_stats_overview(State(state), auth_user(user))
+        .await
+        .unwrap();
+    assert_eq!(after.reading_status.reading, 1);
+    assert_eq!(after.currently_reading.len(), 1);
+    assert_eq!(after.currently_reading[0].book_id, book.to_string());
+    assert_eq!(after.currently_reading[0].current_page, 3);
 }

@@ -33,4 +33,21 @@ test.describe("dashboard — vue d'ensemble", () => {
     await main.getByRole("button", { name: "Month" }).first().click();
     await expect(main.getByRole("button", { name: "Month" }).first()).toBeVisible();
   });
+
+  test("masque puis réaffiche une courbe via sa légende", async ({ page }) => {
+    await page.goto("/");
+
+    const legend = page
+      .locator("main")
+      .getByRole("button", { name: "Scan", exact: true })
+      .first();
+    await expect(legend).toBeVisible();
+
+    const label = legend.locator("span").last();
+    await expect(label).not.toHaveClass(/line-through/);
+    await legend.click();
+    await expect(label).toHaveClass(/line-through/);
+    await legend.click();
+    await expect(label).not.toHaveClass(/line-through/);
+  });
 });

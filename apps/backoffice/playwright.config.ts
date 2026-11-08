@@ -9,8 +9,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
-  timeout: 30_000,
-  expect: { timeout: 7_000 },
+  // The suite runs against the Next dev server and the real indexer. With
+  // several workers, on-demand route compilation and RSC refreshes can exceed
+  // the old 7 s assertion budget without being a product regression.
+  timeout: 45_000,
+  expect: { timeout: 15_000 },
   reporter: [
     ["list"],
     ["html", { open: "never", outputFolder: "tests/e2e/.report" }],
