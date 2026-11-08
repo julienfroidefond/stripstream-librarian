@@ -20,10 +20,30 @@ export type LibrarySummary = {
   series_count?: number;
 };
 export type SeriesSummary = { series_id: string; name: string; library_id: string };
+export type SeriesMetadataSummary = {
+  series_name: string;
+  authors: string[];
+  genres: string[];
+  description: string | null;
+};
+export type MetadataLinkSummary = {
+  id: string;
+  series_name: string;
+  provider: string;
+  status: string;
+  is_primary: boolean;
+};
 export type ArchivedSeriesSummary = {
   id: string;
   name: string;
   library_id?: string | null;
+};
+export type IndexJobSummary = {
+  id: string;
+  library_id: string | null;
+  type: string;
+  status: string;
+  error_opt?: string | null;
 };
 export type BookSummary = {
   id: string;
@@ -199,6 +219,49 @@ export async function deleteSeries(id: string): Promise<void> {
 
 export async function listArchivedSeries(): Promise<ArchivedSeriesSummary[]> {
   return apiRequest<ArchivedSeriesSummary[]>("/admin/series/archived");
+}
+
+// ─── Métadonnées ─────────────────────────────────────────────────────────────
+
+export async function getSeriesMetadata(id: string): Promise<SeriesMetadataSummary> {
+  return apiRequest<SeriesMetadataSummary>(`/series/${id}/metadata`);
+}
+
+export async function createMetadataMatch(body: {
+  library_id: string;
+  series_name: string;
+  provider: string;
+  external_id: string;
+  title: string;
+  metadata_json: Record<string, unknown>;
+  external_url?: string;
+  confidence?: number;
+  total_volumes?: number;
+}): Promise<MetadataLinkSummary> {
+  return apiRequest<MetadataLinkSummary>("/metadata/match", { method: "POST", body });
+}
+
+export async function approveMetadataLink(
+  id: string,
+  options: { syncSeries?: boolean; syncBooks?: boolean } = {}
+): Promise<void> {
+  await apiRequest<void>(`/metadata/approve/${id}`, {
+    method: "POST",
+    body: {
+      sync_series: options.syncSeries ?? false,
+      sync_books: options.syncBooks ?? false,
+    },
+  });
+}
+
+export async function deleteMetadataLink(id: string): Promise<void> {
+  await apiRequest<void>(`/metadata/links/${id}`, { method: "DELETE" });
+}
+
+// ─── Jobs ────────────────────────────────────────────────────────────────────
+
+export async function getIndexJob(id: string): Promise<IndexJobSummary> {
+  return apiRequest<IndexJobSummary>(`/index/jobs/${id}`);
 }
 
 // ─── Lecture ─────────────────────────────────────────────────────────────────

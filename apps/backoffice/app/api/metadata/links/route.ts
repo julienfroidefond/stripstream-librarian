@@ -24,6 +24,7 @@ export const DELETE = withRoute(async (request: NextRequest) => {
     method: "DELETE",
   });
   revalidateTag("metadata", { expire: 0 });
+  revalidateTag("series", { expire: 0 });
   return NextResponse.json(data);
 }, { fallback: "Failed to delete metadata link" });
 
@@ -39,5 +40,6 @@ export const PATCH = withRoute(async (request: NextRequest) => {
     { method: "PATCH", body: JSON.stringify(body) },
   );
   revalidateTag("metadata", { expire: 0 });
+  revalidateTag("series", { expire: 0 });
   return NextResponse.json(data);
 }, { fallback: "Failed to update metadata link" });

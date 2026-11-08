@@ -7,5 +7,6 @@ export const POST = withRoute(async (_request: NextRequest, { params }: { params
   const { id } = await params;
   const data = await apiFetch(`/metadata/refresh-link/${id}`, { method: "POST" });
   revalidateTag("metadata", { expire: 0 });
+  revalidateTag("series", { expire: 0 });
   return NextResponse.json(data);
 }, { fallback: "Failed to refresh metadata" });
