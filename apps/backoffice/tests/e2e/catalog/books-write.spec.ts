@@ -76,4 +76,51 @@ test.describe("livres — actions", () => {
       await removeDisposableBook(book);
     }
   });
+
+  test("verrouille puis déverrouille un champ du livre", async ({ page }) => {
+    test.setTimeout(120_000);
+
+    const book = await createDisposableBook();
+
+    try {
+      await page.goto(`/books/${book.id}`);
+      await expect(page.locator("main h1")).toHaveText(book.title);
+
+      await page.getByRole("button", { name: /Edit metadata/ }).click();
+      const panel = page.getByTestId("modal-panel");
+      await expect(panel).toBeVisible();
+
+      const titleField = panel.getByPlaceholder("Book title").locator("xpath=..");
+      await titleField.getByTitle("Click to lock this field").click();
+      await expect(
+        titleField.getByTitle("Locked field (protected from syncs)")
+      ).toBeVisible();
+      await expect(panel.getByText("Locked fields will not be overwritten")).toBeVisible();
+
+      await panel.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(panel).toBeHidden();
+      await expect
+        .poll(async () => (await getBook(book.id)).locked_fields?.title === true)
+        .toBe(true);
+
+      // Le verrouillage est relu depuis l'API après un rechargement complet.
+      await page.reload();
+      await page.getByRole("button", { name: /Edit metadata/ }).click();
+      await expect(panel).toBeVisible();
+      const reloadedTitleField = panel.getByPlaceholder("Book title").locator("xpath=..");
+      await expect(
+        reloadedTitleField.getByTitle("Locked field (protected from syncs)")
+      ).toBeVisible();
+
+      await reloadedTitleField.getByTitle("Locked field (protected from syncs)").click();
+      await expect(reloadedTitleField.getByTitle("Click to lock this field")).toBeVisible();
+      await panel.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(panel).toBeHidden();
+      await expect
+        .poll(async () => (await getBook(book.id)).locked_fields?.title === true)
+        .toBe(false);
+    } finally {
+      await removeDisposableBook(book);
+    }
+  });
 });

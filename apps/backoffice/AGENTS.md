@@ -119,8 +119,10 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
-- Parcours d'écriture : `catalog/books-write.spec.ts` (édition, téléchargement, suppression),
-  `catalog/series-write.spec.ts` (édition/verrouillage, renommage, suppression via Actions),
+- Parcours d'écriture : `catalog/books-write.spec.ts` (édition, téléchargement, suppression,
+  verrouillage d'un champ), `catalog/series-write.spec.ts` (édition/verrouillage, renommage,
+  suppression via Actions), `catalog/authors-genres.spec.ts` (affectation en masse d'un genre,
+  filtre « sans genre » et suppression),
   `catalog/series-merge.spec.ts` (fusion et déplacement du lien de métadonnées),
   `catalog/ratings.spec.ts` (note puis retrait), `libraries/settings-write.spec.ts` (réglages
   restaurés via l'API), `metadata/search-approve.spec.ts` (recherche mockée, approbation,
@@ -130,8 +132,8 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
   mockées), `admin/tokens.spec.ts` (réassignation de token + renommage inline),
   `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif + genre bloqué),
   `admin/archives-orphans.spec.ts` (orphelin → archive, suppressions), `reading/lists.spec.ts`
-  (renommage/réordonnancement/groupement), `reading/progress-write.spec.ts` (lu/non lu, état
-  d'origine restauré via l'API).
+  (renommage/réordonnancement/groupement), `reading/progress-write.spec.ts` (lu/non lu, série
+  entière avec statut par tome, état d'origine restauré via l'API).
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
   `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée les bibliothèques
   temporaires `e2e-metadata`, `e2e-books` et `e2e-jobs`, enregistre la session dans
@@ -142,8 +144,9 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
   jobs) ; `support/library.ts` seed une mini-bibliothèque de fixtures (`E2E_SEED_LIBRARY=1`) et
   attend l'indexation ;
   `support/metadata.ts` crée des séries éphémères avec auteurs/genres uniques dans
-  `e2e-metadata` et fournit les racines dédiées `e2e-books` / `e2e-jobs` ; `helpers.ts` expose
-  `openFirstSeries`, `uniqueName`, `escapeRegExp`.
+  `e2e-metadata` et fournit les racines dédiées `e2e-books` / `e2e-jobs` ; `support/books.ts`
+  crée un livre ou une série multi-tomes scannée dans `e2e-books` ; `helpers.ts` expose
+  `openFirstSeries`, `openSeriesDetail`, `uniqueName`, `escapeRegExp`.
 - Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
   Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
 - `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`,

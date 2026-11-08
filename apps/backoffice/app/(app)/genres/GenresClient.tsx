@@ -391,13 +391,16 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         delete next[name];
         return next;
       });
-      if (Array.isArray(seriesFilter) && seriesFilter.includes(name)) {
-        const nextFilters = seriesFilter.filter(genre => genre !== name);
-        setSeriesFilter(nextFilters);
-        await Promise.all([refreshGenres(), fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres, debouncedSearch)]);
-      } else {
-        await refreshGenres();
-      }
+      const nextFilters = Array.isArray(seriesFilter) && seriesFilter.includes(name)
+        ? seriesFilter.filter(genre => genre !== name)
+        : seriesFilter;
+      if (nextFilters !== seriesFilter) setSeriesFilter(nextFilters);
+      // Always refetch the visible list: deleting a genre adds its series back
+      // to the untagged view, and removing an active filter changes the list.
+      await Promise.all([
+        refreshGenres(),
+        fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres, debouncedSearch),
+      ]);
       toast(t("genres.deleteSuccess"));
       return true;
     } finally {

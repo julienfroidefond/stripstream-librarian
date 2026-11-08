@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
 
-import { uniqueName } from "../helpers";
+import { openSeriesDetail, uniqueName } from "../helpers";
 import {
   ApiRequestError,
   createLibrary,
@@ -241,27 +241,11 @@ export async function removeMetadataSeries(series: MetadataSeries): Promise<void
   await deleteSeries(series.seriesId).catch(() => undefined);
 }
 
-/**
- * Open a fixture series detail page.
- *
- * `e2e-metadata` is recreated on every run with a fresh id, while the series
- * detail page resolves its library through `fetchLibraries` (Next cache, 30 s).
- * Going through the list warms that cache; retrying tolerates a cold dev
- * compile and a stale cache left by a previous run.
- */
+/** Open a fixture series detail page from the metadata library. */
 export async function openMetadataSeries(page: Page, series: MetadataSeries): Promise<void> {
-  const listUrl = `/series?q=${encodeURIComponent(series.name)}&e2e=${encodeURIComponent(
-    uniqueName("detail")
-  )}`;
-  await expect(async () => {
-    await page.goto(listUrl);
-    await expect(page.getByTitle(series.name)).toBeVisible();
-    await expect(
-      page.locator('select[name="library"] option', { hasText: METADATA_LIBRARY_NAME })
-    ).toHaveCount(1, { timeout: 1500 });
-  }).toPass({ timeout: 20_000 });
-
-  await page.getByRole("link", { name: series.name, exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/series/${series.seriesId}$`));
-  await expect(page.locator("main h1")).toHaveText(series.name);
+  await openSeriesDetail(page, {
+    name: series.name,
+    seriesId: series.seriesId,
+    libraryName: METADATA_LIBRARY_NAME,
+  });
 }

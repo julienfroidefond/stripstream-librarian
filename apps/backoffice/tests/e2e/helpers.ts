@@ -21,3 +21,31 @@ export function uniqueName(prefix: string): string {
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * Open a fixture series through the list.
+ *
+ * Temporary libraries are recreated on every run with a fresh id, while the
+ * series detail page resolves its library through `fetchLibraries` (Next cache,
+ * 30 s). Going through the list warms that cache; retrying tolerates a cold dev
+ * compile and a stale cache left by a previous run.
+ */
+export async function openSeriesDetail(
+  page: Page,
+  target: { name: string; seriesId: string; libraryName: string }
+): Promise<void> {
+  const listUrl = `/series?q=${encodeURIComponent(target.name)}&e2e=${encodeURIComponent(
+    uniqueName("detail")
+  )}`;
+  await expect(async () => {
+    await page.goto(listUrl);
+    await expect(page.getByTitle(target.name)).toBeVisible();
+    await expect(
+      page.locator('select[name="library"] option', { hasText: target.libraryName })
+    ).toHaveCount(1, { timeout: 1500 });
+  }).toPass({ timeout: 20_000 });
+
+  await page.getByRole("link", { name: target.name, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/series/${escapeRegExp(target.seriesId)}$`));
+  await expect(page.locator("main h1")).toHaveText(target.name);
+}

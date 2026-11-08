@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 
+import { openSeriesDetail } from "../helpers";
 import {
   findUserByUsername,
   getBookReadingProgress,
   listBooksForUser,
   updateBookReadingProgress,
 } from "../support/api";
+import { createDisposableSeries, removeDisposableSeries } from "../support/books";
+import { BOOK_LIBRARY_NAME } from "../support/metadata";
 
 /**
  * Écritures de progression sur un livre réel, avec le lecteur `e2e-reader`
@@ -83,6 +86,67 @@ test.describe("progression de lecture — écritures", () => {
       } else {
         await updateBookReadingProgress(book.id, reader.id, original.status);
       }
+    }
+  });
+
+  test("marque toute une série lue et conserve le statut de chaque tome", async ({ page }) => {
+    test.setTimeout(120_000);
+
+    const reader = await findUserByUsername(READER_USERNAME);
+    if (!reader) {
+      test.skip(true, `lecteur ${READER_USERNAME} introuvable`);
+      return;
+    }
+
+    const series = await createDisposableSeries(2);
+
+    try {
+      for (const book of series.books) {
+        await updateBookReadingProgress(book.id, reader.id, "unread");
+      }
+
+      await openSeriesDetail(page, {
+        name: series.name,
+        seriesId: series.seriesId,
+        libraryName: BOOK_LIBRARY_NAME,
+      });
+      await expect(page.getByText("0/2 read", { exact: true })).toBeVisible();
+
+      const [first, second] = series.books;
+      const firstCard = page
+        .locator("[data-cover-card]")
+        .filter({ has: page.getByTitle(first.title) });
+      await expect(firstCard).toHaveCount(1);
+      await firstCard.getByRole("button", { name: "Read", exact: true }).click();
+      await expect(firstCard.getByText("Read", { exact: true })).toBeVisible();
+      await expect(page.getByText("1/2 read", { exact: true })).toBeVisible();
+      await expect
+        .poll(async () => (await getBookReadingProgress(first.id, reader.id)).status)
+        .toBe("read");
+      await expect
+        .poll(async () => (await getBookReadingProgress(second.id, reader.id)).status)
+        .toBe("unread");
+
+      // L'action de série marque tous les tomes, puis la fiche affiche leur
+      // statut individuel et le compteur global.
+      await page.getByRole("button", { name: "Mark all read", exact: true }).click();
+      await expect(page.getByText("2/2 read", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Mark unread", exact: true })).toBeVisible();
+
+      for (const book of series.books) {
+        const card = page
+          .locator("[data-cover-card]")
+          .filter({ has: page.getByTitle(book.title) });
+        await expect(card.getByText("Read", { exact: true })).toBeVisible();
+        await expect
+          .poll(async () => (await getBookReadingProgress(book.id, reader.id)).status)
+          .toBe("read");
+      }
+
+      await page.reload();
+      await expect(page.getByText("2/2 read", { exact: true })).toBeVisible();
+    } finally {
+      await removeDisposableSeries(series);
     }
   });
 });

@@ -2,11 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { uniqueName } from "../helpers";
-import { ApiRequestError, apiRequest, seriesExists, deleteSeries } from "./api";
+import {
+  ApiRequestError,
+  apiRequest,
+  deleteSeries,
+  getSeriesDetails,
+  seriesExists,
+} from "./api";
 import { ensureBookLibrary } from "./metadata";
 
 /**
- * Disposable book fixture for book-action specs.
+ * Disposable book fixtures for book-action and reading specs.
  *
  * The CBZ is copied into the dedicated `e2e-books` library so the real scanner
  * creates the database row without pruning empty series from `e2e-metadata`
@@ -21,7 +27,8 @@ export type BookSummary = {
   library_id: string;
   series_id: string | null;
   title: string;
-  file_path: string | null;
+  file_path?: string | null;
+  locked_fields?: Record<string, boolean> | null;
 };
 
 export type DisposableBook = {
@@ -33,54 +40,111 @@ export type DisposableBook = {
   filePath: string;
 };
 
+export type DisposableSeries = {
+  seriesId: string;
+  name: string;
+  libraryId: string;
+  directory: string;
+  books: BookSummary[];
+};
+
 type BooksPage = { items: BookSummary[]; total: number };
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function scanAndWait(
+  libraryId: string,
+  directory: string,
+  slug: string,
+  volumeCount: number
+): Promise<BookSummary[]> {
+  await apiRequest(`/libraries/${libraryId}/scan`, { method: "POST" });
+
+  let found: BookSummary[] = [];
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const page = await apiRequest<BooksPage>(
+      `/books?library_id=${libraryId}&q=${encodeURIComponent(slug)}&limit=50`
+    );
+    found = page.items.filter((item) => item.library_id === libraryId);
+    if (found.length >= volumeCount) return found;
+    await sleep(500);
+  }
+
+  throw new Error(
+    `Le scan n'a pas importé ${volumeCount} livre(s) sous ${directory}. ` +
+      `L'indexer voit-il ${directory} ?`
+  );
+}
+
+async function deleteBooks(books: BookSummary[], seriesId: string): Promise<void> {
+  for (const book of books) {
+    await apiRequest(`/books/${book.id}`, { method: "DELETE" }).catch(() => undefined);
+  }
+  if (await seriesExists(seriesId).catch(() => false)) {
+    await deleteSeries(seriesId).catch(() => undefined);
+  }
+}
+
 /**
  * Copy a small CBZ under a unique series folder, scan the book library and
- * wait for the indexer to expose the row through `GET /books`.
+ * wait for the indexer to expose its row through `GET /books`.
  */
 export async function createDisposableBook(): Promise<DisposableBook> {
+  const series = await createDisposableSeries(1);
+  const book = series.books[0];
+  const slug = path.basename(series.directory);
+
+  return {
+    id: book.id,
+    title: book.title,
+    libraryId: series.libraryId,
+    seriesId: series.seriesId,
+    directory: series.directory,
+    filePath: path.join(series.directory, `${slug} - T01.cbz`),
+  };
+}
+
+/**
+ * Create a disposable series with several scanned volumes. Used by specs that
+ * need to exercise per-volume reading state and whole-series actions.
+ */
+export async function createDisposableSeries(volumeCount = 2): Promise<DisposableSeries> {
+  if (volumeCount < 1) throw new Error("volumeCount doit être supérieur à zéro");
+
   const library = await ensureBookLibrary();
-  const slug = uniqueName("000-e2e-book");
+  const slug = uniqueName("000-e2e-series");
   const directory = path.join(library.root_path, slug);
-  const filePath = path.join(directory, `${slug} - T01.cbz`);
 
   fs.mkdirSync(directory, { recursive: true });
-  fs.copyFileSync(FIXTURE, filePath);
+  for (let volume = 1; volume <= volumeCount; volume += 1) {
+    const fileName = `${slug} - T${String(volume).padStart(2, "0")}.cbz`;
+    fs.copyFileSync(FIXTURE, path.join(directory, fileName));
+  }
 
+  let books: BookSummary[] = [];
+  let seriesId: string | null = null;
   try {
-    await apiRequest(`/libraries/${library.id}/scan`, { method: "POST" });
-
-    let found: BookSummary | undefined;
-    const deadline = Date.now() + 45_000;
-    while (Date.now() < deadline) {
-      const page = await apiRequest<BooksPage>(
-        `/books?library_id=${library.id}&q=${encodeURIComponent(slug)}&limit=20`
-      );
-      found = page.items.find((item) => item.library_id === library.id);
-      if (found) break;
-      await sleep(500);
+    books = await scanAndWait(library.id, directory, slug, volumeCount);
+    seriesId = books[0]?.series_id ?? null;
+    if (!seriesId || books.some((book) => book.series_id !== seriesId)) {
+      throw new Error(`Le scan a importé des livres sans série commune sous ${directory}`);
     }
 
-    if (!found) {
-      throw new Error(
-        `Le scan n'a pas importé ${filePath}. L'indexer voit-il ${library.root_path} ?`
-      );
-    }
-
+    const details = await getSeriesDetails(seriesId);
     return {
-      id: found.id,
-      title: found.title,
+      seriesId,
+      name: details.name,
       libraryId: library.id,
-      seriesId: found.series_id,
       directory,
-      filePath,
+      books,
     };
   } catch (error) {
+    if (seriesId) {
+      await deleteBooks(books, seriesId);
+    }
     fs.rmSync(directory, { recursive: true, force: true });
     throw error;
   }
@@ -106,4 +170,10 @@ export async function removeDisposableBook(book: DisposableBook): Promise<void> 
     await deleteSeries(book.seriesId).catch(() => undefined);
   }
   fs.rmSync(book.directory, { recursive: true, force: true });
+}
+
+/** Best-effort cleanup for a multi-volume disposable series. */
+export async function removeDisposableSeries(series: DisposableSeries): Promise<void> {
+  await deleteBooks(series.books, series.seriesId);
+  fs.rmSync(series.directory, { recursive: true, force: true });
 }
