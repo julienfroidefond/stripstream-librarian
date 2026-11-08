@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 
-import { apiRequest } from "../support/api";
+import { uniqueName } from "../helpers";
+import {
+  addSeriesToReadingList,
+  apiRequest,
+  createReadingList,
+  deleteReadingList,
+  getReadingList,
+} from "../support/api";
+import { createMetadataSeries, removeMetadataSeries } from "../support/metadata";
 
 /**
  * Reading lists are the only domain with a full create/read/update/delete UI.
@@ -80,6 +88,84 @@ test.describe("listes de lecture — cycle de vie", () => {
             apiRequest(`/reading-lists/${list.id}`, { method: "DELETE" }).catch(() => undefined)
           )
       );
+    }
+  });
+
+  test("renomme, réordonne et regroupe une liste existante", async ({ page }) => {
+    const first = await createMetadataSeries({ name: uniqueName("E2E liste A") });
+    const second = await createMetadataSeries({ name: uniqueName("E2E liste B") });
+    const originalName = uniqueName("e2e-list-manage");
+    const renamed = uniqueName("e2e-list-renamed");
+    let listId: string | undefined;
+
+    try {
+      const list = await createReadingList(originalName, "Liste gérée par le test e2e");
+      listId = list.id;
+      await addSeriesToReadingList(list.id, first.seriesId);
+      await addSeriesToReadingList(list.id, second.seriesId);
+      await expect
+        .poll(async () => (await getReadingList(list.id)).items.length)
+        .toBe(2);
+
+      // A no-op PATCH through the Next route revalidates the 30 s reading-list cache.
+      await page.goto("/reading-lists");
+      const status = await page.evaluate(
+        async ({ id, name }) => {
+          const response = await fetch(`/api/reading-lists/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+          });
+          return response.status;
+        },
+        { id: list.id, name: originalName }
+      );
+      expect(status).toBe(200);
+
+      await page.goto(`/reading-lists/${list.id}`);
+      await expect(page.locator("main h1")).toHaveText(originalName);
+      await expect(page.locator("main").getByText(first.name, { exact: true })).toBeVisible();
+      await expect(page.locator("main").getByText(second.name, { exact: true })).toBeVisible();
+
+      // Rename through the inline editor.
+      await page.getByTitle("Edit list").click();
+      const nameInput = page.locator("main input[type=text]").first();
+      await expect(nameInput).toHaveValue(originalName);
+      await nameInput.fill(renamed);
+      await page.locator("main").getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.locator("main h1")).toHaveText(renamed);
+      await expect
+        .poll(async () => (await getReadingList(list.id)).name)
+        .toBe(renamed);
+
+      // Reorder: move the first series down, then verify the persisted order.
+      const firstRow = page
+        .locator("main")
+        .getByText(first.name, { exact: true })
+        .locator("xpath=ancestor::div[contains(@class,'group')][1]");
+      await firstRow.locator('button[title="Move down"]').click({ force: true });
+      await expect
+        .poll(async () => (await getReadingList(list.id)).items.map((item) => item.id))
+        .toEqual([second.seriesId, first.seriesId]);
+
+      // Next finishes tag revalidation just after the mutation response, so poll
+      // the grouped view instead of racing the following document request.
+      await expect
+        .poll(
+          async () => {
+            await page.goto("/series?group_by=reading_list");
+            return page.getByTitle(renamed).count();
+          },
+          { timeout: 15_000 }
+        )
+        .toBeGreaterThan(0);
+      await expect(page.getByTitle(renamed)).toBeVisible();
+    } finally {
+      if (listId) {
+        await deleteReadingList(listId).catch(() => undefined);
+      }
+      await removeMetadataSeries(first);
+      await removeMetadataSeries(second);
     }
   });
 });

@@ -119,24 +119,31 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 
 - Dossiers : `shell/`, `dashboard/`, `catalog/`, `metadata/`, `reading/`, `libraries/`,
   `acquisition/`, `operations/`, `admin/`.
-- Parcours d'écriture : `catalog/series-write.spec.ts` (renommage, suppression via Actions,
-  vérification de l'archive), `metadata/sync-write.spec.ts` (promotion d'un provider et
-  synchronisation depuis les métadonnées stockées), `operations/jobs-write.spec.ts` (lancement
-  d'un rebuild ciblé + replay), `admin/connection-test.spec.ts` (test AllDebrid mocké),
+- Parcours d'écriture : `catalog/books-write.spec.ts` (édition, téléchargement, suppression),
+  `catalog/series-write.spec.ts` (édition/verrouillage, renommage, suppression via Actions),
+  `catalog/series-merge.spec.ts` (fusion et déplacement du lien de métadonnées),
+  `catalog/ratings.spec.ts` (note puis retrait), `libraries/settings-write.spec.ts` (réglages
+  restaurés via l'API), `metadata/search-approve.spec.ts` (recherche mockée, approbation,
+  déliaison), `metadata/sync-write.spec.ts` (promotion d'un provider et synchronisation depuis
+  les métadonnées stockées), `operations/jobs-write.spec.ts` (rebuild ciblé + replay),
+  `operations/diagnostics.spec.ts` (purge de cache), `admin/connection-test.spec.ts` (intégrations
+  mockées), `admin/tokens.spec.ts` (réassignation de token + renommage inline),
   `admin/user-restrictions.spec.ts` (bascule d'utilisateur actif + genre bloqué),
-  `admin/archives-orphans.spec.ts` (orphelin → archive avec métadonnées),
-  `reading/progress-write.spec.ts` (lu/non lu, état d'origine restauré via l'API).
+  `admin/archives-orphans.spec.ts` (orphelin → archive, suppressions), `reading/lists.spec.ts`
+  (renommage/réordonnancement/groupement), `reading/progress-write.spec.ts` (lu/non lu, état
+  d'origine restauré via l'API).
 - `auth.setup.ts` (projet `setup`) se connecte via `/api/auth/login`, crée/réutilise le lecteur
-  `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée la bibliothèque
-  temporaire `e2e-metadata`, enregistre la session dans `tests/e2e/.auth/state.json` (ignoré par
-  git) et ajoute le cookie `as_user_id`.
-- `global-teardown.ts` supprime `e2e-metadata` et purge ses archives en fin de run.
+  `e2e-reader`, purge les ressources `e2e-*` d'une exécution interrompue, recrée les bibliothèques
+  temporaires `e2e-metadata`, `e2e-books` et `e2e-jobs`, enregistre la session dans
+  `tests/e2e/.auth/state.json` (ignoré par git) et ajoute le cookie `as_user_id`.
+- `global-teardown.ts` supprime les bibliothèques `e2e-*` et purge leurs archives en fin de run.
 - `support/api.ts` appelle directement l'API Rust avec `API_BOOTSTRAP_TOKEN` (feature flags,
   nettoyage listes/tokens/users, CRUD bibliothèques/séries, liens et métadonnées de série,
   jobs) ; `support/library.ts` seed une mini-bibliothèque de fixtures (`E2E_SEED_LIBRARY=1`) et
   attend l'indexation ;
   `support/metadata.ts` crée des séries éphémères avec auteurs/genres uniques dans
-  `e2e-metadata` ; `helpers.ts` expose `openFirstSeries`, `uniqueName`, `escapeRegExp`.
+  `e2e-metadata` et fournit les racines dédiées `e2e-books` / `e2e-jobs` ; `helpers.ts` expose
+  `openFirstSeries`, `uniqueName`, `escapeRegExp`.
 - Les tests sont autonomes et compatibles `fullyParallel` : noms uniques et nettoyage `finally`.
   Ne pas modifier les réglages globaux (langue, feature flags) depuis un test.
 - `test.skip(...)` uniquement pour une fonctionnalité désactivée (`downloads_enabled`,

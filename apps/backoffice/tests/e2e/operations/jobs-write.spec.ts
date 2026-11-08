@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 import { uniqueName } from "../helpers";
 import { getIndexJob, type IndexJobSummary } from "../support/api";
-import { ensureMetadataLibrary, METADATA_LIBRARY_NAME } from "../support/metadata";
+import { ensureJobsLibrary, JOBS_LIBRARY_NAME } from "../support/metadata";
 
 const TERMINAL_STATUSES = new Set(["success", "partial", "failed", "cancelled"]);
 
@@ -23,18 +23,18 @@ async function waitForTerminalJob(id: string): Promise<IndexJobSummary> {
 /**
  * Lancement d'un job depuis la barre d'actions rapides puis replay.
  *
- * Le rebuild ciblé de la bibliothèque temporaire est vide : il se termine
- * rapidement, ce qui rend le bouton Replay disponible sans attendre une vraie
- * indexation. Le replay crée un second job, vérifié à la fois par l'API et
- * dans la liste rafraîchie.
+ * Le rebuild ciblé de la bibliothèque vide `e2e-jobs` se termine rapidement,
+ * ce qui rend le bouton Replay disponible sans attendre une vraie indexation.
+ * Cette racine est séparée de `e2e-metadata` : le nettoyage des séries
+ * orphelines après un scan ne doit pas supprimer les fixtures parallèles.
  */
 
 test.describe("jobs d'indexation — écritures", () => {
   test("lance un rebuild ciblé puis rejoue le job", async ({ page }) => {
     test.setTimeout(90_000);
-    const library = await ensureMetadataLibrary();
+    const library = await ensureJobsLibrary();
 
-    // La bibliothèque `e2e-metadata` change d'identifiant à chaque run et
+    // La bibliothèque `e2e-jobs` change d'identifiant à chaque run et
     // `fetchLibraries` est mis en cache : on réchauffe ce cache via la liste
     // des séries jusqu'à ce que la nouvelle bibliothèque y apparaisse.
     await expect(async () => {
@@ -48,10 +48,10 @@ test.describe("jobs d'indexation — écritures", () => {
     const emptyTrigger = page.getByRole("button", { name: "Library: Choose a library" });
     await emptyTrigger.click();
     const picker = page.getByRole("dialog", { name: "Libraries" });
-    await picker.getByRole("checkbox", { name: METADATA_LIBRARY_NAME }).check();
+    await picker.getByRole("checkbox", { name: JOBS_LIBRARY_NAME }).check();
     await picker.getByRole("button", { name: "Done", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: `Library: ${METADATA_LIBRARY_NAME}`, exact: true })
+      page.getByRole("button", { name: `Library: ${JOBS_LIBRARY_NAME}`, exact: true })
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Rebuild", exact: true }).click();

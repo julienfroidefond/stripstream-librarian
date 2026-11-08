@@ -1,10 +1,15 @@
 import { test, expect } from "@playwright/test";
 
 import { uniqueName } from "../helpers";
-import { apiRequest, listArchivedSeries } from "../support/api";
+import {
+  apiRequest,
+  getSeriesMetadata,
+  listArchivedSeries,
+  updateSeries,
+} from "../support/api";
 import {
   createMetadataSeries,
-  METADATA_LIBRARY_NAME,
+  openMetadataSeries,
   removeMetadataSeries,
 } from "../support/metadata";
 
@@ -30,26 +35,7 @@ test.describe("séries — édition et suppression", () => {
     const renamed = uniqueName("E2E renamed series");
 
     try {
-      // La bibliothèque `e2e-metadata` est recréée à chaque run avec un
-      // nouvel identifiant. La fiche série résout sa bibliothèque via
-      // `fetchLibraries` (cache Next de 30 s) : on passe par la liste, qui
-      // réchauffe ce cache, et on réessaie tant que l'option n'est pas là.
-      const listUrl = `/series?q=${encodeURIComponent(series.name)}&e2e=${encodeURIComponent(
-        uniqueName("detail")
-      )}`;
-      await expect(async () => {
-        await page.goto(listUrl);
-        await expect(page.getByTitle(series.name)).toBeVisible();
-        await expect(
-          page.locator('select[name="library"] option', { hasText: METADATA_LIBRARY_NAME })
-        ).toHaveCount(1, { timeout: 1500 });
-      }).toPass({ timeout: 20000 });
-
-      await page.getByRole("link", { name: series.name, exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/series/${series.seriesId}$`));
-
-      const heading = page.locator("main h1");
-      await expect(heading).toHaveText(series.name);
+      await openMetadataSeries(page, series);
 
       // Renommage via la modale d'édition.
       await page.getByRole("button", { name: /Edit series/ }).click();
@@ -108,6 +94,109 @@ test.describe("séries — édition et suppression", () => {
       await expect(row).toBeVisible();
       await expect(row).toContainText(author);
       await expect(row).toContainText(genre);
+    } finally {
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("édite les champs et verrouille la description contre les synchronisations", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+
+    const series = await createMetadataSeries();
+    const description = uniqueName("E2E synopsis");
+    const startYear = 2024;
+
+    try {
+      await openMetadataSeries(page, series);
+
+      await page.getByRole("button", { name: /Edit series/ }).click();
+      const editPanel = page.getByTestId("modal-panel");
+      await expect(editPanel).toBeVisible();
+
+      // Renseigne un champ simple et la description, puis verrouille la
+      // description avec le cadenas situé à côté de son libellé.
+      await editPanel.getByPlaceholder("e.g. 1990").fill(String(startYear));
+      await editPanel.locator("textarea").fill(description);
+
+      const descriptionField = editPanel.locator("textarea").locator("xpath=..");
+      await descriptionField.getByTitle("Click to lock").click();
+      await expect(
+        descriptionField.getByTitle("Locked field (protected from syncs)")
+      ).toBeVisible();
+      await expect(editPanel.getByText("Locked fields will not be overwritten")).toBeVisible();
+
+      await editPanel.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(editPanel).toBeHidden();
+
+      await expect
+        .poll(async () => {
+          const metadata = await getSeriesMetadata(series.seriesId);
+          return {
+            description: metadata.description,
+            startYear: metadata.start_year,
+            locked: metadata.locked_fields.description === true,
+          };
+        })
+        .toEqual({ description, startYear, locked: true });
+    } finally {
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("déverrouille un champ protégé depuis la modale", async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const series = await createMetadataSeries();
+    const description = uniqueName("E2E locked synopsis");
+    const updatedDescription = uniqueName("E2E unlocked synopsis");
+
+    // Fixture : la description est verrouillée par l'API avant d'ouvrir la
+    // fiche, pour que la modale rende un champ réellement protégé au premier
+    // chargement (le fetch des métadonnées est mis en cache 60 s par Next).
+    await updateSeries(series.seriesId, {
+      new_name: series.name,
+      authors: [],
+      genres: [],
+      description,
+      start_year: 2023,
+      locked_fields: { description: true },
+    });
+
+    try {
+      await openMetadataSeries(page, series);
+
+      await page.getByRole("button", { name: /Edit series/ }).click();
+      const editPanel = page.getByTestId("modal-panel");
+      await expect(editPanel).toBeVisible();
+
+      const textarea = editPanel.locator("textarea");
+      await expect(textarea).toHaveValue(description);
+
+      const descriptionField = textarea.locator("xpath=..");
+      await expect(
+        descriptionField.getByTitle("Locked field (protected from syncs)")
+      ).toBeVisible();
+      await descriptionField.getByTitle("Locked field (protected from syncs)").click();
+      await expect(descriptionField.getByTitle("Click to lock")).toBeVisible();
+
+      // Le champ déverrouillé redevient éditable ; sa nouvelle valeur est
+      // enregistrée avec le cadenas désactivé.
+      await textarea.fill(updatedDescription);
+      await editPanel.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(editPanel).toBeHidden();
+
+      await expect
+        .poll(async () => {
+          const metadata = await getSeriesMetadata(series.seriesId);
+          return {
+            description: metadata.description,
+            startYear: metadata.start_year,
+            locked: metadata.locked_fields.description === true,
+          };
+        })
+        .toEqual({ description: updatedDescription, startYear: 2023, locked: false });
     } finally {
       await removeMetadataSeries(series);
     }
