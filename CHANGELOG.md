@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.111 — 2026-11-08
+
+### Corrections
+
+- **backoffice** — align loading skeletons with rendered content ([#245](https://github.com/julienfroidefond/stripstream-librarian/pull/245))
+
 ## v3.32.110 — 2026-11-08
 
 <details>
