@@ -687,6 +687,12 @@ async fn main() -> anyhow::Result<()> {
                 .put(series::add_favorite)
                 .delete(series::remove_favorite),
         )
+        .route(
+            "/series/{series_id}/shelf",
+            get(series::is_shelved)
+                .put(series::shelve_series)
+                .delete(series::unshelve_series),
+        )
         .route("/series/provider-statuses", get(series::provider_statuses))
         .route(
             "/series/mark-read",

@@ -304,6 +304,7 @@ pub async fn untagged_series(
             description: r.get("description"),
             user_rating: None,
             community_score: None,
+            shelved_at: None,
         })
         .collect();
 

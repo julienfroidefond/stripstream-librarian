@@ -51,6 +51,18 @@ La progression de lecture d'un livre est conservée même lorsque le fichier cha
 
 Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponible sur la page d'une série et sur le dashboard. Chaque utilisateur a sa propre progression — les modifications pour un utilisateur n'affectent pas les autres.
 
+## Mettre une série de côté
+
+Une série en cours de lecture peut être **mise de côté** depuis le lecteur. Elle disparaît alors du carrousel « Reprendre la lecture » et de la rangée « Séries en cours », sans perdre la progression de lecture : aucun statut de livre n'est modifié.
+
+La reprise est **manuelle** (bouton « Reprendre la série »). Ouvrir un tome d'une série mise de côté ne la reprend pas automatiquement : il faut utiliser « Reprendre la série ».
+
+Cet état est propre à chaque lecteur : mettre une série de côté ne la masque que pour l'utilisateur qui a fait l'action.
+
+:::note[Détails techniques]
+L'état est stocké dans la table `series_user_shelves` (`user_id`, `series_id`, `created_at`). Les endpoints `GET`, `PUT` et `DELETE /series/{series_id}/shelf` permettent de lire, mettre de côté et reprendre une série. Les réponses des endpoints `/series` (liste, favoris, détails) exposent un champ `shelved_at` : `null` si la série n'est pas mise de côté pour l'utilisateur courant, sinon la date de mise de côté.
+:::
+
 ## Vue admin de progression
 
 La page **Progression** (menu principal) affiche une vue transversale par utilisateur :

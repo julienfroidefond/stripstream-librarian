@@ -594,3 +594,53 @@ async fn list_all_series_q_accepts_accented_query(pool: PgPool) {
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].name, "Asterix");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_and_list_all_series_expose_shelved_at(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "Shelved series").await;
+    let user = create_user(&pool, "reader").await;
+
+    sqlx::query("INSERT INTO series_user_shelves (user_id, series_id) VALUES ($1, $2)")
+        .bind(user)
+        .bind(series)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(page) = list_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(library),
+        series_query(None, None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert!(page.items[0].shelved_at.is_some());
+
+    let Json(page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert!(page.items[0].shelved_at.is_some());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_shelved_at_is_null_without_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "Unshelved series").await;
+
+    let Json(page) = list_series(State(state), None, Path(library), series_query(None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(page.items.len(), 1);
+    assert!(page.items[0].shelved_at.is_none());
+}
