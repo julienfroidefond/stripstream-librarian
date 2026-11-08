@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.112 — 2026-11-08
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **backoffice** — complete local E2E workflow coverage ([#246](https://github.com/julienfroidefond/stripstream-librarian/pull/246))
+
+</details>
+
 ## v3.32.111 — 2026-11-08
 
 ### Corrections
