@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.118 — 2026-11-09
+
+### Corrections
+
+- **docker** — reduce published image CVEs ([#254](https://github.com/julienfroidefond/stripstream-librarian/pull/254))
+
 ## v3.32.117 — 2026-11-09
 
 ### Nouveautés
