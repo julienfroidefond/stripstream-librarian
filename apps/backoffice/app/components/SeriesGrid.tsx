@@ -206,6 +206,7 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
                   bookCount={s.book_count}
                   booksReadCount={s.books_read_count}
                   hasActiveUser={hasActiveUser}
+                  initialIsShelved={Boolean(s.shelved_at)}
                   variant="cover"
                 />
               </div>
@@ -330,6 +331,7 @@ export function SeriesList({ series, sort, hasActiveUser, t, knownStatuses, show
                   bookCount={s.book_count}
                   booksReadCount={s.books_read_count}
                   hasActiveUser={hasActiveUser}
+                  initialIsShelved={Boolean(s.shelved_at)}
                   variant="inline"
                 />
               </div>

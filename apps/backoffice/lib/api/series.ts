@@ -23,6 +23,8 @@ export type SeriesDto = {
   genres: string[];
   user_rating: number | null;
   community_score: number | null;
+  /** When the active reader put this series aside, null otherwise. */
+  shelved_at: string | null;
 };
 
 export type RelatedSeriesDto = {

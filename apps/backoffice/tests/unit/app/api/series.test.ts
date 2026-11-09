@@ -27,6 +27,7 @@ import { PATCH as patchSeries, DELETE as deleteSeries } from "@/app/api/series/[
 import { GET as getSeriesMetadata } from "@/app/api/series/[seriesId]/metadata/route";
 import { POST as mergeSeries } from "@/app/api/series/[seriesId]/merge/route";
 import { PUT as putRating, DELETE as deleteRating } from "@/app/api/series/[seriesId]/rating/route";
+import { PUT as putShelf, DELETE as deleteShelf } from "@/app/api/series/[seriesId]/shelf/route";
 import { POST as renameBooks } from "@/app/api/series/[seriesId]/rename-books/route";
 import {
   GET as getAnilist,
@@ -420,6 +421,36 @@ describe("/api/series", () => {
   it("PUT rating returns 500 on error", async () => {
     mockApi.mockRejectedValue(new Error("bad"));
     expect((await putRating(jsonRequest("/api/series/s1/rating", { method: "PUT", body: {} }), routeCtx({ seriesId: "s1" }))).status).toBe(500);
+  });
+
+  it("PUT shelf returns 204 and revalidates the series", async () => {
+    mockApi.mockResolvedValue(undefined);
+    const res = await putShelf(
+      jsonRequest("/api/series/s1/shelf", { method: "PUT" }),
+      routeCtx({ seriesId: "s1" })
+    );
+    expect(mockApi).toHaveBeenCalledWith("/series/s1/shelf", expect.objectContaining({ method: "PUT" }));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series/s1");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series");
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
+    expect(res.status).toBe(204);
+  });
+
+  it("DELETE shelf returns 204 and revalidates the series", async () => {
+    mockApi.mockResolvedValue(undefined);
+    const res = await deleteShelf(
+      jsonRequest("/api/series/s1/shelf", { method: "DELETE" }),
+      routeCtx({ seriesId: "s1" })
+    );
+    expect(mockApi).toHaveBeenCalledWith("/series/s1/shelf", expect.objectContaining({ method: "DELETE" }));
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
+    expect(res.status).toBe(204);
+  });
+
+  it("PUT shelf returns 500 on error", async () => {
+    mockApi.mockRejectedValue(new Error("bad"));
+    expect((await putShelf(jsonRequest("/api/series/s1/shelf", { method: "PUT" }), routeCtx({ seriesId: "s1" }))).status).toBe(500);
   });
 
   it("POST rename-books forwards", async () => {

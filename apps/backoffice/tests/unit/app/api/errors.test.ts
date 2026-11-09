@@ -83,6 +83,7 @@ import { GET as seriesStatuses } from "@/app/api/series/statuses/route";
 import { GET as seriesSearch } from "@/app/api/series/search/route";
 import { POST as seriesMerge } from "@/app/api/series/[seriesId]/merge/route";
 import { DELETE as seriesRatingDelete } from "@/app/api/series/[seriesId]/rating/route";
+import { PUT as seriesShelfPut, DELETE as seriesShelfDelete } from "@/app/api/series/[seriesId]/shelf/route";
 import { POST as seriesRenameBooks } from "@/app/api/series/[seriesId]/rename-books/route";
 import { POST as aiTaggingTest } from "@/app/api/settings/ai_tagging/test/route";
 import { GET as statusMappings, POST as statusMappingCreate } from "@/app/api/settings/status-mappings/route";
@@ -179,6 +180,8 @@ const cases: Case[] = [
   ["series search", () => seriesSearch(req("/api/series/search"))],
   ["series merge", () => seriesMerge(req("/api/series/s1/merge", "POST", {}), routeCtx({ seriesId: "s1" }))],
   ["series rating delete", () => seriesRatingDelete(req("/api/series/s1/rating", "DELETE"), routeCtx({ seriesId: "s1" }))],
+  ["series shelf put", () => seriesShelfPut(req("/api/series/s1/shelf", "PUT"), routeCtx({ seriesId: "s1" }))],
+  ["series shelf delete", () => seriesShelfDelete(req("/api/series/s1/shelf", "DELETE"), routeCtx({ seriesId: "s1" }))],
   ["series rename books", () => seriesRenameBooks(req("/api/series/s1/rename-books", "POST", {}), routeCtx({ seriesId: "s1" }))],
   ["settings ai tagging test", () => aiTaggingTest(req("/api/settings/ai_tagging/test", "POST", {}))],
   ["settings status mappings", () => statusMappings()],

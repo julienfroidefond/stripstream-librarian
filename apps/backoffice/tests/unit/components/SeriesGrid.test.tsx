@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { progressLabel, SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
@@ -25,6 +25,7 @@ function makeSeries(overrides: Partial<SeriesDto> = {}): SeriesDto {
     genres: [],
     user_rating: null,
     community_score: null,
+    shelved_at: null,
     ...overrides,
   };
 }
@@ -106,6 +107,14 @@ describe("SeriesGrid", () => {
 
     expect(screen.getByRole("button", { name: "seriesDetail.delete" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
+  });
+
+  it("exposes the reader shelf action in the more actions menu", () => {
+    renderGrid([makeSeries({ series_id: "s1", name: "Frieren" })], { hasActiveUser: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "common.moreActions" }));
+
+    expect(screen.getByRole("menuitem", { name: "seriesShelf.shelve" })).toBeInTheDocument();
   });
 
   it("inserts year section headers when sorted by release date", () => {

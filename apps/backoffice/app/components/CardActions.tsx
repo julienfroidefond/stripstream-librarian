@@ -15,6 +15,7 @@ import { MarkBookReadButton } from "./MarkBookReadButton";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
 import { RefreshIcon } from "./RefreshIcon";
+import { SeriesShelfAction } from "./SeriesShelfAction";
 import type { QuickSearch } from "./ProwlarrSearchModal";
 
 const MetadataSearchModal = nextDynamic(
@@ -46,6 +47,7 @@ interface SeriesCardActionsProps {
   bookCount: number;
   booksReadCount: number;
   hasActiveUser?: boolean;
+  initialIsShelved?: boolean;
   variant?: CardActionVariant;
 }
 
@@ -61,6 +63,7 @@ export function SeriesCardActions({
   bookCount,
   booksReadCount,
   hasActiveUser = true,
+  initialIsShelved = false,
   variant = "cover",
 }: SeriesCardActionsProps) {
   const { t } = useTranslation();
@@ -169,6 +172,12 @@ export function SeriesCardActions({
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.actions")}>
+          {hasActiveUser && (
+            <SeriesShelfAction
+              seriesId={seriesId}
+              initialIsShelved={initialIsShelved}
+            />
+          )}
           <RefreshButton target="series-detail" seriesId={seriesId}>
             {(onClick, pending) => (
               <ActionsMenuItem

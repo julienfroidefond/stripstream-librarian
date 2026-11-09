@@ -125,6 +125,7 @@ beforeEach(() => {
     first_book_id: null,
     first_book_updated_at: null,
     cover_url: null,
+    shelved_at: null,
   });
   api.fetchSeriesOwnedVolumes.mockReset().mockResolvedValue([1, 2, 3]);
   api.fetchRelatedSeries.mockReset().mockResolvedValue([]);
@@ -176,5 +177,26 @@ describe("SeriesDetailPage", () => {
     );
 
     expect(toolbar.props?.ownedVolumes).toBeUndefined();
+  });
+
+  it("passes the active reader's shelf state to the toolbar", async () => {
+    api.fetchSeriesById.mockResolvedValue({
+      series_id: "ser-1",
+      library_id: "lib-1",
+      name: "Series",
+      first_book_id: null,
+      first_book_updated_at: null,
+      cover_url: null,
+      shelved_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(
+      await SeriesDetailPage({
+        params: Promise.resolve({ seriesId: "ser-1" }),
+        searchParams: Promise.resolve({}),
+      })
+    );
+
+    expect(toolbar.props?.initialIsShelved).toBe(true);
   });
 });

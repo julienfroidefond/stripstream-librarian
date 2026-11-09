@@ -59,6 +59,8 @@ La reprise est **manuelle** (bouton « Reprendre la série »). Ouvrir un tome d
 
 Cet état est propre à chaque lecteur : mettre une série de côté ne la masque que pour l'utilisateur qui a fait l'action.
 
+Dans le backoffice, l'action est également disponible dans le menu **Plus d'actions** d'une série (cartes) et **Plus** (fiche série) lorsqu'un lecteur est sélectionné. Le libellé devient « Reprendre la série » si la série est déjà de côté.
+
 :::note[Détails techniques]
 L'état est stocké dans la table `series_user_shelves` (`user_id`, `series_id`, `created_at`). Les endpoints `GET`, `PUT` et `DELETE /series/{series_id}/shelf` permettent de lire, mettre de côté et reprendre une série. Les réponses des endpoints `/series` (liste, favoris, détails) exposent un champ `shelved_at` : `null` si la série n'est pas mise de côté pour l'utilisateur courant, sinon la date de mise de côté.
 :::
