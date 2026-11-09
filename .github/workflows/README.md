@@ -12,7 +12,7 @@ this page: it is not needed to write code, only to understand a pipeline failure
 | `dependabot-automerge.yml` | Dependabot pull requests | merges patch/minor and digest-only image bumps (see below) |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
 | `codeql.yml` | push to `main`, weekly | CodeQL analysis per language, path-filtered (see below) |
-| `security.yml` | weekly cron, manual | Trivy scan of the published images (fixable CRITICAL/HIGH only) |
+| `security.yml` | weekly cron, manual | Trivy scan of the published images (fixable CRITICAL/HIGH, plus MEDIUM for the Alpine web images) |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
 The merge to `main` is deliberately **not re-validated**, so the PR checks must stay
@@ -150,6 +150,11 @@ stage so app rebuilds never recompile `sqlx-cli`.
 registry cache, and pushes the images from GitHub-hosted runners. A `deploy` job then runs on
 the self-hosted `mac-mini` runner to pull the images and restart the stack from the local
 `docker-stack` checkout.
+
+The backoffice and docs runtime images are Alpine-based and run `apk upgrade` for patched
+packages (e.g. zlib). Because a `RUN apk upgrade` layer would otherwise be reused from the
+registry cache even after the package repository gets a fix, `deploy.yml` passes a per-run
+`APK_CACHE_BUST` build arg so those layers always re-execute.
 
 `deploy.yml` also owns versioning: when a push to `main` produces at least one image, it bumps
 the workspace version (patch by default; `minor` / `major` / `none` via the `workflow_dispatch`

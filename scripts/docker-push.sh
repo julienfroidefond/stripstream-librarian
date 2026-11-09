@@ -98,10 +98,17 @@ for service in "${SELECTED_SERVICES[@]}"; do
     TARGET=$(service_target "$service")
     TARGET_ARG=()
     [ -n "$TARGET" ] && TARGET_ARG=(--target "$TARGET")
+    # Alpine web images run `apk upgrade`; bust the layer cache so a local
+    # build does not reuse an old package snapshot.
+    BUILD_ARGS=()
+    case "$service" in
+        backoffice|docs) BUILD_ARGS=(--build-arg "APK_CACHE_BUST=$(date +%s)") ;;
+    esac
     docker buildx build \
         --platform "$PLATFORMS" \
         -f "$DOCKERFILE" \
         "${TARGET_ARG[@]}" \
+        "${BUILD_ARGS[@]}" \
         -t "$REGISTRY/$OWNER/stripstream-$service:$VERSION" \
         -t "$REGISTRY/$OWNER/stripstream-$service:latest" \
         --cache-from "type=registry,ref=$REGISTRY/$OWNER/stripstream-$service:buildcache" \

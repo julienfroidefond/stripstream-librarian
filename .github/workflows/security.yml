@@ -1,10 +1,14 @@
 name: Security scan
 
 # Scans the published images — the exact digests deployed on the Mac mini —
-# with Trivy, once a week and on demand. Only *fixable* CRITICAL/HIGH findings
-# fail the job: Debian/Alpine packages flagged without a fixed version cannot be
-# acted on until the base image is rebuilt upstream, and blocking on them would
-# make the check permanently red (see the API image, which carries ~40 of them).
+# with Trivy, once a week and on demand. Only *fixable* findings fail the job:
+# Debian/Alpine packages flagged without a fixed version cannot be acted on
+# until the base image is rebuilt upstream, and blocking on them would make the
+# check permanently red (see the API image, which carries ~40 of them).
+#
+# The Alpine web images also scan MEDIUM: their package surface is small, and
+# this catches fixes such as zlib CVE-2026-4738 (rated critical by Docker Scout
+# but medium by Trivy at the time of writing).
 #
 # This is a drift detector, not a PR gate: it is deliberately absent from the
 # required checks and does not rebuild anything. When it turns red, either
@@ -27,13 +31,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, indexer, backoffice, docs]
+        include:
+          - image: api
+            severity: CRITICAL,HIGH
+          - image: indexer
+            severity: CRITICAL,HIGH
+          - image: backoffice
+            severity: CRITICAL,HIGH,MEDIUM
+          - image: docs
+            severity: CRITICAL,HIGH,MEDIUM
     steps:
       - name: Scan julienfroidefond32/stripstream-${{ matrix.image }}:latest
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: docker.io/julienfroidefond32/stripstream-${{ matrix.image }}:latest
-          severity: CRITICAL,HIGH
+          severity: ${{ matrix.severity }}
           ignore-unfixed: true
           exit-code: "1"
           format: table

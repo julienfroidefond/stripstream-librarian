@@ -325,6 +325,10 @@ jobs:
           context: .
           file: apps/backoffice/Dockerfile
           platforms: ${{ env.PLATFORMS }}
+          # Re-run the Alpine apk upgrade layer on every build: the base image
+          # digest may be unchanged while its package repository has newer
+          # security patches.
+          build-args: APK_CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:latest
@@ -340,6 +344,9 @@ jobs:
           context: .
           file: apps/docs/Dockerfile
           platforms: ${{ env.PLATFORMS }}
+          # Same cache-busting as the backoffice image: refresh Alpine packages
+          # even when nginx:alpine has not been rebuilt upstream.
+          build-args: APK_CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:latest
