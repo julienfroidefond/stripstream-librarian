@@ -115,6 +115,9 @@ pub struct ListSeriesQuery {
     /// Only return series with at least one book: "true" to exclude empty series
     #[schema(value_type = Option<String>, example = "true")]
     pub has_books: Option<String>,
+    /// Filter by shelf state for the current user: "true" for series set aside, "false" for the others
+    #[schema(value_type = Option<String>, example = "true")]
+    pub shelved: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -157,6 +160,9 @@ pub struct ListAllSeriesQuery {
     /// Only return series with no books (wishlist): "true" to show only empty series
     #[schema(value_type = Option<String>, example = "true")]
     pub no_books: Option<String>,
+    /// Filter by shelf state for the current user: "true" for series set aside, "false" for the others
+    #[schema(value_type = Option<String>, example = "true")]
+    pub shelved: Option<String>,
     /// Sort order: "title" (default), "latest" (most recently added first), or "release_date" (series start year descending)
     #[schema(value_type = Option<String>, example = "release_date")]
     pub sort: Option<String>,

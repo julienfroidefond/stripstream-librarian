@@ -178,6 +178,7 @@ fn series_gap_query(library_id: Option<Uuid>, gap: &str) -> Query<ListAllSeriesQ
         limit: None,
         has_books: None,
         no_books: None,
+        shelved: None,
         sort: None,
         genre: None,
         volume_type: None,

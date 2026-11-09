@@ -113,6 +113,15 @@ async fn set_read(pool: &PgPool, book_id: Uuid, user_id: Uuid, last_read_at: Dat
     set_progress(pool, book_id, user_id, "read", last_read_at).await;
 }
 
+async fn set_shelved(pool: &PgPool, series_id: Uuid, user_id: Uuid) {
+    sqlx::query("INSERT INTO series_user_shelves (user_id, series_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(series_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 fn series_query(page: Option<i64>, limit: Option<i64>) -> Query<ListSeriesQuery> {
     Query(ListSeriesQuery {
         q: None,
@@ -121,6 +130,7 @@ fn series_query(page: Option<i64>, limit: Option<i64>) -> Query<ListSeriesQuery>
         has_missing: None,
         metadata_provider: None,
         has_books: None,
+        shelved: None,
         page,
         limit,
         sort: None,
@@ -141,6 +151,7 @@ fn all_query(page: Option<i64>, limit: Option<i64>) -> Query<ListAllSeriesQuery>
         limit,
         has_books: None,
         no_books: None,
+        shelved: None,
         sort: None,
         genre: None,
         volume_type: None,
@@ -866,4 +877,91 @@ async fn ongoing_books_skips_hs_for_next_tome(pool: PgPool) {
 
     assert_eq!(books.len(), 1);
     assert_eq!(books[0].id, vol2, "the next tome must not be the HS");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_filters_shelved_for_current_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let shelved = create_series(&pool, library, "Shelved").await;
+    let active = create_series(&pool, library, "Active").await;
+    create_book(&pool, library, shelved, "Vol 1").await;
+    create_book(&pool, library, active, "Vol 1").await;
+    let reader = create_user(&pool, "reader").await;
+    let other = create_user(&pool, "other").await;
+    set_shelved(&pool, shelved, reader).await;
+
+    let shelved_query = Query(ListAllSeriesQuery {
+        shelved: Some("true".to_string()),
+        ..all_query(None, None).0
+    });
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: reader })),
+        shelved_query,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].series_id, shelved);
+    assert!(page.items[0].shelved_at.is_some());
+
+    let active_query = Query(ListAllSeriesQuery {
+        shelved: Some("false".to_string()),
+        ..all_query(None, None).0
+    });
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: reader })),
+        active_query,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].series_id, active);
+    assert!(page.items[0].shelved_at.is_none());
+
+    // A shelf belongs to its reader: another user must not see it.
+    let Json(page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: other })),
+        Query(ListAllSeriesQuery {
+            shelved: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_filters_shelved_for_current_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let shelved = create_series(&pool, library, "Shelved").await;
+    let active = create_series(&pool, library, "Active").await;
+    create_book(&pool, library, shelved, "Vol 1").await;
+    create_book(&pool, library, active, "Vol 1").await;
+    let reader = create_user(&pool, "reader").await;
+    set_shelved(&pool, shelved, reader).await;
+
+    let Json(page) = list_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: reader })),
+        Path(library),
+        Query(ListSeriesQuery {
+            shelved: Some("true".to_string()),
+            ..series_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].series_id, shelved);
+    assert!(page.items[0].shelved_at.is_some());
 }
