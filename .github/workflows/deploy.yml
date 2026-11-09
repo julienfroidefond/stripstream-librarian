@@ -284,6 +284,10 @@ jobs:
         if: env.BUILD_API == 'true'
         uses: docker/build-push-action@v7
         with:
+          # Always re-resolve the movable base tags (debian:bookworm-slim,
+          # node:26-alpine, nginx:alpine): a cached base is how fixed CVEs
+          # silently stay in the image.
+          pull: true
           context: .
           file: apps/api/Dockerfile
           target: api
@@ -299,6 +303,7 @@ jobs:
         if: env.BUILD_API == 'true'
         uses: docker/build-push-action@v7
         with:
+          pull: true
           context: .
           file: apps/api/Dockerfile
           target: indexer
@@ -316,6 +321,7 @@ jobs:
         if: env.BUILD_BACKOFFICE == 'true'
         uses: docker/build-push-action@v7
         with:
+          pull: true
           context: .
           file: apps/backoffice/Dockerfile
           platforms: ${{ env.PLATFORMS }}
@@ -330,6 +336,7 @@ jobs:
         if: env.BUILD_DOCS == 'true'
         uses: docker/build-push-action@v7
         with:
+          pull: true
           context: .
           file: apps/docs/Dockerfile
           platforms: ${{ env.PLATFORMS }}

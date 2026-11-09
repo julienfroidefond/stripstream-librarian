@@ -12,6 +12,7 @@ this page: it is not needed to write code, only to understand a pipeline failure
 | `dependabot-automerge.yml` | Dependabot pull requests | merges patch/minor and digest-only image bumps (see below) |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
 | `codeql.yml` | push to `main`, weekly | CodeQL analysis per language, path-filtered (see below) |
+| `security.yml` | weekly cron, manual | Trivy scan of the published images (fixable CRITICAL/HIGH only) |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
 The merge to `main` is deliberately **not re-validated**, so the PR checks must stay
