@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.120 — 2026-11-09
+
+### Corrections
+
+- **api** — ignore hors-séries in series reading status ([#256](https://github.com/julienfroidefond/stripstream-librarian/pull/256))
+
 ## v3.32.119 — 2026-11-09
 
 ### Corrections
