@@ -1,6 +1,6 @@
 {
   "name": "stripstream-backoffice",
-  "version": "3.32.114",
+  "version": "3.32.115",
   "private": true,
   "scripts": {
     "dev": "next dev -p 7082",

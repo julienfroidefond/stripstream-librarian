@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.115 — 2026-11-09
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump lukemathwalker/cargo-chef in /apps/api ([#248](https://github.com/julienfroidefond/stripstream-librarian/pull/248))
+
+</details>
+
 ## v3.32.114 — 2026-11-09
 
 <details>
