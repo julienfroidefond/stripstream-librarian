@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.119 — 2026-11-09
+
+### Corrections
+
+- **docker** — patch zlib CVE-2026-4738 in Alpine images ([#255](https://github.com/julienfroidefond/stripstream-librarian/pull/255))
+
 ## v3.32.118 — 2026-11-09
 
 ### Corrections
