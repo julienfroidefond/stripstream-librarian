@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.117 — 2026-11-09
+
+### Nouveautés
+
+- **api,backoffice** — per-reader series shelves (Mettre de côté) ([#247](https://github.com/julienfroidefond/stripstream-librarian/pull/247))
+
 ## v3.32.116 — 2026-11-09
 
 <details>
