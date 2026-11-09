@@ -3,6 +3,34 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::state::AppState;
 
+/// SQL aggregate expressions for a series' tome progress.
+///
+/// Assumes `books b` and `book_reading_progress <progress_alias>` are joined.
+/// `hs` (hors-série) volumes are ignored when counting tomes: specials do not
+/// participate in series numbering, so a series whose regular volumes are all
+/// read counts as fully read even when specials remain unread. A series made
+/// only of `hs` volumes falls back to counting every book, so it keeps a
+/// meaningful volume count and stays visible with `has_books=true`.
+pub(crate) fn series_tome_counts(progress_alias: &str) -> String {
+    format!(
+        r#"
+                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs')
+                     ELSE COUNT(b.id)
+                END AS book_count,
+                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT({p}.book_id) FILTER (WHERE {p}.status = 'read' AND b.volume_type <> 'hs')
+                     ELSE COUNT({p}.book_id) FILTER (WHERE {p}.status = 'read')
+                END AS books_read_count,
+                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT({p}.book_id) FILTER (WHERE {p}.status IN ('read', 'reading') AND b.volume_type <> 'hs')
+                     ELSE COUNT({p}.book_id) FILTER (WHERE {p}.status IN ('read', 'reading'))
+                END AS books_started_count,
+                MAX({p}.last_read_at) FILTER (WHERE {p}.status IN ('read', 'reading')) AS last_read_at"#,
+        p = progress_alias
+    )
+}
+
 /// Get or create a series row, returning its UUID.
 /// Also checks `original_name` to prevent duplicates after user renames.
 pub(crate) async fn get_or_create_series(

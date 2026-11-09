@@ -141,6 +141,7 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
                 ms.series_id,
                 ms.name,
                 b.id,
+                b.volume_type,
                 b.updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.library_id, ms.series_id
@@ -158,11 +159,22 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
                 sb.library_id,
                 sb.series_id,
                 sb.name,
-                COUNT(*) as book_count,
-                COUNT(*) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM book_reading_progress brp
-                    WHERE brp.book_id = sb.id AND brp.user_id = $5 AND brp.status = 'read'
-                )) as books_read_count
+                CASE WHEN COUNT(*) FILTER (WHERE sb.volume_type <> 'hs') > 0
+                     THEN COUNT(*) FILTER (WHERE sb.volume_type <> 'hs')
+                     ELSE COUNT(*)
+                END as book_count,
+                CASE WHEN COUNT(*) FILTER (WHERE sb.volume_type <> 'hs') > 0
+                     THEN COUNT(*) FILTER (
+                         WHERE sb.volume_type <> 'hs' AND EXISTS (
+                             SELECT 1 FROM book_reading_progress brp
+                             WHERE brp.book_id = sb.id AND brp.user_id = $5 AND brp.status = 'read'
+                         )
+                     )
+                     ELSE COUNT(*) FILTER (WHERE EXISTS (
+                         SELECT 1 FROM book_reading_progress brp
+                         WHERE brp.book_id = sb.id AND brp.user_id = $5 AND brp.status = 'read'
+                     ))
+                END as books_read_count
             FROM sorted_books sb
             GROUP BY sb.library_id, sb.series_id, sb.name
         )

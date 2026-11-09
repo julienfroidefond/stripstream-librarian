@@ -11,8 +11,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::super::{
-    get_series_by_id, list_all_series, list_series, ongoing_series, ListAllSeriesQuery,
-    ListSeriesQuery, OngoingQuery,
+    get_series_by_id, list_all_series, list_series, ongoing_books, ongoing_series,
+    ListAllSeriesQuery, ListSeriesQuery, OngoingQuery,
 };
 use crate::auth::AuthUser;
 use crate::state::test_state;
@@ -158,6 +158,13 @@ fn series_query_q(q: &str) -> Query<ListSeriesQuery> {
 fn all_query_q(q: &str) -> Query<ListAllSeriesQuery> {
     Query(ListAllSeriesQuery {
         q: Some(q.to_string()),
+        ..all_query(None, None).0
+    })
+}
+
+fn all_query_reading_status(status: &str) -> Query<ListAllSeriesQuery> {
+    Query(ListAllSeriesQuery {
+        reading_status: Some(status.to_string()),
         ..all_query(None, None).0
     })
 }
@@ -643,4 +650,220 @@ async fn list_series_shelved_at_is_null_without_user(pool: PgPool) {
 
     assert_eq!(page.items.len(), 1);
     assert!(page.items[0].shelved_at.is_none());
+}
+
+// ─── Hors-série excluded from reading progress ──────────────────────────────
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn series_counts_ignore_unread_hs(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    let vol2 = create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    create_book_with(&pool, library, series, "HS 1", Some(1), "hs").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+    set_read(&pool, vol2, user, read_at).await;
+
+    // Every list surface exposes the same tome counters.
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items[0].book_count, 2, "HS must not count as a tome");
+    assert_eq!(page.items[0].books_read_count, 2);
+
+    let Json(page) = list_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(library),
+        series_query(None, None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items[0].book_count, 2);
+    assert_eq!(page.items[0].books_read_count, 2);
+
+    let Json(item) = get_series_by_id(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(series),
+    )
+    .await
+    .unwrap();
+    assert_eq!(item.book_count, 2);
+    assert_eq!(item.books_read_count, 2);
+
+    // The series is fully read even though the HS is still unread.
+    let Json(unread) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query_reading_status("unread,reading"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(unread.total, 0);
+
+    let Json(read) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query_reading_status("read"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read.total, 1);
+    assert_eq!(read.items[0].series_id, series);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn series_counts_keep_unread_regular_as_reading(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    create_book_with(&pool, library, series, "HS 1", Some(1), "hs").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(unread) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query_reading_status("unread,reading"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(unread.total, 1, "the unread regular tome keeps it ongoing");
+    assert_eq!(unread.items[0].book_count, 2);
+    assert_eq!(unread.items[0].books_read_count, 1);
+
+    let Json(read) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query_reading_status("read"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read.total, 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn hs_only_series_falls_back_to_total_counts(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "HS only").await;
+    let hs1 = create_book_with(&pool, library, series, "HS 1", Some(1), "hs").await;
+    let hs2 = create_book_with(&pool, library, series, "HS 2", Some(2), "hs").await;
+    let user = create_user(&pool, "reader").await;
+
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items[0].book_count, 2, "fallback to every book");
+    assert_eq!(page.items[0].books_read_count, 0);
+
+    // The fallback keeps the series visible in the reader (`has_books=true`).
+    let mut has_books_query = all_query(None, None).0;
+    has_books_query.has_books = Some("true".to_string());
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(has_books_query),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.total, 1);
+
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, hs1, user, read_at).await;
+    set_read(&pool, hs2, user, read_at).await;
+
+    let Json(read) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query_reading_status("read"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read.total, 1);
+    assert_eq!(read.items[0].books_read_count, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn ongoing_series_ignores_unread_hs(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    let vol2 = create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    create_book_with(&pool, library, series, "HS 1", Some(1), "hs").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+    set_read(&pool, vol2, user, read_at).await;
+
+    let Json(items) = ongoing_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(OngoingQuery { limit: None }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        items.is_empty(),
+        "a fully read series must not stay ongoing because of an unread HS"
+    );
+
+    let Json(books) = ongoing_books(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(OngoingQuery { limit: None }),
+    )
+    .await
+    .unwrap();
+    assert!(books.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn ongoing_books_skips_hs_for_next_tome(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    let vol2 = create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    create_book_with(&pool, library, series, "HS 1", Some(1), "hs").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_read(&pool, vol1, user, read_at).await;
+
+    let Json(books) = ongoing_books(
+        State(state),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(OngoingQuery { limit: None }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(books.len(), 1);
+    assert_eq!(books[0].id, vol2, "the next tome must not be the HS");
 }
