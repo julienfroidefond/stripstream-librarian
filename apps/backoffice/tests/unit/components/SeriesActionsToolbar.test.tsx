@@ -31,6 +31,7 @@ const baseProps: ComponentProps<typeof SeriesActionsToolbar> = {
   bookCount: 3,
   booksReadCount: 1,
   hasActiveUser: false,
+  initialIsShelved: false,
   editAuthors: [],
   editGenres: [],
   editPublishers: [],
@@ -85,5 +86,21 @@ describe("SeriesActionsToolbar", () => {
 
     await waitFor(() => expect(refreshSeriesByIdAction).toHaveBeenCalledWith("series-1"));
     await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("exposes the shelf action when a reader is selected", () => {
+    render(<SeriesActionsToolbar {...baseProps} hasActiveUser initialIsShelved={false} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "common.more" }));
+
+    expect(screen.getByRole("menuitem", { name: "seriesShelf.shelve" })).toBeInTheDocument();
+  });
+
+  it("hides the shelf action in admin mode", () => {
+    render(<SeriesActionsToolbar {...baseProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "common.more" }));
+
+    expect(screen.queryByRole("menuitem", { name: "seriesShelf.shelve" })).not.toBeInTheDocument();
   });
 });

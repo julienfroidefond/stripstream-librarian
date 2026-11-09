@@ -87,6 +87,10 @@ pub async fn ongoing_series(
             SELECT 1 FROM user_genre_restrictions ugr
             WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
         )
+          AND NOT EXISTS (
+              SELECT 1 FROM series_user_shelves sus
+              WHERE sus.user_id = $2 AND sus.series_id = s.id
+          )
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
@@ -119,6 +123,7 @@ pub async fn ongoing_series(
             description: row.get("description"),
             user_rating: None,
             community_score: None,
+            shelved_at: None,
         })
         .collect();
 
@@ -208,6 +213,10 @@ pub async fn ongoing_books(
               AND NOT EXISTS (
                   SELECT 1 FROM user_genre_restrictions ugr
                   WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM series_user_shelves sus
+                  WHERE sus.user_id = $2 AND sus.series_id = s.id
               )
         )
         SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type,
@@ -387,7 +396,8 @@ pub async fn get_series_by_id(
                mc.missing_count,
                ml.provider as metadata_provider,
                asl.anilist_id, asl.anilist_url,
-               s.cover_url, s.start_year, s.genres, s.authors, s.description
+               s.cover_url, s.start_year, s.genres, s.authors, s.description,
+               sus.created_at AS shelved_at
         FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
@@ -409,6 +419,7 @@ pub async fn get_series_by_id(
             ORDER BY eml.series_id, eml.is_primary DESC, eml.created_at DESC
         ) ml ON ml.series_id = sc.series_id
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+        LEFT JOIN series_user_shelves sus ON sus.series_id = sc.series_id AND sus.user_id = $2
         WHERE ($2::uuid IS NULL OR NOT EXISTS (
             SELECT 1 FROM user_genre_restrictions ugr
             WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
@@ -442,6 +453,7 @@ pub async fn get_series_by_id(
         description: row.get("description"),
         user_rating: None,
         community_score: None,
+        shelved_at: row.get("shelved_at"),
     }))
 }
 

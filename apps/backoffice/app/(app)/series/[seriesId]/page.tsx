@@ -356,6 +356,8 @@ export default async function SeriesDetailPage({
             seriesName={seriesName}
             bookCount={booksPage.total}
             booksReadCount={booksReadCount}
+            hasActiveUser={hasActiveUser}
+            initialIsShelved={Boolean(seriesDto.shelved_at)}
             editAuthors={seriesMeta?.authors ?? []}
             editGenres={seriesMeta?.genres ?? []}
             editPublishers={seriesMeta?.publishers ?? []}
@@ -382,7 +384,6 @@ export default async function SeriesDetailPage({
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             renameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
             renameFormatOneshot={typeof renameFormatOneshot === "string" ? renameFormatOneshot : null}
-            hasActiveUser={hasActiveUser}
           />
         </div>
       </div>

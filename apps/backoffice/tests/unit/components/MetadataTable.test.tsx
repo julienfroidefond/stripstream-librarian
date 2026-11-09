@@ -27,6 +27,7 @@ function makeSeries(overrides: Partial<SeriesDto> = {}): SeriesDto {
     genres: [],
     user_rating: null,
     community_score: null,
+    shelved_at: null,
     ...overrides,
   };
 }

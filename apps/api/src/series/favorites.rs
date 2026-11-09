@@ -35,7 +35,7 @@ pub async fn list_favorites(
                ml.provider AS metadata_provider, asl.anilist_id, asl.anilist_url,
                s.cover_url, s.start_year, COALESCE(s.genres, ARRAY[]::text[]) AS genres,
                COALESCE(s.authors, ARRAY[]::text[]) AS authors, s.description,
-               sur.rating AS user_rating
+               sur.rating AS user_rating, sus.created_at AS shelved_at
         FROM series_user_favorites f
         JOIN series s ON s.id = f.series_id
         LEFT JOIN books b ON b.series_id = s.id
@@ -53,13 +53,14 @@ pub async fn list_favorites(
         ) ml ON TRUE
         LEFT JOIN anilist_series_links asl ON asl.series_id = s.id AND asl.provider = 'anilist'
         LEFT JOIN series_user_ratings sur ON sur.series_id = s.id AND sur.user_id = $1
+        LEFT JOIN series_user_shelves sus ON sus.series_id = s.id AND sus.user_id = $1
         WHERE f.user_id = $1
           AND NOT EXISTS (
               SELECT 1 FROM user_genre_restrictions ugr
               WHERE ugr.user_id = $1 AND ugr.genre = ANY(s.genres)
           )
         GROUP BY f.created_at, s.id, s.name, s.library_id, s.status, fb.id, fb.updated_at,
-                 ml.provider, asl.anilist_id, asl.anilist_url, sur.rating
+                 ml.provider, asl.anilist_id, asl.anilist_url, sur.rating, sus.created_at
         ORDER BY f.created_at DESC
         "#,
     )
@@ -162,6 +163,7 @@ fn series_item_from_row(row: &sqlx::postgres::PgRow) -> SeriesItem {
         description: row.get("description"),
         user_rating: row.get("user_rating"),
         community_score: None,
+        shelved_at: row.get("shelved_at"),
     }
 }
 

@@ -8,6 +8,7 @@ import { RefreshButton } from "./RefreshButton";
 import { RefreshIcon } from "./RefreshIcon";
 import { useTranslation } from "@/lib/i18n/context";
 import { AddToReadingListModal } from "./AddToReadingListModal";
+import { SeriesShelfAction } from "./SeriesShelfAction";
 
 const EditSeriesForm = nextDynamic(
   () => import("./EditSeriesForm").then(m => m.EditSeriesForm)
@@ -44,6 +45,7 @@ interface Props {
   bookCount: number;
   booksReadCount: number;
   hasActiveUser?: boolean;
+  initialIsShelved?: boolean;
   // Edit data
   editAuthors: string[];
   editGenres: string[];
@@ -222,6 +224,12 @@ export function SeriesActionsToolbar(props: Props) {
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.actions")}>
+          {(props.hasActiveUser ?? true) && (
+            <SeriesShelfAction
+              seriesId={props.seriesId}
+              initialIsShelved={props.initialIsShelved ?? false}
+            />
+          )}
           <RefreshButton target="series-detail" seriesId={props.seriesId}>
             {(onClick, pending) => (
               <ActionsMenuItem

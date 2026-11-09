@@ -35,6 +35,7 @@ fn series_item_has_series_id() {
         description: None,
         user_rating: None,
         community_score: None,
+        shelved_at: None,
     };
     let json = serde_json::to_value(&item).unwrap();
     assert!(json["series_id"].is_string());
@@ -95,6 +96,7 @@ fn series_item_includes_library_id() {
         description: None,
         user_rating: None,
         community_score: None,
+        shelved_at: None,
     };
     let json = serde_json::to_value(&item).unwrap();
     assert_eq!(json["library_id"], lib_id.to_string());

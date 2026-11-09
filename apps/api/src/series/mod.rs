@@ -10,6 +10,7 @@ pub mod orphans;
 pub mod ratings;
 pub mod recommendations;
 pub mod related;
+pub mod shelves;
 #[cfg(test)]
 mod tests;
 pub mod update;
@@ -27,6 +28,7 @@ pub use orphans::*;
 pub use ratings::*;
 pub use recommendations::*;
 pub use related::*;
+pub use shelves::*;
 pub use update::*;
 pub use volumes::*;
 
@@ -82,6 +84,9 @@ pub struct SeriesItem {
     pub description: Option<String>,
     pub user_rating: Option<i16>,
     pub community_score: Option<f32>,
+    /// When the current user put this series aside ("Mettre de côté"), if any.
+    #[schema(value_type = Option<String>)]
+    pub shelved_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]

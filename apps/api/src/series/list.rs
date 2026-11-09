@@ -148,7 +148,8 @@ pub async fn list_series(
                 ml.provider as metadata_provider,
                 asl.anilist_id,
                 asl.anilist_url,
-                s.cover_url, s.start_year, s.genres, s.authors, s.description
+                s.cover_url, s.start_year, s.genres, s.authors, s.description,
+                sus.created_at AS shelved_at
             FROM series_counts sc
             LEFT JOIN series s ON s.id = sc.series_id
             LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
@@ -158,6 +159,7 @@ pub async fn list_series(
                 ORDER BY eml.is_primary DESC, eml.created_at DESC LIMIT 1
             ) ml ON TRUE
             LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+            LEFT JOIN series_user_shelves sus ON sus.series_id = sc.series_id AND sus.user_id = ${user_id_p}::uuid
             WHERE TRUE
               {q_cond}
               {count_rs_cond}
@@ -240,6 +242,7 @@ pub async fn list_series(
                 description: row.get("description"),
                 user_rating: None,
                 community_score: None,
+                shelved_at: row.get("shelved_at"),
             })
         })
         .collect();
@@ -482,6 +485,7 @@ pub async fn list_all_series(
                 s.cover_url, s.start_year, s.genres, s.authors, s.description,
                 cs.community_score,
                 sur.rating as user_rating,
+                sus.created_at as shelved_at,
                 sc.latest_created_at
             FROM series_counts sc
             LEFT JOIN series s ON s.id = sc.series_id
@@ -494,6 +498,7 @@ pub async fn list_all_series(
             LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
             {community_score_lateral}
             LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
+            LEFT JOIN series_user_shelves sus ON sus.series_id = sc.series_id AND sus.user_id = ${user_id_p}::uuid
             WHERE TRUE
               {q_cond}
               {rs_cond}
@@ -591,6 +596,7 @@ pub async fn list_all_series(
                 description: row.get("description"),
                 user_rating: row.get("user_rating"),
                 community_score: row.get("community_score"),
+                shelved_at: row.get("shelved_at"),
             })
         })
         .collect();
