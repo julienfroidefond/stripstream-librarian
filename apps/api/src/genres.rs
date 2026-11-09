@@ -248,7 +248,10 @@ pub async fn untagged_series(
             s.library_id,
             s.status AS series_status,
             s.cover_url,
-            COUNT(b.id)::bigint AS book_count,
+            CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                 THEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs')
+                 ELSE COUNT(b.id)
+            END::bigint AS book_count,
             0::bigint AS books_read_count,
             NULL::bigint AS missing_count,
             NULL::text AS metadata_provider,

@@ -120,15 +120,15 @@ pub async fn list_series(
         _ => title_order_clause.to_string(),
     };
 
+    let tome_counts = helpers::series_tome_counts("brp");
+
     let data_sql = format!(
         r#"
         WITH series_counts AS (
             SELECT
                 s.id as series_id,
                 s.name,
-                COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at
+                {tome_counts}
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
@@ -451,6 +451,8 @@ pub async fn list_all_series(
         _ => title_order_clause.to_string(),
     };
 
+    let tome_counts = helpers::series_tome_counts("brp");
+
     let data_sql = format!(
         r#"
         WITH series_counts AS (
@@ -458,9 +460,7 @@ pub async fn list_all_series(
                 s.id as series_id,
                 s.name,
                 s.library_id,
-                COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at,
+                {tome_counts},
                 COALESCE(MAX(b.created_at), s.created_at) as latest_created_at
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id

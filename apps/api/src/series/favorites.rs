@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
-use super::SeriesItem;
+use super::{helpers, SeriesItem};
 
 #[utoipa::path(
     get,
@@ -25,12 +25,12 @@ pub async fn list_favorites(
         ApiError::bad_request("no user selected — choose a user in the backoffice settings")
     })?;
 
-    let rows = sqlx::query(
+    let tome_counts = helpers::series_tome_counts("brp");
+
+    let sql = format!(
         r#"
         SELECT s.name, s.id AS series_id, s.library_id, s.status AS series_status,
-               COUNT(b.id)::bigint AS book_count,
-               COUNT(brp.book_id) FILTER (WHERE brp.status = 'read')::bigint AS books_read_count,
-               MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) AS last_read_at,
+               {tome_counts},
                fb.id AS first_book_id, fb.updated_at AS first_book_updated_at,
                ml.provider AS metadata_provider, asl.anilist_id, asl.anilist_url,
                s.cover_url, s.start_year, COALESCE(s.genres, ARRAY[]::text[]) AS genres,
@@ -63,10 +63,12 @@ pub async fn list_favorites(
                  ml.provider, asl.anilist_id, asl.anilist_url, sur.rating, sus.created_at
         ORDER BY f.created_at DESC
         "#,
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool)
-    .await?;
+    );
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(user_id)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(rows.iter().map(series_item_from_row).collect()))
 }

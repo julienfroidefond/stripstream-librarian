@@ -38,7 +38,9 @@ pub async fn ongoing_series(
         return Ok(Json(vec![]));
     };
 
-    let rows = sqlx::query(
+    let tome_counts = helpers::series_tome_counts("up");
+
+    let sql = format!(
         r#"
         -- Start from user's reading progress (small set) instead of scanning all books/series
         WITH user_progress AS (
@@ -57,30 +59,31 @@ pub async fn ongoing_series(
                 s.id AS series_id,
                 s.name,
                 s.library_id,
-                COUNT(b.id) AS book_count,
-                COUNT(up.book_id) FILTER (WHERE up.status = 'read') AS books_read_count,
-                MAX(up.last_read_at) FILTER (WHERE up.status IN ('read', 'reading')) AS last_read_at
+                {tome_counts}
             FROM active_series a_s
             JOIN series s ON s.id = a_s.series_id
             JOIN books b ON b.series_id = s.id
             LEFT JOIN user_progress up ON up.book_id = b.id
             GROUP BY s.id, s.name, s.library_id
-            HAVING (
-                COUNT(up.book_id) FILTER (WHERE up.status IN ('read', 'reading')) > 0
-                AND COUNT(up.book_id) FILTER (WHERE up.status = 'read') < COUNT(b.id)
-            )
+        ),
+        ongoing AS (
+            SELECT * FROM series_stats
+            WHERE books_started_count > 0
+              AND books_read_count < book_count
         ),
         -- DISTINCT ON over only ongoing-series books (was: ROW_NUMBER over ALL books)
         first_books AS (
             SELECT DISTINCT ON (b.series_id) b.series_id, b.id, b.library_id, b.updated_at
             FROM books b
-            WHERE b.series_id IN (SELECT series_id FROM series_stats)
-            ORDER BY b.series_id, b.volume NULLS LAST, b.title ASC
+            WHERE b.series_id IN (SELECT series_id FROM ongoing)
+            ORDER BY b.series_id,
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume NULLS LAST, b.title ASC
         )
         SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, ss.last_read_at,
                fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id,
                s.genres, s.authors, s.description
-        FROM series_stats ss
+        FROM ongoing ss
         JOIN first_books fb ON fb.series_id = ss.series_id
         JOIN series s ON s.id = ss.series_id
         WHERE NOT EXISTS (
@@ -94,11 +97,13 @@ pub async fn ongoing_series(
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
-    )
-    .bind(limit)
-    .bind(uid)
-    .fetch_all(&state.pool)
-    .await?;
+    );
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(limit)
+        .bind(uid)
+        .fetch_all(&state.pool)
+        .await?;
 
     let items: Vec<SeriesItem> = rows
         .iter()
@@ -157,7 +162,9 @@ pub async fn ongoing_books(
         return Ok(Json(vec![]));
     };
 
-    let rows = sqlx::query(
+    let tome_counts = helpers::series_tome_counts("up");
+
+    let sql = format!(
         r#"
         -- Start from user's reading progress (small set) instead of scanning all books/series
         WITH user_progress AS (
@@ -171,18 +178,21 @@ pub async fn ongoing_books(
             JOIN books b ON b.id = up.book_id
             WHERE up.status IN ('read', 'reading')
         ),
-        ongoing_series AS (
+        series_stats AS (
             SELECT
                 a_s.series_id,
+                {tome_counts},
                 MAX(up.last_read_at) AS series_last_read_at
             FROM active_series a_s
             JOIN books b ON b.series_id = a_s.series_id
             LEFT JOIN user_progress up ON up.book_id = b.id
             GROUP BY a_s.series_id
-            HAVING (
-                COUNT(up.book_id) FILTER (WHERE up.status IN ('read', 'reading')) > 0
-                AND COUNT(up.book_id) FILTER (WHERE up.status = 'read') < COUNT(b.id)
-            )
+        ),
+        ongoing_series AS (
+            SELECT series_id, series_last_read_at
+            FROM series_stats
+            WHERE books_started_count > 0
+              AND books_read_count < book_count
         ),
         next_books AS (
             SELECT
@@ -210,6 +220,14 @@ pub async fn ongoing_books(
             ) bf ON TRUE
             LEFT JOIN user_progress up ON up.book_id = b.id
             WHERE COALESCE(up.status, 'unread') != 'read'
+              -- Specials never become the next tome, unless the series has nothing else.
+              AND (
+                  b.volume_type <> 'hs'
+                  OR NOT EXISTS (
+                      SELECT 1 FROM books bx
+                      WHERE bx.series_id = b.series_id AND bx.volume_type <> 'hs'
+                  )
+              )
               AND NOT EXISTS (
                   SELECT 1 FROM user_genre_restrictions ugr
                   WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
@@ -227,11 +245,13 @@ pub async fn ongoing_books(
         ORDER BY series_last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
-    )
-    .bind(limit)
-    .bind(uid)
-    .fetch_all(&state.pool)
-    .await?;
+    );
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(limit)
+        .bind(uid)
+        .fetch_all(&state.pool)
+        .await?;
 
     let items: Vec<BookItem> = rows
         .iter()
@@ -366,14 +386,13 @@ pub async fn get_series_by_id(
 ) -> Result<Json<SeriesItem>, ApiError> {
     let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
 
-    let row = sqlx::query(
+    let tome_counts = helpers::series_tome_counts("brp");
+    let sql = format!(
         r#"
         WITH series_counts AS (
             SELECT
                 s.id as series_id, s.name, s.library_id, s.status as series_status,
-                COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(brp.last_read_at) FILTER (WHERE brp.status IN ('read', 'reading')) as last_read_at
+                {tome_counts}
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
@@ -424,13 +443,15 @@ pub async fn get_series_by_id(
             SELECT 1 FROM user_genre_restrictions ugr
             WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
         ))
-        "#
-    )
-    .bind(series_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("series not found"))?;
+        "#,
+    );
+
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(series_id)
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("series not found"))?;
 
     Ok(Json(SeriesItem {
         name: row.get("name"),

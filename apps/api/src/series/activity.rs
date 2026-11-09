@@ -6,9 +6,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{
-    error::ApiError, reading::series_progress::SERIES_PROGRESS_AGGREGATES, state::AppState,
-};
+use crate::{error::ApiError, state::AppState};
 
 /// Reading progress and rating of one reader for a series (admin view).
 #[derive(Serialize, sqlx::FromRow, ToSchema)]
@@ -52,18 +50,32 @@ pub async fn get_series_user_activity(
         return Err(ApiError::not_found("series not found"));
     }
 
-    let sql = format!(
-        r#"
+    let sql = r#"
         WITH progress AS (
             SELECT
-                brp.user_id,{SERIES_PROGRESS_AGGREGATES}
+                brp.user_id,
+                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT(*) FILTER (WHERE brp.status = 'read' AND b.volume_type <> 'hs')
+                     ELSE COUNT(*) FILTER (WHERE brp.status = 'read')
+                END AS books_read,
+                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT(*) FILTER (WHERE brp.status = 'reading' AND b.volume_type <> 'hs')
+                     ELSE COUNT(*) FILTER (WHERE brp.status = 'reading')
+                END AS books_reading,
+                MAX(brp.last_read_at) AS last_read_at
             FROM book_reading_progress brp
             JOIN books b ON b.id = brp.book_id
             WHERE b.series_id = $1
             GROUP BY brp.user_id
         ),
         totals AS (
-            SELECT COUNT(*) AS books_total FROM books WHERE series_id = $1
+            SELECT
+                CASE WHEN COUNT(*) FILTER (WHERE b.volume_type <> 'hs') > 0
+                     THEN COUNT(*) FILTER (WHERE b.volume_type <> 'hs')
+                     ELSE COUNT(*)
+                END AS books_total
+            FROM books b
+            WHERE b.series_id = $1
         )
         SELECT
             u.id AS user_id,
@@ -81,11 +93,9 @@ pub async fn get_series_user_activity(
         WHERE COALESCE(p.books_read, 0) + COALESCE(p.books_reading, 0) > 0
            OR sur.rating IS NOT NULL
         ORDER BY p.last_read_at DESC NULLS LAST, u.username ASC
-        "#
-    );
+        "#;
 
-    // Only compile-time fragments are interpolated, never user input.
-    let rows = sqlx::query_as::<_, SeriesUserActivity>(sqlx::AssertSqlSafe(sql))
+    let rows = sqlx::query_as::<_, SeriesUserActivity>(sql)
         .bind(series_id)
         .fetch_all(&state.pool)
         .await?;

@@ -29,11 +29,15 @@ Sur la page d'une série, le bouton **Marquer tout comme lu** passe tous les liv
 
 Le statut d'une série est calculé automatiquement depuis les statuts de ses livres :
 
-- **Lu** — tous les livres sont lus
-- **Non lu** — aucun livre n'est lu ou en cours
-- **En cours** — au moins un livre est lu ou en cours, mais pas tous
+- **Lu** — tous les tomes sont lus
+- **Non lu** — aucun tome n'est lu ou en cours
+- **En cours** — au moins un tome est lu ou en cours, mais pas tous
+
+Les **hors-séries** (`volume_type = 'hs'`) sont ignorés : une série dont tous les tomes réguliers sont lus est considérée comme **lue**, même si des hors-séries restent non lus. Les one-shots et les intégrales comptent comme des tomes. Une série composée uniquement de hors-séries retombe sur le total de ses livres, pour conserver un compteur et rester visible.
 
 Ce statut est affiché sur les cartes de séries, dans les filtres et dans les graphiques du dashboard.
+
+Les compteurs `book_count` et `books_read_count` exposés par les endpoints de liste et de détail des séries suivent la même règle : les hors-séries sont exclus, avec repli sur tous les livres pour une série 100 % hors-séries.
 
 ---
 
