@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.121 — 2026-11-09
+
+### Nouveautés
+
+- **api** — filter series lists by shelf state ([#257](https://github.com/julienfroidefond/stripstream-librarian/pull/257))
+
 ## v3.32.120 — 2026-11-09
 
 ### Corrections
