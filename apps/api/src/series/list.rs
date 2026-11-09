@@ -21,6 +21,7 @@ use crate::{auth::AuthUser, error::ApiError, state::AppState};
         ("q" = Option<String>, Query, description = "Filter by series name (case- and accent-insensitive, partial match)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
+        ("shelved" = Option<String>, Query, description = "Filter by shelf state for the current user: 'true' for series set aside, 'false' for the others"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default), 'latest' (most recently added first), or 'release_date' (series start year descending; undated series last by title)"),
@@ -104,6 +105,12 @@ pub async fn list_series(
         String::new()
     };
 
+    let shelved_cond = match query.shelved.as_deref() {
+        Some("true") => "AND sus.created_at IS NOT NULL".to_string(),
+        Some("false") => "AND sus.created_at IS NULL".to_string(),
+        _ => String::new(),
+    };
+
     let user_id_p = p + 1;
     let limit_p = p + 2;
     let offset_p = p + 3;
@@ -167,6 +174,7 @@ pub async fn list_series(
               {missing_cond}
               {metadata_provider_cond}
               {has_books_cond}
+              {shelved_cond}
               {genre_restriction_cond}
         ),
         total AS (SELECT COUNT(*) AS total_count FROM filtered),
@@ -267,6 +275,7 @@ pub async fn list_series(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
+        ("shelved" = Option<String>, Query, description = "Filter by shelf state for the current user: 'true' for series set aside, 'false' for the others"),
         ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'no_description', 'no_genre', 'no_authors', 'no_publishers', 'no_year', 'no_cover', or 'no_community_score'"),
         ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
@@ -376,6 +385,12 @@ pub async fn list_all_series(
         "AND sc.book_count > 0".to_string()
     } else {
         String::new()
+    };
+
+    let shelved_cond = match query.shelved.as_deref() {
+        Some("true") => "AND sus.created_at IS NOT NULL".to_string(),
+        Some("false") => "AND sus.created_at IS NULL".to_string(),
+        _ => String::new(),
     };
 
     let no_books = query.no_books.as_deref() == Some("true");
@@ -508,6 +523,7 @@ pub async fn list_all_series(
               {gap_cond}
               {author_cond}
               {has_books_cond}
+              {shelved_cond}
               {no_books_cond}
               {genre_cond}
               {oneshot_cond}

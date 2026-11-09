@@ -57,16 +57,16 @@ Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponi
 
 ## Mettre une série de côté
 
-Une série en cours de lecture peut être **mise de côté** depuis le lecteur. Elle disparaît alors du carrousel « Reprendre la lecture » et de la rangée « Séries en cours », sans perdre la progression de lecture : aucun statut de livre n'est modifié.
+Une série en cours de lecture peut être **mise de côté** depuis le lecteur. Elle disparaît alors du carrousel « Reprendre la lecture » et de la rangée « Séries en cours » de l'accueil, sans perdre la progression de lecture : aucun statut de livre n'est modifié.
 
-La reprise est **manuelle** (bouton « Reprendre la série »). Ouvrir un tome d'une série mise de côté ne la reprend pas automatiquement : il faut utiliser « Reprendre la série ».
+La reprise est **manuelle** (bouton « Reprendre la série »). Ouvrir un tome d'une série mise de côté ne la reprend pas automatiquement : il faut utiliser « Reprendre la série ». Dans la page « Mes séries en cours » du lecteur, les séries de côté restent visibles et sont marquées « En pause » ; le filtre « En pause » permet de les retrouver et le bouton « Reprendre la série » les reprend.
 
 Cet état est propre à chaque lecteur : mettre une série de côté ne la masque que pour l'utilisateur qui a fait l'action.
 
 Dans le backoffice, l'action est également disponible dans le menu **Plus d'actions** d'une série (cartes) et **Plus** (fiche série) lorsqu'un lecteur est sélectionné. Le libellé devient « Reprendre la série » si la série est déjà de côté.
 
 :::note[Détails techniques]
-L'état est stocké dans la table `series_user_shelves` (`user_id`, `series_id`, `created_at`). Les endpoints `GET`, `PUT` et `DELETE /series/{series_id}/shelf` permettent de lire, mettre de côté et reprendre une série. Les réponses des endpoints `/series` (liste, favoris, détails) exposent un champ `shelved_at` : `null` si la série n'est pas mise de côté pour l'utilisateur courant, sinon la date de mise de côté.
+L'état est stocké dans la table `series_user_shelves` (`user_id`, `series_id`, `created_at`). Les endpoints `GET`, `PUT` et `DELETE /series/{series_id}/shelf` permettent de lire, mettre de côté et reprendre une série. Les réponses des endpoints `/series` (liste, favoris, détails) exposent un champ `shelved_at` : `null` si la série n'est pas mise de côté pour l'utilisateur courant, sinon la date de mise de côté. Les listes `/series` et `/libraries/{library_id}/series` acceptent aussi un paramètre `shelved` (`true` pour ne garder que les séries de côté, `false` pour les autres).
 :::
 
 ## Vue admin de progression
