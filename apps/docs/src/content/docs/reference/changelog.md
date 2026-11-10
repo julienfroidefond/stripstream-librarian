@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.123 — 2026-11-10
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump the backoffice-non-major group ([#260](https://github.com/julienfroidefond/stripstream-librarian/pull/260))
+
+</details>
+
 ## v3.32.122 — 2026-11-10
 
 <details>
