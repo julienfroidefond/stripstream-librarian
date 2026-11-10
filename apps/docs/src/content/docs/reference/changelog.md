@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.122 — 2026-11-10
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump @astrojs/starlight in /apps/docs ([#258](https://github.com/julienfroidefond/stripstream-librarian/pull/258))
+
+</details>
+
 ## v3.32.121 — 2026-11-09
 
 ### Nouveautés
