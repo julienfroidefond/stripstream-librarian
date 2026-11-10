@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.124 — 2026-11-10
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump the rust-non-major group across 1 directory with 3 updates ([#259](https://github.com/julienfroidefond/stripstream-librarian/pull/259))
+
+</details>
+
 ## v3.32.123 — 2026-11-10
 
 <details>
