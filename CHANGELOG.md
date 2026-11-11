@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.129 — 2026-11-11
+
+### Refactoring
+
+- unifier le modèle des téléchargements ([#264](https://github.com/julienfroidefond/stripstream-librarian/pull/264))
+
 ## v3.32.128 — 2026-11-11
 
 ### Refactoring
