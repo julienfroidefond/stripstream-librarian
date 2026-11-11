@@ -11,7 +11,6 @@ import {
   fetchDdlProviderDownloads,
   fetchDdlProviders,
   fetchDdlSearchSettings,
-  hasEnabledDdlProvider,
   searchDdlProvider,
   startDdlProviderDownload,
   startDdlSearchAll,
@@ -71,23 +70,13 @@ describe("download providers", () => {
     });
   });
 
-  it("gates the toolbar action on an enabled provider", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse([
-        { id: "fourtoutici", enabled: false },
-        { id: "annas", enabled: true },
-      ])
-    );
-    await expect(hasEnabledDdlProvider()).resolves.toBe(true);
+  it("supports a cached read for acquisition readiness", async () => {
+    await fetchDdlProviders({ revalidate: 60 });
+    expect(lastCall()).toMatchObject({
+      url: "http://api:7080/ddl-providers",
+      method: "GET",
+    });
     expect(lastCall().init.next).toEqual({ revalidate: 60 });
-
-    fetchMock.mockResolvedValueOnce(makeResponse([{ id: "fourtoutici", enabled: false }]));
-    await expect(hasEnabledDdlProvider()).resolves.toBe(false);
-  });
-
-  it("treats a provider fetch failure as no provider", async () => {
-    fetchMock.mockResolvedValueOnce(makeResponse("boom", 500));
-    await expect(hasEnabledDdlProvider()).resolves.toBe(false);
   });
 
   it("toggles a provider and forwards the base URL", async () => {

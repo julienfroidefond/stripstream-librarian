@@ -1,4 +1,5 @@
-import { fetchLibraries, apiFetch, fetchDownloadsEnabled } from "@/lib/api";
+import { fetchLibraries, apiFetch } from "@/lib/api";
+import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { Icon } from "@/app/components/ui";
 import { DiscoveryGrid } from "./components/DiscoveryGrid";
@@ -29,10 +30,10 @@ export default async function DiscoveryPage({
   const params = await searchParams;
   const provider = (typeof params.provider === "string" ? params.provider : "sc_trending_bd");
 
-  const [libraries, trending, prowlarrConfigured] = await Promise.all([
+  const [libraries, trending, readiness] = await Promise.all([
     fetchLibraries().catch(() => []),
     apiFetch<DiscoverySuggestion[]>(`/discovery/trending?provider=${provider}&limit=100`).catch(() => []),
-    fetchDownloadsEnabled(),
+    loadAcquisitionReadiness(),
   ]);
 
   return (
@@ -46,7 +47,7 @@ export default async function DiscoveryPage({
         initialSuggestions={trending}
         libraries={libraries}
         provider={provider}
-        prowlarrConfigured={prowlarrConfigured}
+        prowlarrConfigured={readiness.prowlarr}
       />
     </div>
   );

@@ -5,6 +5,20 @@
 import { apiFetch } from "./client";
 
 export type Settings = {
+  /** Interrupteur global des téléchargements, lu aussi par la readiness d'acquisition. */
+  downloads_enabled?: { enabled: boolean };
+  prowlarr?: Record<string, unknown> | null;
+  qbittorrent?: Record<string, unknown> | null;
+  alldebrid?: Record<string, unknown> | null;
+  telegram?: Record<string, unknown> | null;
+  anilist?: Record<string, unknown> | null;
+  komga?: Record<string, unknown> | null;
+  metadata_providers?: Record<string, unknown> | null;
+  rename_format?: string | null;
+  rename_format_hs?: string | null;
+  rename_format_int?: string | null;
+  rename_format_oneshot?: string | null;
+  download_client?: unknown;
   ai_tagging?: {
     enabled: boolean;
     base_url: string;
@@ -75,12 +89,14 @@ export async function getSettings() {
   return apiFetch<Settings>("/settings", { cache: "no-store" });
 }
 
-export async function fetchDownloadsEnabled(): Promise<boolean> {
-  return apiFetch<{ enabled: boolean }>("/settings/downloads_enabled", {
-    next: { revalidate: 300 },
-  })
-    .then(d => d?.enabled === true)
-    .catch(() => false);
+/**
+ * Carte complète des réglages `app_settings` telle que renvoyée par l'API.
+ * Une seule lecture suffit pour résoudre downloads/Prowlarr/clients.
+ */
+export async function fetchSettingsSnapshot(): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>("/settings", {
+    next: { revalidate: 60 },
+  });
 }
 
 export async function updateSetting(key: string, value: unknown) {

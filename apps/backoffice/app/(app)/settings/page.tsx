@@ -1,4 +1,4 @@
-import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch, fetchDownloadsEnabled, fetchLibraries, LibraryDto } from "@/lib/api";
+import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch, fetchLibraries, LibraryDto, Settings } from "@/lib/api";
 import { redirect } from "next/navigation";
 import SettingsPage from "./SettingsPage";
 import { TokensTab } from "./components/TokensTab";
@@ -30,8 +30,9 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
   const { tab, created: createdToken } = await searchParams;
   // The reading overview moved out of Settings into its own top-level page.
   if (tab === "readingOverview") redirect("/progress");
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, alldebrid, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, downloadClientSetting, libraries] = await Promise.all([
-    getSettings().catch(() => ({
+  const [settings, cacheStats, thumbnailStats, users, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, libraries] = await Promise.all([
+    getSettings().catch((): Settings => ({
+      downloads_enabled: { enabled: false },
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
       limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2, telegram_download_connections: 4, concurrent_ddl_provider_downloads: 2, ddl_download_connections: 4, download_max_attempts: 5, download_stall_timeout_seconds: 180, download_timeout_minutes: 30, concurrent_alldebrid_downloads: 4, alldebrid_stall_timeout_minutes: 30 },
@@ -41,26 +42,30 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     getCacheStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/tmp/stripstream-image-cache", memory_size_mb: 0, memory_page_count: 0, memory_max_size_mb: 128 })),
     getThumbnailStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/data/thumbnails" })),
     fetchUsers().catch(() => []),
-    apiFetch<Record<string, unknown>>("/settings/prowlarr").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/qbittorrent").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/alldebrid").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/telegram").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/anilist").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/komga").catch(() => null),
-    apiFetch<Record<string, unknown>>("/settings/metadata_providers").catch(() => null),
-    apiFetch<unknown[]>("/settings/status-mappings").catch(() => []),
+    apiFetch<Record<string, unknown>[]>("/settings/status-mappings").catch(() => []),
     apiFetch<unknown[]>("/series/statuses").catch(() => []),
     apiFetch<unknown[]>("/series/provider-statuses").catch(() => []),
     apiFetch<{ api?: string }>("/version").catch(() => ({ api: "?" })),
     fetchIndexerVersion(),
-    apiFetch<string>("/settings/rename_format").catch(() => null),
-    apiFetch<string>("/settings/rename_format_hs").catch(() => null),
-    apiFetch<string>("/settings/rename_format_int").catch(() => null),
-    apiFetch<string>("/settings/rename_format_oneshot").catch(() => null),
-    fetchDownloadsEnabled(),
-    apiFetch<unknown>("/settings/download_client").catch(() => null),
     fetchLibraries().catch(() => []),
   ]);
+
+  // Tous les réglages `app_settings` arrivent déjà dans `getSettings()` : on
+  // évite de refetcher chaque clé séparément. Les mappings de statuts vivent
+  // dans leur propre table et gardent leur endpoint dédié.
+  const prowlarr = settings.prowlarr ?? null;
+  const qbittorrent = settings.qbittorrent ?? null;
+  const alldebrid = settings.alldebrid ?? null;
+  const telegram = settings.telegram ?? null;
+  const anilist = settings.anilist ?? null;
+  const komga = settings.komga ?? null;
+  const metadataProviders = settings.metadata_providers ?? null;
+  const renameFormat = settings.rename_format ?? null;
+  const renameFormatHs = settings.rename_format_hs ?? null;
+  const renameFormatInt = settings.rename_format_int ?? null;
+  const renameFormatOneshot = settings.rename_format_oneshot ?? null;
+  const downloadsEnabled = settings.downloads_enabled?.enabled === true;
+  const downloadClientSetting = settings.download_client ?? null;
 
   const versions = {
     api: apiVersion?.api ?? "?",

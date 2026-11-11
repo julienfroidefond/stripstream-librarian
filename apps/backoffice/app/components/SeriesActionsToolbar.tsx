@@ -2,6 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import type { ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
@@ -65,12 +66,8 @@ interface Props {
   // Reading status
   readingStatusProvider: string | null;
   readingStatusLink: AnilistSeriesLinkDto | null;
-  // Prowlarr/qb
-  prowlarrConfigured: boolean;
-  qbConfigured: boolean;
-  alldebridConfigured?: boolean;
-  telegramEnabled: boolean;
-  ddlProviderEnabled: boolean;
+  // Acquisition (une seule valeur résolue côté serveur)
+  readiness: AcquisitionReadiness;
   ownedVolumes?: number[];
   // Rename
   renameFormat: string | null;
@@ -146,9 +143,7 @@ export function SeriesActionsToolbar(props: Props) {
             seriesName={props.seriesName}
             libraryId={props.libraryId}
             missingBooks={props.missingData?.missing_books ?? null}
-            initialProwlarrConfigured={props.prowlarrConfigured}
-            initialQbConfigured={props.qbConfigured}
-            initialAlldebridConfigured={props.alldebridConfigured}
+            initialReadiness={props.readiness}
           >
             {(open) => (
               <ActionsMenuItem icon="⬇️" onClick={open}>
@@ -156,12 +151,12 @@ export function SeriesActionsToolbar(props: Props) {
               </ActionsMenuItem>
             )}
           </ProwlarrSearchModal>
-          {props.telegramEnabled && (
+          {props.readiness.telegram && (
             <TelegramSearchModal
               seriesName={props.seriesName}
               missingBooks={props.missingData?.missing_books ?? null}
               ownedVolumes={props.ownedVolumes}
-              initialEnabled={props.telegramEnabled}
+              initialEnabled={props.readiness.telegram}
             >
               {(open) => (
                 <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-info" />} onClick={open}>
@@ -170,12 +165,12 @@ export function SeriesActionsToolbar(props: Props) {
               )}
             </TelegramSearchModal>
           )}
-          {props.ddlProviderEnabled && (
+          {props.readiness.ddl && (
             <DdlProviderSearchModal
               seriesName={props.seriesName}
               libraryId={props.libraryId}
               missingBooks={props.missingData?.missing_books ?? null}
-              initialEnabled={props.ddlProviderEnabled}
+              initialEnabled={props.readiness.ddl}
             >
               {(open) => (
                 <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>

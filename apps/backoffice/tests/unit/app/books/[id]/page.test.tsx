@@ -6,12 +6,24 @@ const api = vi.hoisted(() => ({
   getBookCoverUrl: vi.fn((bookId: string) => `/covers/${bookId}.webp`),
   apiFetch: vi.fn(),
   fetchSeriesOwnedVolumes: vi.fn(),
-  hasEnabledDdlProvider: vi.fn(),
+}));
+
+const readiness = vi.hoisted(() => ({
+  downloads: true,
+  prowlarr: true,
+  qbittorrent: true,
+  alldebrid: false,
+  telegram: false,
+  ddl: true,
 }));
 
 const toolbar = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 
 vi.mock("@/lib/api", () => api);
+
+vi.mock("@/lib/acquisitionReadiness.server", () => ({
+  loadAcquisitionReadiness: async () => readiness,
+}));
 
 vi.mock("@/lib/activeUser", () => ({
   getActiveUser: async () => ({ userId: "u1", hasActiveUser: true }),
@@ -75,7 +87,6 @@ beforeEach(() => {
     url === "/books/book-1" ? book() : null
   );
   api.fetchSeriesOwnedVolumes.mockReset().mockResolvedValue([1, 2, 3]);
-  api.hasEnabledDdlProvider.mockReset().mockResolvedValue(false);
   toolbar.props = null;
 });
 
@@ -85,6 +96,7 @@ describe("BookDetailPage", () => {
 
     expect(api.fetchSeriesOwnedVolumes).toHaveBeenCalledWith("ser-1");
     expect(toolbar.props?.ownedVolumes).toEqual([1, 2, 3]);
+    expect(toolbar.props?.readiness).toEqual(readiness);
   });
 
   it("forwards undefined (highlight nothing) when the book has no series", async () => {

@@ -28,7 +28,6 @@ import {
   fetchSeriesRatings,
   fetchSeriesMemberships,
   fetchSeriesReadingLists,
-  fetchTelegramAuthorized,
   fetchTelegramAvailable,
   fetchTelegramDownloads,
   fetchTorrentDownloads,
@@ -518,10 +517,11 @@ describe("telegram monitor", () => {
 
   it("reports authorization from the status", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ authorized: true }));
-    await expect(fetchTelegramAuthorized()).resolves.toBe(true);
+    await expect(getTelegramMonitorStatus()).resolves.toEqual({ authorized: true });
+    expect(lastCall()).toMatchObject({ url: "/telegram-monitor/status", method: "GET" });
 
-    fetchMock.mockRejectedValueOnce(new Error("down"));
-    await expect(fetchTelegramAuthorized()).resolves.toBe(false);
+    await getTelegramMonitorStatus({ revalidate: 60 });
+    expect(lastCall().init.next).toEqual({ revalidate: 60 });
   });
 
   it("lists books and downloads or dismisses them", async () => {

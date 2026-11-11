@@ -1,12 +1,24 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AcquisitionReadinessProvider } from "@/app/components/AcquisitionReadinessProvider";
 import { ProwlarrSearchModal } from "@/app/components/ProwlarrSearchModal";
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
 
 const fetchMock = vi.fn();
 
+const readyReadiness: AcquisitionReadiness = {
+  downloads: true,
+  prowlarr: true,
+  qbittorrent: false,
+  alldebrid: false,
+  telegram: false,
+  ddl: false,
+};
+
 beforeEach(() => {
   fetchMock.mockReset();
+  fetchMock.mockImplementation(async () => ok({}));
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -25,19 +37,29 @@ function mockSearch(payload: unknown) {
   });
 }
 
-function renderAndOpen() {
+function renderAndOpen(readiness: AcquisitionReadiness = readyReadiness) {
   render(
     <ProwlarrSearchModal
       seriesName="Astérix"
       missingBooks={null}
-      initialProwlarrConfigured
-      initialQbConfigured={false}
-      initialAlldebridConfigured={false}
+      initialReadiness={readiness}
     >
       {(open) => <button onClick={open}>open</button>}
     </ProwlarrSearchModal>
   );
   fireEvent.click(screen.getByRole("button", { name: "open" }));
+}
+
+function expectNoSettingsFetch() {
+  const urls = fetchMock.mock.calls.map(([url]) => String(url));
+  expect(
+    urls.some(
+      (url) =>
+        url === "/api/settings/downloads_enabled" ||
+        url === "/api/settings/qbittorrent" ||
+        url === "/api/settings/alldebrid"
+    )
+  ).toBe(false);
 }
 
 describe("ProwlarrSearchModal", () => {
@@ -51,6 +73,7 @@ describe("ProwlarrSearchModal", () => {
 
     expect(await screen.findByText("prowlarr.indexersNotSynced")).toBeInTheDocument();
     expect(screen.getByText("prowlarr.noResults")).toBeInTheDocument();
+    expectNoSettingsFetch();
   });
 
   it("does not show the hint when Prowlarr returns results", async () => {
@@ -77,5 +100,34 @@ describe("ProwlarrSearchModal", () => {
 
     expect(await screen.findByText("Astérix T01")).toBeInTheDocument();
     expect(screen.queryByText("prowlarr.indexersNotSynced")).not.toBeInTheDocument();
+    expectNoSettingsFetch();
+  });
+
+  it("hides the action when Prowlarr is not ready", () => {
+    render(
+      <ProwlarrSearchModal
+        seriesName="Astérix"
+        missingBooks={null}
+        initialReadiness={{ ...readyReadiness, prowlarr: false }}
+      >
+        {(open) => <button onClick={open}>open</button>}
+      </ProwlarrSearchModal>
+    );
+
+    expect(screen.queryByRole("button", { name: "open" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("consumes the readiness provided by the app layout", () => {
+    render(
+      <AcquisitionReadinessProvider readiness={readyReadiness}>
+        <ProwlarrSearchModal seriesName="Astérix" missingBooks={null}>
+          {(open) => <button onClick={open}>open</button>}
+        </ProwlarrSearchModal>
+      </AcquisitionReadinessProvider>
+    );
+
+    expect(screen.getByRole("button", { name: "open" })).toBeInTheDocument();
+    expectNoSettingsFetch();
   });
 });

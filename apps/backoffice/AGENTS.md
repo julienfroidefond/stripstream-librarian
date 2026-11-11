@@ -45,6 +45,15 @@ réexporte automatiquement.
 `app/api/**` (extraction du message d'erreur, statut 500 par défaut, options `fallback` / `status` /
 `statusFromError` / `onError`). L'utiliser pour tout nouveau handler.
 
+## Readiness d'acquisition
+
+`lib/acquisitionReadiness.ts` centralise la décision « cette source est-elle utilisable ? »
+(`downloads`, `prowlarr`, `qbittorrent`, `alldebrid`, `telegram`, `ddl`). Le module est pur ;
+`lib/acquisitionReadiness.server.ts` charge l'instantané (settings, statut Telegram, fournisseurs
+DDL) et le mémoïse pour le rendu. Le layout expose la valeur via `AcquisitionReadinessProvider` et
+les pages la passent aux toolbars : ne pas refetcher les settings pour décider d'afficher une
+action d'acquisition.
+
 ## Composants UI
 
 Les composants génériques sont dans `app/components/ui/`. Utiliser ces composants plutôt que des éléments HTML bruts :

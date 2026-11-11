@@ -79,8 +79,18 @@ export type TelegramDownloadItemDto = {
   updated_at: string;
 };
 
-export async function getTelegramMonitorStatus(): Promise<TelegramMonitorStatus> {
-  return apiFetch<TelegramMonitorStatus>("/telegram-monitor/status");
+export type TelegramMonitorReadOptions = {
+  /** Cache Next.js demandé pour cette lecture (secondes). */
+  revalidate?: number;
+};
+
+export async function getTelegramMonitorStatus(
+  options?: TelegramMonitorReadOptions
+): Promise<TelegramMonitorStatus> {
+  return apiFetch<TelegramMonitorStatus>(
+    "/telegram-monitor/status",
+    options?.revalidate ? { next: { revalidate: options.revalidate } } : undefined
+  );
 }
 
 export async function saveTelegramMonitorSettings(data: {
@@ -143,15 +153,6 @@ export async function startTelegramSyncIncremental(): Promise<{ id: string | nul
   return apiFetch<{ id: string | null; status: string }>("/telegram-monitor/start-incremental", {
     method: "POST",
   });
-}
-
-export async function fetchTelegramAuthorized(): Promise<boolean> {
-  try {
-    const status = await getTelegramMonitorStatus();
-    return status.authorized;
-  } catch {
-    return false;
-  }
 }
 
 export async function listTelegramBooks(): Promise<TelegramBookLinkDto[]> {

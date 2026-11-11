@@ -1,14 +1,12 @@
 import {
-  fetchDownloadsEnabled,
   fetchLibraries,
-  fetchTelegramAuthorized,
-  hasEnabledDdlProvider,
   IndexJobDto,
   JobTypeCatalogDto,
   LibraryDto,
   listJobs,
   listJobTypes,
 } from "@/lib/api";
+import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
 import { JobsList } from "@/app/components/JobsList";
 import { getServerTranslations } from "@/lib/i18n/server";
 
@@ -23,13 +21,11 @@ export default async function JobsPage({
 }) {
   const { highlight, library, error: errorMsg } = await searchParams;
   const { t } = await getServerTranslations();
-  const [jobs, libraries, jobTypeCatalog, prowlarrConfigured, telegramAuthorized, ddlConfigured] = await Promise.all([
+  const [jobs, libraries, jobTypeCatalog, readiness] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
     fetchLibraries().catch(() => [] as LibraryDto[]),
     listJobTypes().catch(() => [] as JobTypeCatalogDto[]),
-    fetchDownloadsEnabled(),
-    fetchTelegramAuthorized(),
-    hasEnabledDdlProvider(),
+    loadAcquisitionReadiness(),
   ]);
 
   const initialLibraries =
@@ -61,9 +57,9 @@ export default async function JobsPage({
         libraries={libraries.map((item) => ({ id: item.id, name: item.name }))}
         initialSelected={initialLibraries}
         readingStatus={readingStatusLibraries.length > 0}
-        prowlarr={prowlarrConfigured}
-        ddl={ddlConfigured}
-        telegram={telegramAuthorized}
+        prowlarr={readiness.prowlarr}
+        ddl={readiness.ddl}
+        telegram={readiness.telegram}
       />
 
       <JobsList

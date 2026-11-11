@@ -171,15 +171,11 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   let downloadDetectionReport: DownloadDetectionReportDto | null = null;
   let downloadDetectionResults: DownloadDetectionResultDto[] = [];
   let downloadDetectionErrors: DownloadDetectionResultDto[] = [];
-  let qbConfigured = false;
   if (isDownloadDetection || isRssPoll) {
-    [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors, qbConfigured] = await Promise.all([
+    [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors] = await Promise.all([
       getDownloadDetectionReport(id).catch(() => null),
       getDownloadDetectionResults(id, "found").catch(() => []),
       getDownloadDetectionResults(id, "error").catch(() => []),
-      apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
-        .then(d => !!(d?.url?.trim() && d?.username?.trim()))
-        .catch(() => false),
     ]);
   }
 

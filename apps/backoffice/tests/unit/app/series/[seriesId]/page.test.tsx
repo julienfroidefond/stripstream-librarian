@@ -13,16 +13,27 @@ const api = vi.hoisted(() => ({
   getMissingBooks: vi.fn(),
   getReadingStatusLink: vi.fn(),
   apiFetch: vi.fn(),
-  fetchDownloadsEnabled: vi.fn(),
   fetchSeriesReadingLists: vi.fn(),
   fetchSeriesRatings: vi.fn(),
   fetchSeriesUserActivity: vi.fn(),
-  hasEnabledDdlProvider: vi.fn(),
+}));
+
+const readiness = vi.hoisted(() => ({
+  downloads: true,
+  prowlarr: true,
+  qbittorrent: true,
+  alldebrid: false,
+  telegram: false,
+  ddl: true,
 }));
 
 const toolbar = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 
 vi.mock("@/lib/api", () => api);
+
+vi.mock("@/lib/acquisitionReadiness.server", () => ({
+  loadAcquisitionReadiness: async () => readiness,
+}));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
@@ -132,11 +143,9 @@ beforeEach(() => {
   api.getMetadataLink.mockReset().mockResolvedValue([]);
   api.getReadingStatusLink.mockReset().mockResolvedValue(null);
   api.apiFetch.mockReset().mockResolvedValue(null);
-  api.fetchDownloadsEnabled.mockReset().mockResolvedValue(false);
   api.fetchSeriesReadingLists.mockReset().mockResolvedValue([]);
   api.fetchSeriesRatings.mockReset().mockResolvedValue(null);
   api.fetchSeriesUserActivity.mockReset().mockResolvedValue([]);
-  api.hasEnabledDdlProvider.mockReset().mockResolvedValue(false);
   toolbar.props = null;
 });
 
@@ -151,6 +160,7 @@ describe("SeriesDetailPage", () => {
 
     expect(api.fetchSeriesOwnedVolumes).toHaveBeenCalledWith("ser-1");
     expect(toolbar.props?.ownedVolumes).toEqual([1, 2, 3]);
+    expect(toolbar.props?.readiness).toEqual(readiness);
   });
 
   it("falls back to undefined so a failed fetch highlights nothing", async () => {
