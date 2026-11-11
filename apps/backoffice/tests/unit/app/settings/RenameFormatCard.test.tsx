@@ -1,12 +1,17 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { RenameFormatCard } from "@/app/(app)/settings/components/RenameFormatCard";
+import { renderWithSettingsDraft } from "../../helpers/settingsDraft";
+
+function renderCard(initial?: Record<string, unknown>) {
+  return renderWithSettingsDraft(<RenameFormatCard />, { initial });
+}
 
 describe("RenameFormatCard", () => {
   it("renders default templates and their previews", () => {
-    render(<RenameFormatCard handleUpdateSetting={vi.fn()} initialRenameFormat={null} initialRenameFormatHs={null} />);
+    renderCard();
     expect(screen.getByDisplayValue("{series_name} - T{volume_padded} - {title}")).toBeInTheDocument();
     expect(screen.getByDisplayValue("{series_name} - HS {volume_padded}")).toBeInTheDocument();
     expect(screen.getByDisplayValue("{series_name} - INT {volume_padded}")).toBeInTheDocument();
@@ -18,50 +23,50 @@ describe("RenameFormatCard", () => {
   });
 
   it("saves the regular template on blur", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-    render(<RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat="{series_name}" initialRenameFormatHs={null} />);
+    const { writer } = renderCard({ rename_format: "{series_name}" });
     const input = screen.getByLabelText("rename.template");
     fireEvent.change(input, { target: { value: "{title}" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(handleUpdateSetting).toHaveBeenCalledWith("rename_format", "{title}"));
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("rename_format", "{title}"));
   });
 
   it("saves the HS template on blur", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-    render(<RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={null} initialRenameFormatHs="{series_name}" />);
+    const { writer } = renderCard({ rename_format_hs: "{series_name}" });
     const input = screen.getByLabelText("rename.templateHs");
     fireEvent.change(input, { target: { value: "{isbn}" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(handleUpdateSetting).toHaveBeenCalledWith("rename_format_hs", "{isbn}"));
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("rename_format_hs", "{isbn}"));
   });
 
   it("saves the integral template on blur", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-    render(<RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={null} initialRenameFormatHs={null} initialRenameFormatInt="{series_name}" />);
+    const { writer } = renderCard({ rename_format_int: "{series_name}" });
     const input = screen.getByLabelText("rename.templateInt");
     fireEvent.change(input, { target: { value: "{volume}" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(handleUpdateSetting).toHaveBeenCalledWith("rename_format_int", "{volume}"));
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("rename_format_int", "{volume}"));
   });
 
   it("saves the oneshot template on blur", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-    render(<RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={null} initialRenameFormatHs={null} initialRenameFormatOneshot="{series_name}" />);
+    const { writer } = renderCard({ rename_format_oneshot: "{series_name}" });
     const input = screen.getByLabelText("rename.templateOneshot");
     fireEvent.change(input, { target: { value: "{title}" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(handleUpdateSetting).toHaveBeenCalledWith("rename_format_oneshot", "{title}"));
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("rename_format_oneshot", "{title}"));
   });
 
   it("appends a variable to the active template when clicked", async () => {
-    render(<RenameFormatCard handleUpdateSetting={vi.fn()} initialRenameFormat="{series_name}" initialRenameFormatHs={null} />);
+    renderCard({ rename_format: "{series_name}" });
     await userEvent.click(screen.getByText("{volume}"));
     expect(screen.getByLabelText("rename.template")).toHaveValue("{series_name}{volume}");
     expect(screen.getByText("Dragon Ball1.cbz")).toBeInTheDocument();
   });
 
-  it("cleans up dangling separators around unknown variables", async () => {
-    render(<RenameFormatCard handleUpdateSetting={vi.fn()} initialRenameFormat="{series_name} - {unknown}" initialRenameFormatHs="{unknown} - {volume}" initialRenameFormatOneshot="{title}" />);
+  it("cleans up dangling separators around unknown variables", () => {
+    renderCard({
+      rename_format: "{series_name} - {unknown}",
+      rename_format_hs: "{unknown} - {volume}",
+      rename_format_oneshot: "{title}",
+    });
     expect(screen.getByText("Dragon Ball.cbz")).toBeInTheDocument();
     expect(screen.getByText("1.cbz")).toBeInTheDocument();
   });

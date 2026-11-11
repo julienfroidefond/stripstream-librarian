@@ -40,9 +40,10 @@ test.describe("paramètres — actions locales", () => {
   });
 
   test("édite un format de renommage, met à jour l'aperçu et sauvegarde", async ({ page }) => {
-    await page.route("**/api/settings/rename_format", (route) =>
-      route.fulfill({ json: { success: true } })
-    );
+    await page.route("**/api/settings/rename_format", (route) => {
+      const body = route.request().postDataJSON() as { value: string };
+      return route.fulfill({ json: body.value });
+    });
 
     await page.goto("/settings?tab=general");
     await waitForHydration(page, "input");
@@ -75,9 +76,10 @@ test.describe("paramètres — actions locales", () => {
     await page.route("**/api/settings/ai_tagging/test", (route) =>
       route.fulfill({ json: { message: "Mock AI provider reachable" } })
     );
-    await page.route("**/api/settings/ai_tagging", (route) =>
-      route.fulfill({ json: { success: true } })
-    );
+    await page.route("**/api/settings/ai_tagging", (route) => {
+      const body = route.request().postDataJSON() as { value: Record<string, unknown> };
+      return route.fulfill({ json: body.value });
+    });
 
     await page.goto("/settings?tab=ai");
     await waitForHydration(page, "input");
@@ -206,9 +208,10 @@ test.describe("paramètres — actions locales", () => {
   });
 
   test("teste, prévisualise, synchronise et importe AniList via des APIs mockées", async ({ page }) => {
-    await page.route("**/api/settings/anilist", (route) =>
-      route.fulfill({ json: { success: true } })
-    );
+    await page.route("**/api/settings/anilist", (route) => {
+      const body = route.request().postDataJSON() as { value: Record<string, unknown> };
+      return route.fulfill({ json: body.value });
+    });
     await page.route("**/api/anilist/status", (route) =>
       route.fulfill({
         json: {
@@ -353,7 +356,10 @@ test.describe("paramètres — actions locales", () => {
     await page.route("**/api/komga/reports/e2e-report-1", (route) => route.fulfill({ json: report }));
     await page.route("**/api/komga/reports", (route) => route.fulfill({ json: [reportSummary] }));
     await page.route("**/api/komga/sync", (route) => route.fulfill({ json: syncResult }));
-    await page.route("**/api/settings/komga", (route) => route.fulfill({ json: { success: true } }));
+    await page.route("**/api/settings/komga", (route) => {
+      const body = route.request().postDataJSON() as { value: Record<string, unknown> };
+      return route.fulfill({ json: body.value });
+    });
 
     await page.goto("/settings?tab=readingStatus");
     await waitForHydration(page, "input");

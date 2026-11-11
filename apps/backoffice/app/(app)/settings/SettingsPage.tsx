@@ -2,18 +2,18 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
+import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
-import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
-import type { DownloadClient } from "@/lib/api";
+import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto, LibraryDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
+import type { CacheSettings, DownloadsEnabledSettings, ImageProcessingSettings, LimitsSettings, ThumbnailSettings } from "@/lib/settingsSections";
+import { SettingsDraftProvider, useSettingsSection, useSettingsSaving } from "./SettingsDraftProvider";
 import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
 import { StatusMappingsCard } from "./components/StatusMappingsCard";
 import { ProwlarrCard } from "./components/ProwlarrCard";
 import { QBittorrentCard } from "./components/QBittorrentCard";
 import { AlldebridCard } from "./components/AlldebridCard";
-import type { AlldebridLimits } from "./components/AlldebridCard";
 import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
@@ -22,10 +22,9 @@ import { ArchivesTab } from "./components/ArchivesTab";
 import { OrphansTab } from "./components/OrphansTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
-import { DdlEngineCard, type DdlEngineLimits } from "./components/DdlEngineCard";
+import { DdlEngineCard } from "./components/DdlEngineCard";
 import { AiTaggingCard } from "./components/AiTaggingCard";
 import { DownloadClientCard } from "./components/DownloadClientCard";
-import { isClientConfigured } from "@/lib/downloadClient";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -33,50 +32,54 @@ interface SettingsPageProps {
   initialThumbnailStats: ThumbnailStats;
   users: UserDto[];
   initialTab?: string;
-  initialProwlarr: Record<string, unknown> | null;
-  initialQbittorrent: Record<string, unknown> | null;
-  initialAlldebrid: Record<string, unknown> | null;
-  initialTelegram: Record<string, unknown> | null;
-  initialAnilist: Record<string, unknown> | null;
-  initialKomga: Record<string, unknown> | null;
-  initialMetadataProviders: Record<string, unknown> | null;
   initialStatusMappings: Record<string, unknown>[];
   initialSeriesStatuses: string[];
   initialProviderStatuses: string[];
-  initialRenameFormat: string | null;
-  initialRenameFormatHs: string | null;
-  initialRenameFormatInt?: string | null;
-  initialRenameFormatOneshot?: string | null;
-  initialDownloadsEnabled: boolean;
-  initialDownloadClient: DownloadClient | null;
-  initialLibraries: import("@/lib/api").LibraryDto[];
+  initialLibraries: LibraryDto[];
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialDownloadClient, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+/**
+ * Settings shell: the provider owns every `app_settings` section, the content
+ * is a set of views over slices. Keeping the provider above the content means
+ * a card that is not mounted (inactive tab) still keeps its unsaved edits.
+ */
+export default function SettingsPage({ initialSettings, ...contentProps }: SettingsPageProps) {
+  return (
+    <SettingsDraftProvider initial={initialSettings as unknown as Record<string, unknown>}>
+      <SettingsPageContent {...contentProps} />
+    </SettingsDraftProvider>
+  );
+}
+
+function SettingsPageContent({
+  initialCacheStats,
+  initialThumbnailStats,
+  users,
+  initialTab,
+  initialStatusMappings,
+  initialSeriesStatuses,
+  initialProviderStatuses,
+  initialLibraries,
+  versions,
+  tokensContent,
+}: Omit<SettingsPageProps, "initialSettings">) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [settings, setSettings] = useState<Settings>({
-    ...initialSettings,
-    thumbnail: initialSettings.thumbnail || { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
-  });
+  const limits = useSettingsSection<LimitsSettings>("limits");
+  const imageProcessing = useSettingsSection<ImageProcessingSettings>("image_processing");
+  const cache = useSettingsSection<CacheSettings>("cache");
+  const thumbnail = useSettingsSection<ThumbnailSettings>("thumbnail");
+  const downloadsEnabled = useSettingsSection<DownloadsEnabledSettings>("downloads_enabled");
+  const isSaving = useSettingsSaving();
+
   const [cacheStats, setCacheStats] = useState<CacheStats>(initialCacheStats);
-  const [thumbnailStats, setThumbnailStats] = useState<ThumbnailStats>(initialThumbnailStats);
+  const thumbnailStats = initialThumbnailStats;
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
-  // Availability of each download client, kept live so the picker below reacts
-  // as soon as a client is enabled/configured in its own card.
-  const [qbConfigured, setQbConfigured] = useState(() =>
-    isClientConfigured("qbittorrent", initialQbittorrent)
-  );
-  const [alldebridConfigured, setAlldebridConfigured] = useState(() =>
-    isClientConfigured("alldebrid", initialAlldebrid)
-  );
 
   const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "notifications", "tokens", "archives", "orphans"] as const;
   type TabId = typeof VALID_TABS[number];
@@ -111,44 +114,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     router.replace(`?tab=${tab}`, { scroll: false });
   }
 
-  function hasEmptyValue(v: unknown): boolean {
-    if (v === null || v === "") return true;
-    if (typeof v === "object" && v !== null) {
-      return Object.values(v).some((val) => val !== undefined && hasEmptyValue(val));
-    }
-    return false;
-  }
-
-  async function handleUpdateSetting(key: string, value: unknown) {
-    if (hasEmptyValue(value)) return;
-    setIsSaving(true);
-    try {
-      const response = await fetch(`/api/settings/${key}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value })
-      });
-      if (response.ok) {
-        toast(t("settings.savedSuccess"), "success");
-      } else {
-        toast(t("settings.savedError"), "error");
-      }
-    } catch {
-      toast(t("settings.saveError"), "error");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  /**
-   * Persist one or more `limits` fields, keeping the rest of the object intact.
-   * Every download-engine card writes through here so a concurrent save cannot
-   * drop a sibling's value.
-   */
-  function saveDownloadLimits(partial: Partial<DdlEngineLimits & AlldebridLimits>) {
-    const newLimits = { ...settings.limits, ...partial };
-    setSettings({ ...settings, limits: newLimits });
-    void handleUpdateSetting("limits", newLimits);
+  async function handleDownloadsToggle() {
+    downloadsEnabled.patch({ enabled: !downloadsEnabled.value.enabled });
+    const result = await downloadsEnabled.save();
+    if (result.status === "saved") router.refresh();
   }
 
   async function handleClearCache() {
@@ -223,13 +192,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={1}
             max={20}
-            value={settings.limits.concurrent_renders}
-            onChange={(e) => {
-              const concurrent_renders = parseInt(e.target.value) || 4;
-              const newSettings = { ...settings, limits: { ...settings.limits, concurrent_renders } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            value={limits.value.concurrent_renders}
+            onChange={(e) => limits.patch({ concurrent_renders: parseInt(e.target.value) || 4 })}
+            onBlur={() => void limits.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -238,13 +203,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={5}
             max={300}
-            value={settings.limits.timeout_seconds}
-            onChange={(e) => {
-              const timeout_seconds = parseInt(e.target.value) || 12;
-              const newSettings = { ...settings, limits: { ...settings.limits, timeout_seconds } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            value={limits.value.timeout_seconds}
+            onChange={(e) => limits.patch({ timeout_seconds: parseInt(e.target.value) || 12 })}
+            onBlur={() => void limits.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -253,13 +214,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={10}
             max={1000}
-            value={settings.limits.rate_limit_per_second}
-            onChange={(e) => {
-              const rate_limit_per_second = parseInt(e.target.value) || 120;
-              const newSettings = { ...settings, limits: { ...settings.limits, rate_limit_per_second } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            value={limits.value.rate_limit_per_second}
+            onChange={(e) => limits.patch({ rate_limit_per_second: parseInt(e.target.value) || 120 })}
+            onBlur={() => void limits.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -270,7 +227,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       </SettingsCard>
 
       {/* Rename Format */}
-      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} initialRenameFormatInt={initialRenameFormatInt} initialRenameFormatOneshot={initialRenameFormatOneshot} />
+      <RenameFormatCard />
 
       {/* About */}
       <SettingsCard icon="document" title={t("settings.about")}>
@@ -312,11 +269,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <SettingsCard icon="image" title={t("settings.imageProcessing")} description={<SafeHtml html={t("settings.imageProcessingDesc")} as="span" />}>
         <SettingsRow label={t("settings.defaultFormat")}>
           <FormSelect
-            value={settings.image_processing.format}
+            value={imageProcessing.value.format}
             onChange={(e) => {
-              const newSettings = { ...settings, image_processing: { ...settings.image_processing, format: e.target.value } };
-              setSettings(newSettings);
-              handleUpdateSetting("image_processing", newSettings.image_processing);
+              imageProcessing.patch({ format: e.target.value });
+              void imageProcessing.save();
             }}
           >
             <option value="webp">WebP</option>
@@ -329,23 +285,18 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={1}
             max={100}
-            value={settings.image_processing.quality}
-            onChange={(e) => {
-              const quality = parseInt(e.target.value) || 85;
-              const newSettings = { ...settings, image_processing: { ...settings.image_processing, quality } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
+            value={imageProcessing.value.quality}
+            onChange={(e) => imageProcessing.patch({ quality: parseInt(e.target.value) || 85 })}
+            onBlur={() => void imageProcessing.save()}
             className="w-32"
           />
         </SettingsRow>
         <SettingsRow label={t("settings.defaultFilter")}>
           <FormSelect
-            value={settings.image_processing.filter}
+            value={imageProcessing.value.filter}
             onChange={(e) => {
-              const newSettings = { ...settings, image_processing: { ...settings.image_processing, filter: e.target.value } };
-              setSettings(newSettings);
-              handleUpdateSetting("image_processing", newSettings.image_processing);
+              imageProcessing.patch({ filter: e.target.value });
+              void imageProcessing.save();
             }}
           >
             <option value="lanczos3">{t("settings.filterLanczos")}</option>
@@ -358,13 +309,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={100}
             max={2160}
-            value={settings.image_processing.max_width}
-            onChange={(e) => {
-              const max_width = parseInt(e.target.value) || 2160;
-              const newSettings = { ...settings, image_processing: { ...settings.image_processing, max_width } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
+            value={imageProcessing.value.max_width}
+            onChange={(e) => imageProcessing.patch({ max_width: parseInt(e.target.value) || 2160 })}
+            onBlur={() => void imageProcessing.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -403,24 +350,17 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
         <SettingsRow label={t("settings.cacheDirectory")}>
           <FormInput
-            value={settings.cache.directory}
-            onChange={(e) => {
-              const newSettings = { ...settings, cache: { ...settings.cache, directory: e.target.value } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+            value={cache.value.directory}
+            onChange={(e) => cache.patch({ directory: e.target.value })}
+            onBlur={() => void cache.save()}
           />
         </SettingsRow>
         <SettingsRow label={t("settings.maxSizeMb")}>
           <FormInput
             type="number"
-            value={settings.cache.max_size_mb}
-            onChange={(e) => {
-              const max_size_mb = parseInt(e.target.value) || 10000;
-              const newSettings = { ...settings, cache: { ...settings.cache, max_size_mb } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+            value={cache.value.max_size_mb}
+            onChange={(e) => cache.patch({ max_size_mb: parseInt(e.target.value) || 10000 })}
+            onBlur={() => void cache.save()}
             className="w-40"
           />
         </SettingsRow>
@@ -428,12 +368,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           <FormInput
             type="number"
             min={1}
-            value={settings.cache.memory_max_size_mb}
-            onChange={(e) => {
-              const memory_max_size_mb = Math.max(1, parseInt(e.target.value) || 128);
-              setSettings({ ...settings, cache: { ...settings.cache, memory_max_size_mb } });
-            }}
-            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+            value={cache.value.memory_max_size_mb}
+            onChange={(e) => cache.patch({ memory_max_size_mb: Math.max(1, parseInt(e.target.value) || 128) })}
+            onBlur={() => void cache.save()}
             className="w-40"
           />
         </SettingsRow>
@@ -463,11 +400,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <SettingsCard icon="image" title={t("settings.thumbnails")} description={t("settings.thumbnailsDesc")}>
         <SettingsRow label={t("settings.enableThumbnails")}>
           <FormSelect
-            value={settings.thumbnail.enabled ? "true" : "false"}
+            value={thumbnail.value.enabled ? "true" : "false"}
             onChange={(e) => {
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, enabled: e.target.value === "true" } };
-              setSettings(newSettings);
-              handleUpdateSetting("thumbnail", newSettings.thumbnail);
+              thumbnail.patch({ enabled: e.target.value === "true" });
+              void thumbnail.save();
             }}
           >
             <option value="true">{t("common.enabled")}</option>
@@ -477,17 +413,16 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <SettingsRow
           label={t("settings.outputFormat")}
           description={
-            settings.thumbnail.format === "original"
+            thumbnail.value.format === "original"
               ? t("settings.formatOriginalDesc")
               : t("settings.formatReencodeDesc")
           }
         >
           <FormSelect
-            value={settings.thumbnail.format}
+            value={thumbnail.value.format}
             onChange={(e) => {
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, format: e.target.value } };
-              setSettings(newSettings);
-              handleUpdateSetting("thumbnail", newSettings.thumbnail);
+              thumbnail.patch({ format: e.target.value });
+              void thumbnail.save();
             }}
           >
             <option value="original">{t("settings.formatOriginal")}</option>
@@ -501,13 +436,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={50}
             max={600}
-            value={settings.thumbnail.width}
-            onChange={(e) => {
-              const width = parseInt(e.target.value) || 300;
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, width } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            value={thumbnail.value.width}
+            onChange={(e) => thumbnail.patch({ width: parseInt(e.target.value) || 300 })}
+            onBlur={() => void thumbnail.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -516,13 +447,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={50}
             max={800}
-            value={settings.thumbnail.height}
-            onChange={(e) => {
-              const height = parseInt(e.target.value) || 400;
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, height } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            value={thumbnail.value.height}
+            onChange={(e) => thumbnail.patch({ height: parseInt(e.target.value) || 400 })}
+            onBlur={() => void thumbnail.save()}
             className="w-32"
           />
         </SettingsRow>
@@ -531,24 +458,17 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             type="number"
             min={1}
             max={100}
-            value={settings.thumbnail.quality}
-            onChange={(e) => {
-              const quality = parseInt(e.target.value) || 80;
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, quality } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            value={thumbnail.value.quality}
+            onChange={(e) => thumbnail.patch({ quality: parseInt(e.target.value) || 80 })}
+            onBlur={() => void thumbnail.save()}
             className="w-32"
           />
         </SettingsRow>
         <SettingsRow label={t("settings.thumbnailDirectory")}>
           <FormInput
-            value={settings.thumbnail.directory}
-            onChange={(e) => {
-              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, directory: e.target.value } };
-              setSettings(newSettings);
-            }}
-            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            value={thumbnail.value.directory}
+            onChange={(e) => thumbnail.patch({ directory: e.target.value })}
+            onBlur={() => void thumbnail.save()}
           />
         </SettingsRow>
 
@@ -576,14 +496,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {activeTab === "metadata" && (<SettingsSections>
       {/* Metadata Providers */}
-      <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} initialData={initialMetadataProviders} />
+      <MetadataProvidersCard />
 
 
       {/* Status Mappings */}
       <StatusMappingsCard initialStatusMappings={initialStatusMappings} initialSeriesStatuses={initialSeriesStatuses} initialProviderStatuses={initialProviderStatuses} />
       </SettingsSections>)}
 
-      {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard handleUpdateSetting={handleUpdateSetting} initialData={settings.ai_tagging ?? null} /></SettingsSections>)}
+      {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard /></SettingsSections>)}
 
       {activeTab === "downloadTools" && (
         <div className="space-y-8">
@@ -594,58 +514,33 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             description={t("settings.downloadsEnabledDesc")}
             action={
               <Switch
-                checked={downloadsEnabled}
-                onChange={async () => {
-                  const next = !downloadsEnabled;
-                  setDownloadsEnabled(next);
-                  try {
-                    const resp = await fetch("/api/settings/downloads_enabled", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ value: { enabled: next } }),
-                    });
-                    if (resp.ok) {
-                      toast(t("settings.savedSuccess"), "success");
-                      router.refresh();
-                    } else {
-                      setDownloadsEnabled(!next);
-                      toast(t("settings.savedError"), "error");
-                    }
-                  } catch {
-                    setDownloadsEnabled(!next);
-                    toast(t("settings.saveError"), "error");
-                  }
-                }}
+                checked={downloadsEnabled.value.enabled}
+                onChange={() => void handleDownloadsToggle()}
               />
             }
           />
 
           {/* Where releases are searched */}
           <SettingsSection title={t("settings.sectionProvider")}>
-            <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
+            <ProwlarrCard />
           </SettingsSection>
 
           {/* Where they are handed over: the choice is made once, then the two alternatives */}
           <SettingsSection title={t("settings.sectionDownloadClients")}>
-            <DownloadClientCard
-              handleUpdateSetting={handleUpdateSetting}
-              initialClient={initialDownloadClient}
-              qbConfigured={qbConfigured}
-              alldebridConfigured={alldebridConfigured}
-            />
+            <DownloadClientCard />
             <SettingsColumns>
               <SettingsColumn>
-                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} onConfiguredChange={setQbConfigured} />
+                <QBittorrentCard />
               </SettingsColumn>
               <SettingsColumn>
-                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} limits={settings.limits} onSaveLimits={saveDownloadLimits} onConfiguredChange={setAlldebridConfigured} />
+                <AlldebridCard />
               </SettingsColumn>
             </SettingsColumns>
           </SettingsSection>
 
           {/* How the transfers themselves are tuned (DDL concurrency + shared knobs) */}
           <SettingsSection title={t("settings.sectionDownloadEngine")}>
-            <DdlEngineCard limits={settings.limits} onSave={saveDownloadLimits} />
+            <DdlEngineCard />
           </SettingsSection>
 
           {/* Direct download providers (JSON / HTML catalogues) */}
@@ -655,33 +550,19 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
           {/* Telegram link monitoring */}
           <SettingsSection title={t("settings.sectionTelegram")}>
-            <TelegramMonitorCard
-              initialLibraries={initialLibraries}
-              initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
-              onSaveConcurrentDownloads={(value) => {
-                const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
-                setSettings({ ...settings, limits: newLimits });
-                handleUpdateSetting("limits", newLimits);
-              }}
-              initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
-              onSaveDownloadConnections={(value) => {
-                const newLimits = { ...settings.limits, telegram_download_connections: value };
-                setSettings({ ...settings, limits: newLimits });
-                handleUpdateSetting("limits", newLimits);
-              }}
-            />
+            <TelegramMonitorCard initialLibraries={initialLibraries} />
           </SettingsSection>
         </div>
       )}
 
       {activeTab === "notifications" && (<SettingsSections layout="stack">
       {/* Telegram Notifications */}
-      <TelegramCard handleUpdateSetting={handleUpdateSetting} initialData={initialTelegram} />
+      <TelegramCard />
       </SettingsSections>)}
 
       {activeTab === "readingStatus" && (<SettingsSections>
-        <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
-        <KomgaSyncCard users={users} initialData={initialKomga} />
+        <AnilistTab users={users} />
+        <KomgaSyncCard users={users} />
       </SettingsSections>)}
 
       {activeTab === "archives" && (

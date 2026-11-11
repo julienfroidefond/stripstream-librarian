@@ -7,6 +7,8 @@ import {
 } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { LibraryDto, TelegramMonitorStatus, TelegramSourceDto } from "@/lib/api";
+import type { LimitsSettings } from "@/lib/settingsSections";
+import { useSettingsSection } from "../SettingsDraftProvider";
 
 interface ChannelSuggestion {
   username: string | null;
@@ -31,18 +33,11 @@ async function tgFetch<T = unknown>(path: string, init?: RequestInit): Promise<T
 
 export function TelegramMonitorCard({
   initialLibraries = [],
-  initialConcurrentDownloads = 2,
-  onSaveConcurrentDownloads,
-  initialDownloadConnections = 4,
-  onSaveDownloadConnections,
 }: {
   initialLibraries?: LibraryDto[];
-  initialConcurrentDownloads?: number;
-  onSaveConcurrentDownloads?: (value: number) => void;
-  initialDownloadConnections?: number;
-  onSaveDownloadConnections?: (value: number) => void;
 }) {
   const { t } = useTranslation();
+  const limits = useSettingsSection<LimitsSettings>("limits");
 
   // Settings
   const [apiId, setApiId] = useState("");
@@ -50,8 +45,6 @@ export function TelegramMonitorCard({
   const [phone, setPhone] = useState("");
   const [syncInterval, setSyncInterval] = useState("30");
   const [savingSettings, setSavingSettings] = useState(false);
-  const [concurrentDownloads, setConcurrentDownloads] = useState(initialConcurrentDownloads);
-  const [downloadConnections, setDownloadConnections] = useState(initialDownloadConnections);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
 
   // Auth
@@ -392,9 +385,9 @@ export function TelegramMonitorCard({
               type="number"
               min={1}
               max={10}
-              value={concurrentDownloads}
-              onChange={e => setConcurrentDownloads(Math.max(1, parseInt(e.target.value) || 2))}
-              onBlur={() => onSaveConcurrentDownloads?.(concurrentDownloads)}
+              value={limits.value.concurrent_telegram_downloads}
+              onChange={e => limits.patch({ concurrent_telegram_downloads: Math.max(1, parseInt(e.target.value) || 2) })}
+              onBlur={() => void limits.save()}
               className="w-20"
             />
           </SettingsRow>
@@ -412,9 +405,9 @@ export function TelegramMonitorCard({
               type="number"
               min={1}
               max={8}
-              value={downloadConnections}
-              onChange={e => setDownloadConnections(Math.min(8, Math.max(1, parseInt(e.target.value) || 4)))}
-              onBlur={() => onSaveDownloadConnections?.(downloadConnections)}
+              value={limits.value.telegram_download_connections}
+              onChange={e => limits.patch({ telegram_download_connections: Math.min(8, Math.max(1, parseInt(e.target.value) || 4)) })}
+              onBlur={() => void limits.save()}
               className="w-20"
             />
           </SettingsRow>

@@ -865,6 +865,14 @@ const fr = {
   "settings.savedError": "Échec de l'enregistrement des paramètres",
   "settings.saveError": "Erreur lors de l'enregistrement des paramètres",
   "settings.cacheClearError": "Échec du vidage du cache",
+  "settings.validationProwlarr": "Renseignez l'URL et la clé API Prowlarr avant de l'activer.",
+  "settings.validationQbittorrent": "Renseignez l'URL et le nom d'utilisateur qBittorrent avant de l'activer.",
+  "settings.validationAlldebrid": "Saisissez une clé API AllDebrid avant de l'activer.",
+  "settings.validationTelegram": "Renseignez le token du bot et le chat ID avant d'activer les notifications.",
+  "settings.validationAi": "Renseignez l'URL de base et le modèle IA avant de l'activer.",
+  "settings.validationCacheDirectory": "Le dossier de cache ne peut pas être vide.",
+  "settings.validationThumbnailDirectory": "Le dossier des miniatures ne peut pas être vide.",
+  "settings.validationDownloadClient": "Ce client de téléchargement n'est pas pris en charge.",
 
   // Settings - Image Processing
   "settings.imageProcessing": "Traitement d'images",

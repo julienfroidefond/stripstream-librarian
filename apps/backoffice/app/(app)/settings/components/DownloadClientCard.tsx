@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { SettingsCard } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
@@ -8,8 +7,13 @@ import {
   DOWNLOAD_CLIENTS,
   DOWNLOAD_CLIENT_LABELS,
   DOWNLOAD_CLIENT_SETTING_KEY,
+  isClientConfigured,
+  readDownloadClientSetting,
+  type DownloadClientSetting,
 } from "@/lib/downloadClient";
 import type { DownloadClient } from "@/lib/api";
+import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settingsSections";
+import { useSettingsSection } from "../SettingsDraftProvider";
 
 /** Per-client description line under its brand name. */
 const CLIENT_DESCRIPTIONS: Record<DownloadClient, TranslationKey> = {
@@ -24,38 +28,32 @@ const CLIENT_DESCRIPTIONS: Record<DownloadClient, TranslationKey> = {
  * goes to the selected one. The choice used to be offered in the modals (and
  * kept in `localStorage`); it is now an admin setting so nothing else in the UI
  * has to ask again.
+ *
+ * Readiness is derived from the same draft sections the two cards below edit,
+ * so enabling AllDebrid immediately enables the radio without a callback.
  */
-export function DownloadClientCard({
-  handleUpdateSetting,
-  initialClient,
-  qbConfigured,
-  alldebridConfigured,
-}: {
-  handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
-  initialClient: DownloadClient | null;
-  qbConfigured: boolean;
-  alldebridConfigured: boolean;
-}) {
+export function DownloadClientCard() {
   const { t } = useTranslation();
+  const section = useSettingsSection<DownloadClientSetting>(DOWNLOAD_CLIENT_SETTING_KEY);
+  const qbittorrent = useSettingsSection<QbittorrentSettings>("qbittorrent");
+  const alldebrid = useSettingsSection<AlldebridSettings>("alldebrid");
   const configured: Record<DownloadClient, boolean> = {
-    qbittorrent: qbConfigured,
-    alldebrid: alldebridConfigured,
+    qbittorrent: isClientConfigured("qbittorrent", qbittorrent.value as unknown as Record<string, unknown>),
+    alldebrid: isClientConfigured("alldebrid", alldebrid.value as unknown as Record<string, unknown>),
   };
-  // Keep the last explicit choice, but never render a client that is not
-  // currently usable: this mirrors the runtime fallback exactly (see
-  // `DownloadClientProvider`). Deriving the shown client at render — instead of
-  // freezing it in state — makes the card react when a client is enabled or
-  // configured above in another card (e.g. AllDebrid switched on).
-  const [chosen, setChosen] = useState<DownloadClient | null>(initialClient);
+  // Never render a client that is not currently usable: this mirrors the
+  // runtime fallback exactly (see `DownloadClientProvider`). The stored choice
+  // lives in the draft, so a rollback also reverts the selection here.
+  const stored = readDownloadClientSetting(section.value);
   const client: DownloadClient | null =
-    chosen && configured[chosen]
-      ? chosen
+    stored && configured[stored]
+      ? stored
       : (DOWNLOAD_CLIENTS.find((c) => configured[c]) ?? null);
 
   function choose(next: DownloadClient) {
     if (!configured[next]) return;
-    setChosen(next);
-    void handleUpdateSetting(DOWNLOAD_CLIENT_SETTING_KEY, { client: next });
+    section.set({ client: next });
+    void section.save();
   }
 
   return (

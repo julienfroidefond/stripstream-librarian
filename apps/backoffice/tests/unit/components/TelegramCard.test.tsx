@@ -1,14 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import { TelegramCard } from "@/app/(app)/settings/components/TelegramCard";
+import { renderWithSettingsDraft } from "../helpers/settingsDraft";
 
-function renderCard(initialData: Record<string, unknown> | null = null) {
-  const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-  const { container } = render(
-    <TelegramCard handleUpdateSetting={handleUpdateSetting} initialData={initialData} />
-  );
-  return { handleUpdateSetting, container };
+function renderCard(telegram?: Record<string, unknown>) {
+  return renderWithSettingsDraft(<TelegramCard />, { initial: { telegram } });
 }
 
 function checkboxes(container: HTMLElement) {
@@ -41,46 +38,58 @@ describe("TelegramCard", () => {
     expect(enabledToggle.checked).toBe(true);
   });
 
-  it("toggles the notification switch and saves", () => {
-    const { handleUpdateSetting } = renderCard();
+  it("toggles the notification switch and saves", async () => {
+    const { writer } = renderCard({ bot_token: "123:abc", chat_id: "-100", enabled: false });
 
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith(
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
       "telegram",
-      expect.objectContaining({ enabled: true, bot_token: "", chat_id: "" })
-    );
+      expect.objectContaining({ enabled: true, bot_token: "123:abc", chat_id: "-100" }),
+    ));
   });
 
-  it("saves the bot token on blur", () => {
-    const { handleUpdateSetting } = renderCard();
+  it("saves the bot token on blur", async () => {
+    const { writer } = renderCard();
 
     fireEvent.change(screen.getByPlaceholderText("settings.botTokenPlaceholder"), {
       target: { value: "123:abc" },
     });
     fireEvent.blur(screen.getByPlaceholderText("settings.botTokenPlaceholder"));
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith(
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
       "telegram",
-      expect.objectContaining({ bot_token: "123:abc" })
-    );
+      expect.objectContaining({ bot_token: "123:abc" }),
+    ));
   });
 
-  it("saves the chat id on blur", () => {
-    const { handleUpdateSetting } = renderCard();
+  it("rejects enabling Telegram without a token and chat id", async () => {
+    const { writer } = renderCard();
+
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    // Wait for the rejected optimistic edit to roll back, then assert no write.
+    await waitFor(() => {
+      expect((screen.getAllByRole("checkbox")[0] as HTMLInputElement).checked).toBe(false);
+    });
+
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it("saves the chat id on blur", async () => {
+    const { writer } = renderCard();
 
     const chat = screen.getByPlaceholderText("settings.chatIdPlaceholder");
     fireEvent.change(chat, { target: { value: "-100" } });
     fireEvent.blur(chat);
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith(
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
       "telegram",
-      expect.objectContaining({ chat_id: "-100" })
-    );
+      expect.objectContaining({ chat_id: "-100" }),
+    ));
   });
 
-  it("updates a single event flag and saves the whole event map", () => {
-    const { handleUpdateSetting, container } = renderCard();
+  it("updates a single event flag and saves the whole event map", async () => {
+    const { writer, container } = renderCard();
     const boxes = checkboxes(container);
     // 1 master switch + 19 event toggles, including the dedicated partial event.
     expect(boxes).toHaveLength(20);
@@ -88,12 +97,12 @@ describe("TelegramCard", () => {
 
     fireEvent.click(boxes[1]);
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith(
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
       "telegram",
       expect.objectContaining({
         events: expect.objectContaining({ scan_completed: false, scan_failed: true }),
-      })
-    );
+      }),
+    ));
   });
 
   it("toggles the setup help panel", () => {
@@ -108,7 +117,7 @@ describe("TelegramCard", () => {
     expect(screen.getByText("3. Group chat")).toBeInTheDocument();
   });
 
-  it("disables the test button until the bot is enabled and configured", () => {
+  it("disables the test button until the bot is enabled and configured", async () => {
     const { container } = renderCard();
     const button = screen.getByRole("button", { name: "settings.testConnection" });
     expect(button).toBeDisabled();
@@ -122,6 +131,6 @@ describe("TelegramCard", () => {
     expect(button).toBeDisabled();
 
     fireEvent.click(checkboxes(container)[0]);
-    expect(button).toBeEnabled();
+    await waitFor(() => expect(button).toBeEnabled());
   });
 });

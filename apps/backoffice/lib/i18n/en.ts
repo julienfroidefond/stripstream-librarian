@@ -867,6 +867,14 @@ const en: Record<TranslationKey, string> = {
   "settings.savedError": "Failed to save settings",
   "settings.saveError": "Error saving settings",
   "settings.cacheClearError": "Failed to clear cache",
+  "settings.validationProwlarr": "Set the Prowlarr URL and API key before enabling it.",
+  "settings.validationQbittorrent": "Set the qBittorrent URL and username before enabling it.",
+  "settings.validationAlldebrid": "Enter an AllDebrid API key before enabling it.",
+  "settings.validationTelegram": "Set the bot token and chat ID before enabling notifications.",
+  "settings.validationAi": "Set the AI base URL and model before enabling it.",
+  "settings.validationCacheDirectory": "The cache directory cannot be empty.",
+  "settings.validationThumbnailDirectory": "The thumbnail directory cannot be empty.",
+  "settings.validationDownloadClient": "That download client is not supported.",
 
   // Settings - Image Processing
   "settings.imageProcessing": "Image processing",

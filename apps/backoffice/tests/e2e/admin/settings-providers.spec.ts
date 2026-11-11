@@ -54,9 +54,10 @@ test.describe("paramètres — providers", () => {
         ],
       })
     );
-    await page.route("**/api/settings/metadata_providers", (route) =>
-      route.fulfill({ json: { success: true } })
-    );
+    await page.route("**/api/settings/metadata_providers", (route) => {
+      const body = route.request().postDataJSON() as { value: Record<string, unknown> };
+      return route.fulfill({ json: body.value });
+    });
 
     await page.goto("/settings?tab=metadata");
     await waitForHydration(page, "input");
@@ -98,9 +99,10 @@ test.describe("paramètres — providers", () => {
   });
 
   test("borne les limites du moteur DDL à chaque perte de focus", async ({ page }) => {
-    await page.route("**/api/settings/limits", (route) =>
-      route.fulfill({ json: { success: true } })
-    );
+    await page.route("**/api/settings/limits", (route) => {
+      const body = route.request().postDataJSON() as { value: Record<string, unknown> };
+      return route.fulfill({ json: body.value });
+    });
 
     await page.goto("/settings?tab=downloadTools");
     await waitForHydration(page, "input");

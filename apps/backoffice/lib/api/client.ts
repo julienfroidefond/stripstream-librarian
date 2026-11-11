@@ -14,6 +14,23 @@ export function config() {
   return { baseUrl: baseUrl.replace(/\/$/, ""), token };
 }
 
+/** Extract the human-readable error from an upstream JSON (or text) body. */
+function upstreamErrorMessage(text: string): string | undefined {
+  try {
+    const body: unknown = JSON.parse(text);
+    if (body && typeof body === "object") {
+      for (const key of ["error", "message"] as const) {
+        const value = (body as Record<string, unknown>)[key];
+        if (typeof value === "string" && value.trim()) return value;
+      }
+    }
+  } catch {
+    // Not JSON: forward the raw body below.
+  }
+  const trimmed = text.trim();
+  return trimmed || undefined;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit & { next?: { revalidate?: number; tags?: string[] } },
@@ -54,7 +71,11 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new ApiError(res.status, `API ${path} failed (${res.status}): ${text}`);
+    throw new ApiError(
+      res.status,
+      `API ${path} failed (${res.status}): ${text}`,
+      upstreamErrorMessage(text),
+    );
   }
 
   if (res.status === 204) {

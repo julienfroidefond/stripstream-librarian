@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { KomgaSyncCard } from "@/app/(app)/settings/components/KomgaSyncCard";
+import { renderWithSettingsDraft } from "../../helpers/settingsDraft";
 
 const fetchMock = vi.fn();
 
@@ -47,21 +48,22 @@ const syncResponse = {
   unmatched: ["X"],
 };
 
+const users = [
+  { id: "9", username: "Alice" } as never,
+  { id: "10", username: "Carol" } as never,
+];
+
 describe("KomgaSyncCard", () => {
   it("loads reports and syncs, revealing matched and unmatched books", async () => {
     installRoutes({
       "GET /api/komga/reports": () => ok([reportSummary]),
       "POST /api/komga/sync": () => ok(syncResponse),
     });
-    render(
-      <KomgaSyncCard
-        users={[
-          { id: "9", username: "Alice" } as never,
-          { id: "10", username: "Carol" } as never,
-        ]}
-        initialData={{ url: "http://komga", username: "bob", user_id: "9" }}
-      />,
-    );
+    const { writer } = renderWithSettingsDraft(<KomgaSyncCard users={users} />, {
+      initial: {
+        komga: { url: "http://komga", username: "bob", user_id: "9" },
+      },
+    });
 
     await waitFor(() => expect(screen.getByText("settings.syncHistory")).toBeInTheDocument());
     expect(screen.getByText("http://komga")).toBeInTheDocument();
@@ -74,10 +76,11 @@ describe("KomgaSyncCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "settings.syncReadBooks" }));
 
     await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/settings/komga",
-      expect.objectContaining({ method: "POST" }),
-    );
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("komga", {
+      url: "http://komga",
+      username: "bobby",
+      user_id: "10",
+    }));
 
     fireEvent.click(screen.getByText(/settings\.matchedBooks/));
     expect(screen.getByText("A")).toBeInTheDocument();
@@ -89,12 +92,9 @@ describe("KomgaSyncCard", () => {
     installRoutes({
       "POST /api/komga/sync": () => ({ ok: false, json: async () => ({ error: "bad credentials" }) }),
     });
-    render(
-      <KomgaSyncCard
-        users={[{ id: "1", username: "First" } as never]}
-        initialData={{ username: "first", user_id: "1" }}
-      />,
-    );
+    renderWithSettingsDraft(<KomgaSyncCard users={[{ id: "1", username: "First" } as never]} />, {
+      initial: { komga: { username: "first", user_id: "1" } },
+    });
 
     fireEvent.change(screen.getByPlaceholderText("https://komga.example.com"), {
       target: { value: "http://k" },
@@ -113,12 +113,9 @@ describe("KomgaSyncCard", () => {
         throw new Error("network");
       },
     });
-    render(
-      <KomgaSyncCard
-        users={[] as never}
-        initialData={{ username: "bob", user_id: "1" }}
-      />,
-    );
+    renderWithSettingsDraft(<KomgaSyncCard users={[]} />, {
+      initial: { komga: { username: "bob", user_id: "1" } },
+    });
 
     fireEvent.change(screen.getByPlaceholderText("https://komga.example.com"), {
       target: { value: "http://k" },
@@ -147,7 +144,7 @@ describe("KomgaSyncCard", () => {
           unmatched: ["U1"],
         }),
     });
-    render(<KomgaSyncCard users={[] as never} initialData={null} />);
+    renderWithSettingsDraft(<KomgaSyncCard users={[]} />);
 
     await waitFor(() => expect(screen.getByText("http://komga")).toBeInTheDocument());
     fireEvent.click(screen.getByText("http://komga"));
@@ -165,7 +162,7 @@ describe("KomgaSyncCard", () => {
         throw new Error("down");
       },
     });
-    render(<KomgaSyncCard users={[] as never} initialData={null} />);
+    renderWithSettingsDraft(<KomgaSyncCard users={[]} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByText("settings.syncHistory")).not.toBeInTheDocument();
   });

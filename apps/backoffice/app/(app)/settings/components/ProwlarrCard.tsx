@@ -3,19 +3,33 @@
 import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, FormSelect, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import type { ProwlarrSettings } from "@/lib/settingsSections";
+import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 
-export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
+export function ProwlarrCard() {
   const { t } = useTranslation();
-  const [prowlarrUrl, setProwlarrUrl] = useState(initialData?.url ? String(initialData.url) : "");
-  const [prowlarrApiKey, setProwlarrApiKey] = useState(initialData?.api_key ? String(initialData.api_key) : "");
-  const [prowlarrCategories, setProwlarrCategories] = useState(
-    Array.isArray(initialData?.categories) ? (initialData.categories as number[]).join(", ") : "7030, 7020"
-  );
-  const [rssPollInterval, setRssPollInterval] = useState(
-    initialData?.rss_poll_interval_minutes != null ? String(initialData.rss_poll_interval_minutes) : "30"
-  );
-  const [enabled, setEnabled] = useState(initialData?.enabled !== false);
+  const draft = useSettingsDraft();
+  const section = useSettingsSection<ProwlarrSettings>("prowlarr");
+  const value = section.value;
+
+  const categoriesKey = (Array.isArray(value.categories) ? value.categories : []).join(", ");
+  // Raw text so a category list can be typed freely; re-synced from the
+  // acknowledged section when a save normalizes or a rollback restores it.
+  const [categoriesText, setCategoriesText] = useState(categoriesKey);
+
+  async function commitCategories(raw: string) {
+    const categories = raw
+      .split(",")
+      .map((s) => parseInt(s.trim()))
+      .filter((n) => !isNaN(n));
+    section.patch({ categories });
+    const result = await section.save();
+    if (result.status !== "unchanged") {
+      const stored = draft.get<ProwlarrSettings>("prowlarr");
+      setCategoriesText((stored?.categories ?? []).join(", "));
+    }
+  }
 
   const RSS_INTERVAL_OPTIONS = [
     { value: "0",     label: t("settings.prowlarrRssIntervalDisabled") },
@@ -26,20 +40,6 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
     { value: "1440",  label: t("settings.prowlarrRssInterval1d") },
     { value: "10080", label: t("settings.prowlarrRssInterval1w") },
   ];
-  function saveProwlarr(url?: string, apiKey?: string, cats?: string, interval?: string, en?: boolean) {
-    const categories = (cats ?? prowlarrCategories)
-      .split(",")
-      .map((s) => parseInt(s.trim()))
-      .filter((n) => !isNaN(n));
-    const parsedInterval = parseInt(interval ?? rssPollInterval);
-    handleUpdateSetting("prowlarr", {
-      url: url ?? prowlarrUrl,
-      api_key: apiKey ?? prowlarrApiKey,
-      categories,
-      rss_poll_interval_minutes: isNaN(parsedInterval) ? 30 : parsedInterval,
-      enabled: en ?? enabled,
-    });
-  }
 
   return (
     <SettingsCard
@@ -48,12 +48,11 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
       description={t("settings.prowlarrDesc")}
       action={
         <Switch
-          checked={enabled}
+          checked={value.enabled}
           aria-label={t("settings.prowlarrEnabled")}
           onChange={(e) => {
-            const val = e.target.checked;
-            setEnabled(val);
-            saveProwlarr(undefined, undefined, undefined, undefined, val);
+            section.patch({ enabled: e.target.checked });
+            void section.save();
           }}
         />
       }
@@ -62,9 +61,9 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
         <FormInput
           type="url"
           placeholder={t("settings.prowlarrUrlPlaceholder")}
-          value={prowlarrUrl}
-          onChange={(e) => setProwlarrUrl(e.target.value)}
-          onBlur={() => saveProwlarr()}
+          value={value.url}
+          onChange={(e) => section.patch({ url: e.target.value })}
+          onBlur={() => void section.save()}
           autoComplete="off"
           data-lpignore="true"
           data-1p-ignore
@@ -75,9 +74,9 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
         <FormInput
           type="password"
           placeholder={t("settings.prowlarrApiKeyPlaceholder")}
-          value={prowlarrApiKey}
-          onChange={(e) => setProwlarrApiKey(e.target.value)}
-          onBlur={() => saveProwlarr()}
+          value={value.api_key}
+          onChange={(e) => section.patch({ api_key: e.target.value })}
+          onBlur={() => void section.save()}
           autoComplete="off"
           data-lpignore="true"
           data-1p-ignore
@@ -88,15 +87,18 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
         <FormInput
           type="text"
           placeholder="7030, 7020"
-          value={prowlarrCategories}
-          onChange={(e) => setProwlarrCategories(e.target.value)}
-          onBlur={() => saveProwlarr()}
+          value={categoriesText}
+          onChange={(e) => setCategoriesText(e.target.value)}
+          onBlur={() => commitCategories(categoriesText)}
         />
       </SettingsRow>
       <SettingsRow label={t("settings.prowlarrRssInterval")} description={t("settings.prowlarrRssIntervalHelp")}>
         <FormSelect
-          value={rssPollInterval}
-          onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
+          value={String(value.rss_poll_interval_minutes)}
+          onChange={(e) => {
+            section.patch({ rss_poll_interval_minutes: parseInt(e.target.value) || 30 });
+            void section.save();
+          }}
         >
           {RSS_INTERVAL_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -106,7 +108,7 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
       <div className="pt-1">
         <TestConnectionButton
           endpoint="/api/prowlarr/test"
-          disabled={!enabled || !prowlarrUrl || !prowlarrApiKey}
+          disabled={!value.enabled || !value.url || !value.api_key}
         />
       </div>
     </SettingsCard>
