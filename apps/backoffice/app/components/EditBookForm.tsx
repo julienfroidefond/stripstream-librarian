@@ -7,6 +7,8 @@ import { BookDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
+import { pickLockableFields } from "@/lib/metadataLocks";
+import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface EditBookFormProps {
@@ -31,7 +33,13 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
   const [summary, setSummary] = useState(book.summary ?? "");
   const [isbn, setIsbn] = useState(book.isbn ?? "");
   const [publishDate, setPublishDate] = useState(book.publish_date ?? "");
-  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(book.locked_fields ?? {});
+  // The raw map is kept as-is; the catalog decides which keys are still
+  // meaningful for the lock UI and the PATCH payload.
+  const lockableFields = useLockableFields("books");
+  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(
+    () => book.locked_fields ?? {},
+  );
+  const visibleLockedFields = pickLockableFields(lockedFields, lockableFields);
 
   const toggleLock = (field: string) => {
     setLockedFields((prev) => ({ ...prev, [field]: !prev[field] }));
@@ -105,7 +113,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
             summary: summary.trim() || null,
             isbn: isbn.trim() || null,
             publish_date: publishDate.trim() || null,
-            locked_fields: lockedFields,
+            locked_fields: visibleLockedFields,
           }),
         });
         if (!res.ok) {
@@ -126,10 +134,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
       <form onSubmit={handleSubmit} className="p-5 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField className="sm:col-span-2">
-                <div className="flex items-center gap-1">
-                  <FormLabel required>{t("editBook.title")}</FormLabel>
-                  <LockButton locked={!!lockedFields.title} onToggle={() => toggleLock("title")} disabled={isPending} />
-                </div>
+                <FormLabel required>{t("editBook.title")}</FormLabel>
                 <FormInput
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -142,7 +147,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.authors")}</FormLabel>
-                  <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
                 <TagInput
                   values={authors}
@@ -161,7 +166,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.language")}</FormLabel>
-                  <LockButton locked={!!lockedFields.language} onToggle={() => toggleLock("language")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.language} onToggle={() => toggleLock("language")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={language}
@@ -172,10 +177,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               </FormField>
 
               <FormField>
-                <div className="flex items-center gap-1">
-                  <FormLabel>{t("editBook.series")}</FormLabel>
-                  <LockButton locked={!!lockedFields.series} onToggle={() => toggleLock("series")} disabled={isPending} />
-                </div>
+                <FormLabel>{t("editBook.series")}</FormLabel>
                 <FormInput
                   value={series}
                   onChange={(e) => setSeries(e.target.value)}
@@ -185,10 +187,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               </FormField>
 
               <FormField>
-                <div className="flex items-center gap-1">
-                  <FormLabel>{t("editBook.volume")}</FormLabel>
-                  <LockButton locked={!!lockedFields.volume} onToggle={() => toggleLock("volume")} disabled={isPending} />
-                </div>
+                <FormLabel>{t("editBook.volume")}</FormLabel>
                 <FormInput
                   type="number"
                   min="1"
@@ -202,7 +201,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.isbn")}</FormLabel>
-                  <LockButton locked={!!lockedFields.isbn} onToggle={() => toggleLock("isbn")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.isbn} onToggle={() => toggleLock("isbn")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={isbn}
@@ -215,7 +214,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.publishDate")}</FormLabel>
-                  <LockButton locked={!!lockedFields.publish_date} onToggle={() => toggleLock("publish_date")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.publish_date} onToggle={() => toggleLock("publish_date")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={publishDate}
@@ -228,7 +227,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.description")}</FormLabel>
-                  <LockButton locked={!!lockedFields.summary} onToggle={() => toggleLock("summary")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.summary} onToggle={() => toggleLock("summary")} disabled={isPending} />
                 </div>
                 <textarea
                   value={summary}
@@ -242,7 +241,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
             </div>
 
             {/* Lock legend */}
-            {Object.values(lockedFields).some(Boolean) && (
+            {Object.values(visibleLockedFields).some(Boolean) && (
               <p className="text-xs text-warning flex items-center gap-1.5">
                 <Icon name="lock" size="sm" className="!w-3.5 !h-3.5 shrink-0" />
                 {t("editBook.lockedFieldsNote")}

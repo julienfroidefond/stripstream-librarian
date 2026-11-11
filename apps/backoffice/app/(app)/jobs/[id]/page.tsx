@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, getReadingStatusPushReport, getReadingStatusPushResults, getDownloadDetectionReport, getDownloadDetectionResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto, DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
+import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, getReadingStatusPushReport, getReadingStatusPushResults, getDownloadDetectionReport, getDownloadDetectionResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto, DownloadDetectionReportDto, DownloadDetectionResultDto, JobTypeCatalogDto, listJobTypes } from "@/lib/api";
 import { JobDetailLive } from "@/app/components/JobDetailLive";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { JobSummaryBanner } from "./components/JobSummaryBanner";
@@ -91,15 +91,18 @@ async function getJobErrors(jobId: string): Promise<JobError[]> {
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const { id } = await params;
-  const [job, errors, events] = await Promise.all([
+  const [job, errors, events, jobTypeCatalog] = await Promise.all([
     getJobDetails(id),
     getJobErrors(id),
     apiFetch<JobEvent[]>(`/index/jobs/${id}/events`).catch(() => []),
+    listJobTypes().catch(() => [] as JobTypeCatalogDto[]),
   ]);
 
   if (!job) {
     notFound();
   }
+
+  const catalogEntry = jobTypeCatalog.find((entry) => entry.job_type === job.type);
 
   const { t, locale } = await getServerTranslations();
 
@@ -268,7 +271,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <JobOverviewCard job={job} typeInfo={typeInfo} t={t} formatDuration={formatDuration} />
+        <JobOverviewCard job={job} typeInfo={typeInfo} category={catalogEntry?.category} t={t} formatDuration={formatDuration} />
         <JobTimelineCard job={job} isThumbnailOnly={isThumbnailOnly} t={t} locale={locale} formatDuration={formatDuration} />
 
         {!isTelegramFullSync && (

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use parsers::extract_volume;
 
-use crate::jobs::helpers::update_progress;
+use crate::jobs::helpers::{set_total_files, update_progress};
 use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
@@ -315,11 +315,7 @@ pub async fn do_sync(
         .sum::<usize>() as i32;
 
     if let Some(jid) = job_id {
-        let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-            .bind(jid)
-            .bind(total_series)
-            .execute(&pool)
-            .await;
+        let _ = set_total_files(&pool, jid, total_series).await;
     }
 
     let session = Session::load(&session_bytes)

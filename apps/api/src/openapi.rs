@@ -194,6 +194,7 @@ pub struct ClientApiDoc;
         // Indexing
         crate::index_jobs::enqueue_rebuild,
         crate::index_jobs::list_index_jobs,
+        crate::jobs::catalog::list_job_types,
         crate::index_jobs::get_active_jobs,
         crate::index_jobs::get_job_details,
         crate::index_jobs::stream_job_progress,
@@ -203,6 +204,7 @@ pub struct ClientApiDoc;
         // Metadata
         crate::metadata::handlers::search_metadata,
         crate::metadata::handlers::list_metadata_providers,
+        crate::metadata::handlers::list_metadata_fields,
         crate::metadata::handlers::create_metadata_match,
         crate::metadata::handlers::approve_metadata,
         crate::metadata::handlers::reject_metadata,
@@ -410,6 +412,7 @@ pub struct ClientApiDoc;
             crate::index_jobs::JobErrorResponse,
             crate::index_jobs::ProgressEvent,
             crate::index_jobs::FolderItem,
+            crate::jobs::catalog::JobTypeDto,
             // Metadata
             crate::metadata::ApproveRequest,
             crate::metadata::ApproveResponse,
@@ -419,6 +422,8 @@ pub struct ClientApiDoc;
             crate::metadata::SeriesSyncReport,
             crate::metadata::BookSyncReport,
             crate::metadata::FieldChange,
+            crate::metadata::MetadataFieldDto,
+            crate::metadata::MetadataFieldCatalogDto,
             crate::metadata::MetadataSearchRequest,
             crate::metadata::SeriesCandidateDto,
             crate::metadata::MetadataMatchRequest,

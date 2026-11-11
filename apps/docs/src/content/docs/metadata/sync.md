@@ -28,7 +28,7 @@ La synchronisation prend toujours les informations du provider **principal** en 
 
 - Le principal est défini **par série** (pas au niveau de la bibliothèque).
 - Si le principal est rejeté ou supprimé, le plus ancien lien approuvé restant est automatiquement promu.
-- Les **genres** ne sont jamais complétés par un provider de secours : seul le principal peut les alimenter (l'IA et l'édition manuelle restent la source de vérité).
+- Les **genres** ne sont jamais complétés par un provider de secours : seul le principal peut les alimenter, et uniquement si la série n'a encore aucun genre local (l'IA et l'édition manuelle restent la source de vérité).
 - Les notes de communauté agrègent tous les providers approuvés (voir [Notes](/series/ratings/)).
 
 ### 3 — Verrouiller des champs
@@ -67,13 +67,21 @@ Pour chaque tome de la série, Stripstream met à jour : résumé, ISBN, date de
 
 ### Champs verrouillables
 
-Sur une **série** : description, auteurs, éditeurs, année de début, nombre total de tomes, statut, genres.
+Sur une **série** : description, auteurs, éditeurs, année de début, nombre total de tomes et statut. La couverture (`cover_url`) est également verrouillable, mais uniquement via l'API (`PATCH /series/{id}`) : le formulaire d'édition n'expose pas encore de cadenas pour ce champ. Les **genres** ne sont pas verrouillables : les genres locaux ne sont jamais écrasés, le provider ne fait que les initialiser quand la série n'en a aucun.
 
-Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs.
+Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs. Les champs gérés localement (titre, série, numéro de volume) ne sont pas verrouillables, car la synchronisation ne les modifie jamais.
 
 :::important
 Tous les champs verrouillés sont systématiquement ignorés par la synchronisation, quelle que soit la source. Le verrouillage est votre protection contre les mises à jour automatiques non souhaitées.
+
+Les verrous sont des booléens stricts (`{"description": true}`) et seules les clés connues du catalogue sont acceptées. À l'écriture, l'API ignore silencieusement les clés inconnues, les valeurs non booléennes et les valeurs `false` ; les lignes héritées sont normalisées puis purgées par migration.
+
+Un `PATCH` qui omet `locked_fields` réinitialise tous les verrous : envoyez l'objet complet pour les conserver.
 :::
+
+### Quand le dernier lien est supprimé
+
+Supprimer le dernier lien approuvé d'une série efface les champs qui provenaient des providers : description, auteurs, éditeurs, année de début, nombre total de tomes, statut et couverture. Les champs verrouillés sont conservés, ainsi que les genres locaux.
 
 ---
 
@@ -120,6 +128,8 @@ Livres :
 | `publish_date` | Remplace si non-vide |
 | `language` | Remplace si non-vide |
 | `authors` | Remplace si tableau non-vide |
+
+**Catalogue exposé par l'API** : `GET /metadata/fields` (admin) renvoie les champs synchronisés, groupés par cible (`series`, `books`), avec `lockable` et `clearable`. Le backoffice s'en sert pour n'afficher que les cadenas réellement pris en compte.
 
 **Score de confiance** : boost +0.30 si nombre de tomes identique (local == provider), +0.15 si proche (±2 tomes).
 

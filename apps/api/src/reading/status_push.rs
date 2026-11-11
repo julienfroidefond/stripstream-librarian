@@ -7,10 +7,10 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::jobs::helpers::{
-    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+    insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
 use crate::jobs::lifecycle::{
-    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+    cancel_job, classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
 };
 use crate::{error::ApiError, integrations::anilist, state::AppState};
 
@@ -468,10 +468,7 @@ pub async fn process_reading_status_push(
     .collect();
 
     let total = series_to_push.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -479,13 +476,7 @@ pub async fn process_reading_status_push(
 
     for series in &series_to_push {
         if is_job_cancelled(pool, job_id).await {
-            sqlx::query(
-                "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+            cancel_job(pool, job_id).await.map_err(|e| e.to_string())?;
             return Ok(());
         }
 

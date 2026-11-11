@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
 
@@ -12,6 +12,7 @@ import {
   apiFetch,
   cancelJob,
   listJobs,
+  listJobTypes,
   rebuildIndex,
   rebuildThumbnails,
   regenerateThumbnails,
@@ -82,6 +83,47 @@ describe("/api/jobs", () => {
 });
 
 describe("POST /api/jobs/[id]/replay", () => {
+  const REQUIRES_LIBRARY = new Set([
+    "metadata_batch",
+    "metadata_batch_rematch",
+    "metadata_refresh",
+    "metadata_refresh_all",
+    "reading_status_match",
+    "reading_status_push",
+    "download_detection",
+  ]);
+  const REPLAYABLE_TYPES = [
+    "rebuild",
+    "full_rebuild",
+    "rescan",
+    "scan",
+    "thumbnail_rebuild",
+    "thumbnail_regenerate",
+    "metadata_batch",
+    "metadata_batch_rematch",
+    "metadata_refresh",
+    "metadata_refresh_all",
+    "reading_status_match",
+    "reading_status_push",
+    "rating_pull",
+    "download_detection",
+    "prowlarr_rss",
+    "ddl_search",
+  ];
+  const catalog = () =>
+    REPLAYABLE_TYPES.map((job_type) => ({
+      job_type,
+      owner: "api",
+      category: "other",
+      claimable: true,
+      replayable: true,
+      requires_library: REQUIRES_LIBRARY.has(job_type),
+    }));
+
+  beforeEach(() => {
+    vi.mocked(listJobTypes).mockResolvedValue(catalog());
+  });
+
   const fns = {
     rebuildIndex: vi.mocked(rebuildIndex),
     rebuildThumbnails: vi.mocked(rebuildThumbnails),
@@ -133,6 +175,35 @@ describe("POST /api/jobs/[id]/replay", () => {
     mockApi.mockResolvedValue({ id: "j1", type: "metadata_batch", library_id: null });
     const res = await replay(jsonRequest("/api/jobs/j1/replay", { method: "POST" }), routeCtx({ id: "j1" }));
     expect(res.status).toBe(400);
+  });
+
+  it("replays prowlarr_rss without a library because the catalog marks it optional", async () => {
+    mockApi.mockResolvedValue({ id: "j1", type: "prowlarr_rss", library_id: null });
+    vi.mocked(startRssPoll).mockResolvedValue({ id: "new" } as never);
+
+    const res = await replay(jsonRequest("/api/jobs/j1/replay", { method: "POST" }), routeCtx({ id: "j1" }));
+
+    expect(res.status).toBe(200);
+    expect(startRssPoll).toHaveBeenCalledWith(undefined);
+  });
+
+  it("rejects a job type the catalog marks non-replayable", async () => {
+    mockApi.mockResolvedValue({ id: "j1", type: "telegram_sync", library_id: null });
+    vi.mocked(listJobTypes).mockResolvedValue([
+      {
+        job_type: "telegram_sync",
+        owner: "api",
+        category: "download",
+        claimable: true,
+        replayable: false,
+        requires_library: false,
+      },
+    ]);
+
+    const res = await replay(jsonRequest("/api/jobs/j1/replay", { method: "POST" }), routeCtx({ id: "j1" }));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Cannot replay job type: telegram_sync" });
   });
 
   it("returns 500 when the job lookup fails", async () => {

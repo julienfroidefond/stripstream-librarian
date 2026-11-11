@@ -8,7 +8,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { EditBookForm } from "@/app/components/EditBookForm";
+import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
 import type { BookDto } from "@/lib/api";
+import { METADATA_FIELDS_CATALOG } from "../fixtures/metadataFields";
 
 function makeBook(overrides: Partial<BookDto> = {}): BookDto {
   return {
@@ -53,7 +55,11 @@ afterEach(() => {
 });
 
 function openForm(book = makeBook()) {
-  render(<EditBookForm book={book} />);
+  render(
+    <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+      <EditBookForm book={book} />
+    </MetadataFieldsProvider>,
+  );
   fireEvent.click(screen.getByRole("button", { name: /editBook\.editMetadata/ }));
   return book;
 }
@@ -76,18 +82,40 @@ describe("EditBookForm", () => {
   it("exposes an open callback to children", () => {
     stubFetch();
     render(
-      <EditBookForm book={makeBook()}>
-        {(open) => (
-          <button type="button" onClick={open}>
-            custom open
-          </button>
-        )}
-      </EditBookForm>
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={makeBook()}>
+          {(open) => (
+            <button type="button" onClick={open}>
+              custom open
+            </button>
+          )}
+        </EditBookForm>
+      </MetadataFieldsProvider>
     );
 
     expect(screen.queryByTestId("modal-panel")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "custom open" }));
     expect(screen.getByTestId("modal-panel")).toBeInTheDocument();
+  });
+
+  it("only offers locks for fields external sync can write", async () => {
+    const fetchMock = stubFetch();
+    openForm(
+      makeBook({
+        locked_fields: { title: true, series: true, volume: true, summary: true },
+      })
+    );
+
+    // authors, language, isbn, publish_date and summary are the only lockable
+    // book fields; title, series and volume locks are stale.
+    expect(screen.getAllByTitle("editBook.clickToLock")).toHaveLength(4);
+    expect(screen.getAllByTitle("editBook.lockedField")).toHaveLength(1);
+
+    fireEvent.submit(screen.getByPlaceholderText("editBook.titlePlaceholder").closest("form")!);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.locked_fields).toEqual({ summary: true });
   });
 
   it("toggles the locked-fields legend", () => {

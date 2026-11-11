@@ -8,6 +8,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { EditSeriesForm, type EditSeriesFormProps } from "@/app/components/EditSeriesForm";
+import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
+import { METADATA_FIELDS_CATALOG } from "../fixtures/metadataFields";
 
 function makeProps(overrides: Partial<EditSeriesFormProps> = {}): EditSeriesFormProps {
   return {
@@ -45,8 +47,15 @@ afterEach(() => {
   refresh.mockReset();
 });
 
-function openForm(props: EditSeriesFormProps) {
-  render(<EditSeriesForm {...props} />);
+function openForm(
+  props: EditSeriesFormProps,
+  catalog = METADATA_FIELDS_CATALOG,
+) {
+  render(
+    <MetadataFieldsProvider catalog={catalog}>
+      <EditSeriesForm {...props} />
+    </MetadataFieldsProvider>,
+  );
   fireEvent.click(screen.getByRole("button", { name: /editSeries\.title/ }));
 }
 
@@ -73,13 +82,15 @@ describe("EditSeriesForm", () => {
   it("exposes an open callback to children", () => {
     stubFetch();
     render(
-      <EditSeriesForm {...makeProps()}>
-        {(open) => (
-          <button type="button" onClick={open}>
-            custom open
-          </button>
-        )}
-      </EditSeriesForm>
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditSeriesForm {...makeProps()}>
+          {(open) => (
+            <button type="button" onClick={open}>
+              custom open
+            </button>
+          )}
+        </EditSeriesForm>
+      </MetadataFieldsProvider>
     );
 
     expect(screen.queryByTestId("modal-panel")).toBeNull();
@@ -132,6 +143,47 @@ describe("EditSeriesForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "editSeries.applyToBooks" }));
     expect(screen.getByPlaceholderText("editSeries.bookAuthorPlaceholder")).toHaveValue("Kentaro Miura");
     expect(screen.getByPlaceholderText("editBook.languagePlaceholder")).toHaveValue("fr");
+  });
+
+  it("drops stale lock keys and never offers a genres lock", async () => {
+    const fetchMock = stubFetch();
+    openForm(
+      makeProps({
+        currentLockedFields: { genres: true, title: true, description: true },
+      })
+    );
+
+    // description, authors, publishers, start_year, total_volumes and status
+    // are the only lockable series fields.
+    expect(screen.getAllByTitle("editBook.clickToLock")).toHaveLength(5);
+    expect(screen.getAllByTitle("editBook.lockedField")).toHaveLength(1);
+
+    fireEvent.submit(screen.getByPlaceholderText("editSeries.namePlaceholder").closest("form")!);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const patchCall = fetchMock.mock.calls.find(([url]) => url === "/api/series/s1")!;
+    const body = JSON.parse((patchCall[1] as RequestInit).body as string);
+    expect(body.locked_fields).toEqual({ description: true });
+  });
+
+  it("uses the server catalog as the source of lockable keys", () => {
+    stubFetch();
+    openForm(
+      makeProps({ currentLockedFields: { start_year: true } }),
+      {
+        series: [{ key: "description", lockable: true, clearable: true }],
+        books: [],
+      },
+    );
+
+    // start_year is not lockable according to this catalog: it must not render
+    // as locked, even though the raw locked_fields still contains it.
+    expect(screen.queryAllByTitle("editBook.lockedField")).toHaveLength(0);
+    expect(screen.queryByText("editBook.lockedFieldsNote")).toBeNull();
+
+    // Toggling it is inert until the catalog says otherwise.
+    fireEvent.click(screen.getAllByTitle("editBook.clickToLock")[0]);
+    expect(screen.queryByText("editBook.lockedFieldsNote")).toBeNull();
   });
 
   it("toggles the locked-fields legend", () => {

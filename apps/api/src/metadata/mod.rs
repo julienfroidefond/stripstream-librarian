@@ -1,25 +1,30 @@
 pub mod batch;
 mod batch_sync;
 pub mod config;
+mod field_policy;
+
+pub(crate) use field_policy::{sanitize_book_locks, sanitize_series_locks};
 pub mod gaps;
 pub mod handlers;
 pub mod refresh;
 pub(crate) mod refresh_sync;
 pub(crate) mod shared_sync;
 mod sync;
+mod types;
 
 // Re-export handlers (used by main.rs routes and openapi.rs paths)
 pub use handlers::{
     approve_metadata, create_metadata_match, delete_metadata_link, get_metadata_links,
-    get_missing_books, list_metadata_providers, patch_metadata_link, reject_metadata,
-    search_metadata,
+    get_missing_books, list_metadata_fields, list_metadata_providers, patch_metadata_link,
+    reject_metadata, search_metadata,
 };
 
 // Re-export handler types (used by openapi.rs schemas)
 pub use handlers::{
     ApproveRequest, ApproveResponse, BookSyncReport, ExternalMetadataLinkDto, FieldChange,
-    MetadataMatchRequest, MetadataSearchRequest, MissingBookItem, MissingBooksDto,
-    PatchLinkRequest, PatchLinkResponse, SeriesCandidateDto, SeriesSyncReport, SyncReport,
+    MetadataFieldCatalogDto, MetadataFieldDto, MetadataMatchRequest, MetadataSearchRequest,
+    MissingBookItem, MissingBooksDto, PatchLinkRequest, PatchLinkResponse, SeriesCandidateDto,
+    SeriesSyncReport, SyncReport,
 };
 
 // Re-export metadata-gap summary (used by main.rs routes and openapi.rs paths/schemas)

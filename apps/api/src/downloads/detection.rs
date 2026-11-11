@@ -13,10 +13,10 @@ use stripstream_core::http::build_http_client_with_agent;
 
 use super::{blacklist, missing, prowlarr, store};
 use crate::jobs::helpers::{
-    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+    insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
 use crate::jobs::lifecycle::{
-    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+    cancel_job, classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
 };
 use crate::{error::ApiError, state::AppState};
 
@@ -805,10 +805,7 @@ pub(crate) async fn process_download_detection(
         .filter_map(|(name, id)| id.map(|id| (name.clone(), id)))
         .collect();
     let total = all_series.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -833,13 +830,7 @@ pub(crate) async fn process_download_detection(
 
     for series_name in &all_series {
         if is_job_cancelled(pool, job_id).await {
-            sqlx::query(
-                "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+            cancel_job(pool, job_id).await.map_err(|e| e.to_string())?;
             return Ok((total, 0));
         }
 

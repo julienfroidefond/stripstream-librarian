@@ -118,4 +118,18 @@ AniList : `reading_status_match`, `reading_status_push`, `rating_pull`.
 **Statuts intermédiaires** : `extracting_pages`, `generating_thumbnails`.
 
 **Champs de timing** : `started_at`, `finished_at`, `phase2_started_at`.
+
+**Catalogue des types** : `GET /index/job-types` renvoie, pour chaque type, son propriétaire
+(`api`, `indexer` ou `legacy`), sa catégorie, s'il peut être relancé et si une bibliothèque est
+requise. L'interface s'appuie sur ce catalogue pour afficher le bouton **Relancer** et pour valider
+la bibliothèque avant de recréer la tâche.
+
+Les tâches `metadata_*`, `reading_status_match`, `reading_status_push` et `download_detection`
+exigent la bibliothèque de la tâche d'origine. `prowlarr_rss` peut être relancé sans bibliothèque
+(toutes bibliothèques). `rating_pull` est relançable. Les tâches `telegram_*`, `cbr_to_cbz` et le
+type historique `torrent_import` ne sont pas relançables depuis l'historique.
+
+**Nettoyage** : chaque service ne nettoie que les types qu'il possède. L'indexer traite ses tâches
+actives et ses tâches en attente de plus de 30 minutes ; l'API marque ses tâches actives comme
+échouées à son redémarrage. Une tâche appartenant à l'autre service n'est jamais modifiée.
 :::

@@ -71,7 +71,9 @@ Sur la page détail d'une série, vous pouvez consulter et modifier :
 
 ## Verrouillage de champs
 
-Chaque champ peut être verrouillé individuellement pour empêcher une synchronisation de métadonnées d'écraser vos modifications manuelles. Activez le **verrou** via l'icône cadenas à côté du champ concerné.
+Les champs alimentés par les providers peuvent être verrouillés individuellement pour empêcher une synchronisation de métadonnées d'écraser vos modifications manuelles : description, auteurs, éditeurs, année de début, nombre total de tomes et statut. La couverture (`cover_url`) est verrouillable via l'API, mais n'a pas encore de cadenas dans le formulaire. Activez le **verrou** via l'icône cadenas à côté du champ concerné.
+
+Les **genres** ne sont pas verrouillables : les genres locaux ne sont jamais écrasés par un rafraîchissement, le provider ne fait que les initialiser quand la série n'en a encore aucun.
 
 ---
 
@@ -107,7 +109,7 @@ Les séries qui n'ont plus aucun livre après un scan sont automatiquement suppr
 :::note[Détails techniques]
 **Champs de métadonnées** : `description`, `publishers`, `start_year`, `status` (`ongoing`, `ended`, `completed`, `on_hold`, `hiatus`), `total_volumes`, `authors`, `genres`, `cover_url`.
 
-**Verrouillage** : stocké dans la colonne JSONB `locked_fields` (ex: `{"description": true}`).
+**Verrouillage** : stocké dans la colonne JSONB `locked_fields` sous forme de booléens stricts (ex: `{"description": true}`). Les valeurs héritées de type chaîne ou nombre sont normalisées par migration, et les clés inconnues sont supprimées : seuls les champs du [catalogue des champs synchronisables](/metadata/sync/#champs-verrouillables) sont conservés.
 
 **Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `norm_text()` sur les deux champs.
 

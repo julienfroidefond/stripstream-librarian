@@ -38,8 +38,21 @@ export type IndexJobDto = {
   current_file: string | null;
 };
 
+export type JobTypeCatalogDto = {
+  job_type: string;
+  owner: string;
+  category: string;
+  claimable: boolean;
+  replayable: boolean;
+  requires_library: boolean;
+};
+
 export async function listJobs() {
   return apiFetch<IndexJobDto[]>("/index/status");
+}
+
+export async function listJobTypes() {
+  return apiFetch<JobTypeCatalogDto[]>("/index/job-types");
 }
 
 export async function rebuildIndex(libraryId?: string, full?: boolean, rescan?: boolean) {

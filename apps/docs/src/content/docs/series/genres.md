@@ -38,7 +38,7 @@ Sur la page **Séries**, un filtre par genre est disponible. Les séries peuvent
 
 ## Genres et synchronisation metadata
 
-Les genres issus des providers sont écrits lors de la synchronisation des métadonnées. Pour éviter qu'un rafraîchissement n'écrase vos genres personnalisés, verrouillez le champ **genres** sur la série.
+Les genres locaux sont la source de vérité : un rafraîchissement ne les écrase jamais. Lors de la synchronisation, un provider ne peut que les **initialiser** quand la série n'a encore aucun genre, et seul le provider principal est utilisé. Aucun verrou n'est nécessaire — le champ **genres** n'est pas verrouillable.
 
 :::note[Détails techniques]
 **API Genres** :

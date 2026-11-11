@@ -649,7 +649,7 @@ pub async fn update_book(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
+    let locked_fields = crate::metadata::sanitize_book_locks(body.locked_fields.as_ref());
     // Resolve series name to series_id
     let series_id: Option<Uuid> = if let Some(ref s) = series {
         // Look up existing series or create one

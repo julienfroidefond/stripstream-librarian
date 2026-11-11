@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
+import { pickLockableFields } from "@/lib/metadataLocks";
+import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
@@ -119,8 +121,13 @@ export function EditSeriesForm({
   const [totalVolumes, setTotalVolumes] = useState(currentTotalVolumes?.toString() ?? "");
   const [status, setStatus] = useState(currentStatus ?? "");
 
-  // Lock states
-  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(currentLockedFields);
+  // Lock states. The raw map is kept as-is; the catalog decides which keys are
+  // still meaningful for the lock UI and the PATCH payload.
+  const lockableFields = useLockableFields("series");
+  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(
+    () => currentLockedFields ?? {},
+  );
+  const visibleLockedFields = pickLockableFields(lockedFields, lockableFields);
 
   // Propagation aux livres — opt-in via bouton
   const [bookAuthor, setBookAuthor] = useState(currentBookAuthor ?? "");
@@ -205,7 +212,7 @@ export function EditSeriesForm({
     setStartYear(currentStartYear?.toString() ?? "");
     setTotalVolumes(currentTotalVolumes?.toString() ?? "");
     setStatus(currentStatus ?? "");
-    setLockedFields(currentLockedFields);
+    setLockedFields(currentLockedFields ?? {});
     setShowApplyToBooks(false);
     setBookAuthor(currentBookAuthor ?? "");
     setBookLanguage(currentBookLanguage ?? "");
@@ -268,7 +275,7 @@ export function EditSeriesForm({
           start_year: startYear.trim() ? parseInt(startYear.trim(), 10) : null,
           total_volumes: totalVolumes.trim() ? parseInt(totalVolumes.trim(), 10) : null,
           status: status || null,
-          locked_fields: lockedFields,
+          locked_fields: visibleLockedFields,
         };
         if (showApplyToBooks) {
           body.author = bookAuthor.trim() || null;
@@ -313,7 +320,7 @@ export function EditSeriesForm({
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editSeries.startYear")}</FormLabel>
-                  <LockButton locked={!!lockedFields.start_year} onToggle={() => toggleLock("start_year")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.start_year} onToggle={() => toggleLock("start_year")} disabled={isPending} />
                 </div>
                 <FormInput
                   type="number"
@@ -329,7 +336,7 @@ export function EditSeriesForm({
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editSeries.totalVolumes")}</FormLabel>
-                  <LockButton locked={!!lockedFields.total_volumes} onToggle={() => toggleLock("total_volumes")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.total_volumes} onToggle={() => toggleLock("total_volumes")} disabled={isPending} />
                 </div>
                 <FormInput
                   type="number"
@@ -344,7 +351,7 @@ export function EditSeriesForm({
               <FormField>
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editSeries.status")}</FormLabel>
-                  <LockButton locked={!!lockedFields.status} onToggle={() => toggleLock("status")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.status} onToggle={() => toggleLock("status")} disabled={isPending} />
                 </div>
                 <select
                   value={status}
@@ -364,7 +371,7 @@ export function EditSeriesForm({
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editSeries.authors")}</FormLabel>
-                  <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
                 <TagInput
                   values={authors}
@@ -422,7 +429,7 @@ export function EditSeriesForm({
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editSeries.publishers")}</FormLabel>
-                  <LockButton locked={!!lockedFields.publishers} onToggle={() => toggleLock("publishers")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.publishers} onToggle={() => toggleLock("publishers")} disabled={isPending} />
                 </div>
                 <TagInput
                   values={publishers}
@@ -441,10 +448,7 @@ export function EditSeriesForm({
 
               {/* Genres — multi-valeur avec autocomplete */}
               <FormField className="sm:col-span-2">
-                <div className="flex items-center gap-1">
-                  <FormLabel>{t("editSeries.genres")}</FormLabel>
-                  <LockButton locked={!!lockedFields.genres} onToggle={() => toggleLock("genres")} disabled={isPending} />
-                </div>
+                <FormLabel>{t("editSeries.genres")}</FormLabel>
                 <TagInput
                   values={genres}
                   input={genreInput}
@@ -476,7 +480,7 @@ export function EditSeriesForm({
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
                   <FormLabel>{t("editBook.description")}</FormLabel>
-                  <LockButton locked={!!lockedFields.description} onToggle={() => toggleLock("description")} disabled={isPending} />
+                  <LockButton locked={!!visibleLockedFields.description} onToggle={() => toggleLock("description")} disabled={isPending} />
                 </div>
                 <textarea
                   value={description}
@@ -490,7 +494,7 @@ export function EditSeriesForm({
             </div>
 
             {/* Lock legend */}
-            {Object.values(lockedFields).some(Boolean) && (
+            {Object.values(visibleLockedFields).some(Boolean) && (
               <p className="text-xs text-warning flex items-center gap-1.5">
                 <Icon name="lock" size="sm" className="!w-3.5 !h-3.5 shrink-0" />
                 {t("editBook.lockedFieldsNote")}

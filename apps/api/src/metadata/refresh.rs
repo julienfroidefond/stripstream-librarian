@@ -8,9 +8,9 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::job_helpers::{is_job_cancelled, update_progress};
+use crate::job_helpers::{is_job_cancelled, set_total_files, update_progress};
 use crate::jobs::lifecycle::{
-    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+    cancel_job, classify_job, fail_job, finish_job, job_in_flight, start_job, JobScope, JobStatus,
 };
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{error::ApiError, state::AppState};
@@ -563,11 +563,7 @@ async fn process_metadata_refresh_inner(
     include_all: bool,
 ) -> Result<(), String> {
     // Set job to running
-    sqlx::query("UPDATE index_jobs SET status = 'running', started_at = NOW() WHERE id = $1")
-        .bind(job_id)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    start_job(pool, job_id).await.map_err(|e| e.to_string())?;
 
     // Get approved links for this library
     let query = if include_all {
@@ -601,10 +597,7 @@ async fn process_metadata_refresh_inner(
         .map_err(|e| e.to_string())?;
 
     let total = links.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -618,13 +611,7 @@ async fn process_metadata_refresh_inner(
     for (link_id, series_name, provider_name, external_id) in &links {
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
-            sqlx::query(
-                "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+            cancel_job(pool, job_id).await.map_err(|e| e.to_string())?;
             return Ok(());
         }
 

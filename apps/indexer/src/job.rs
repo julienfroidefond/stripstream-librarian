@@ -3,6 +3,11 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use stripstream_jobs::{
+    begin_analysis, begin_thumbnail_job, claim_next, cleanup_stale_jobs as cleanup_owner_jobs,
+    finish_success, purge_terminal_jobs, set_total_files, JobOwner,
+};
+
 use crate::{analyzer, converter, scanner, AppState};
 
 /// Re-match external_book_metadata with book_id IS NULL by volume number.
@@ -47,200 +52,53 @@ async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
 }
 
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
-    // Cleanup running jobs that got stuck (e.g., indexer crashed)
-    let result = sqlx::query(
-        r#"
-        UPDATE index_jobs
-        SET status = 'failed',
-            finished_at = NOW(),
-            error_opt = 'Job interrupted by indexer restart'
-        WHERE status IN ('running', 'extracting_pages', 'generating_thumbnails')
-          AND started_at < NOW() - INTERVAL '5 minutes'
-        RETURNING id
-        "#,
+    let report = cleanup_owner_jobs(
+        pool,
+        JobOwner::Indexer,
+        Some(std::time::Duration::from_secs(5 * 60)),
+        Some(std::time::Duration::from_secs(30 * 60)),
+        "Job interrupted by indexer restart",
+        "Job was never picked up (stale pending)",
     )
-    .fetch_all(pool)
     .await?;
 
-    if !result.is_empty() {
-        let count = result.len();
-        let ids: Vec<String> = result
-            .iter()
-            .map(|row| row.get::<Uuid, _>("id").to_string())
-            .collect();
+    if report.active > 0 {
         info!(
-            "[CLEANUP] Marked {} stale running job(s) as failed: {}",
-            count,
-            ids.join(", ")
+            "[CLEANUP] Marked {} stale running job(s) as failed",
+            report.active
         );
     }
-
-    // Cleanup pending jobs that were never picked up (e.g., blocked by exclusive lock)
-    let pending_result = sqlx::query(
-        r#"
-        UPDATE index_jobs
-        SET status = 'failed',
-            finished_at = NOW(),
-            error_opt = 'Job was never picked up (stale pending)'
-        WHERE status = 'pending'
-          AND created_at < NOW() - INTERVAL '30 minutes'
-        RETURNING id
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    if !pending_result.is_empty() {
-        let count = pending_result.len();
-        let ids: Vec<String> = pending_result
-            .iter()
-            .map(|row| row.get::<Uuid, _>("id").to_string())
-            .collect();
+    if report.pending > 0 {
         info!(
-            "[CLEANUP] Marked {} stale pending job(s) as failed: {}",
-            count,
-            ids.join(", ")
+            "[CLEANUP] Marked {} stale pending job(s) as failed",
+            report.pending
         );
     }
 
     // Purge terminal jobs older than the retention window. Child rows
     // (index_job_events, *_results, index_job_errors) cascade on delete.
     // Only terminal statuses are purged so in-flight jobs are never removed.
-    let purged = sqlx::query(
-        r#"
-        DELETE FROM index_jobs
-        WHERE status IN ('success', 'partial', 'failed', 'cancelled')
-          AND created_at < NOW() - INTERVAL '90 days'
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    if purged.rows_affected() > 0 {
-        info!(
-            "[CLEANUP] Purged {} job(s) older than 90 days",
-            purged.rows_affected()
-        );
+    let purged = purge_terminal_jobs(pool, 90).await?;
+    if purged > 0 {
+        info!("[CLEANUP] Purged {purged} job(s) older than 90 days");
     }
 
     Ok(())
 }
 
-/// Job types processed by the API, not the indexer.
-/// Must match API_JOB_TYPES in apps/api/src/jobs/poller.rs.
-const API_ONLY_JOB_TYPES: &[&str] = &[
-    "metadata_batch",
-    "metadata_batch_rematch",
-    "metadata_refresh",
-    "metadata_refresh_all",
-    "reading_status_push",
-    "rating_pull",
-    "download_detection",
-    "prowlarr_rss",
-    "telegram_sync",
-    "telegram_sync_incremental",
-    "ddl_search",
-];
-
-/// Job types that modify book/thumbnail data and must not run concurrently.
-const EXCLUSIVE_JOB_TYPES: &[&str] = &[
-    "rebuild",
-    "full_rebuild",
-    "rescan",
-    "scan",
-    "thumbnail_rebuild",
-    "thumbnail_regenerate",
-];
-
-/// Active statuses (job is still in progress, not just queued).
-const ACTIVE_STATUSES: &[&str] = &["running", "extracting_pages", "generating_thumbnails"];
-
 pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)>> {
-    let mut tx = pool.begin().await?;
-
-    // Check if any exclusive job is currently active
-    let has_active_exclusive: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM index_jobs
-            WHERE status = ANY($1)
-              AND type = ANY($2)
-        )
-        "#,
-    )
-    .bind(ACTIVE_STATUSES)
-    .bind(EXCLUSIVE_JOB_TYPES)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    let row = sqlx::query(
-        r#"
-        SELECT j.id, j.type, j.library_id
-        FROM index_jobs j
-        WHERE j.status = 'pending'
-          AND j.type != ALL($3)
-          AND (
-            -- Exclusive jobs: only if no other exclusive job is active
-            (j.type = ANY($1) AND NOT $2::bool)
-            OR
-            -- Non-exclusive jobs (cbr_to_cbz): can always run
-            j.type != ALL($1)
-          )
-        ORDER BY
-            CASE j.type
-                WHEN 'full_rebuild' THEN 1
-                WHEN 'rebuild' THEN 2
-                WHEN 'scan' THEN 2
-                ELSE 3
-            END,
-            j.created_at ASC
-        FOR UPDATE SKIP LOCKED
-        LIMIT 1
-        "#,
-    )
-    .bind(EXCLUSIVE_JOB_TYPES)
-    .bind(has_active_exclusive)
-    .bind(API_ONLY_JOB_TYPES)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(row) = row else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    let id: Uuid = row.get("id");
-    let library_id: Option<Uuid> = row.get("library_id");
-
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'running', started_at = NOW(), error_opt = NULL WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(Some((id, library_id)))
+    Ok(claim_next(pool, JobOwner::Indexer)
+        .await?
+        .map(|job| (job.id, job.library_id)))
 }
 
 pub async fn fail_job(pool: &PgPool, job_id: Uuid, error_message: &str) -> Result<()> {
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'failed', finished_at = NOW(), error_opt = $2 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(error_message)
-    .execute(pool)
-    .await?;
+    stripstream_jobs::fail_job(pool, job_id, error_message, None).await?;
     Ok(())
 }
 
 pub async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> Result<bool> {
-    let status: Option<String> = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
-        .bind(job_id)
-        .fetch_optional(pool)
-        .await?;
-
-    Ok(status.as_deref() == Some("cancelled"))
+    Ok(stripstream_jobs::is_job_cancelled(pool, job_id).await)
 }
 
 pub async fn process_job(
@@ -271,42 +129,22 @@ pub async fn process_job(
 
     // Thumbnail rebuild: generate thumbnails for books missing them
     if job_type == "thumbnail_rebuild" {
-        sqlx::query(
-            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW(), phase2_started_at = NOW() WHERE id = $1",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await?;
+        begin_thumbnail_job(&state.pool, job_id).await?;
 
         analyzer::analyze_library_books(state, job_id, target_library_id, true).await?;
 
-        sqlx::query(
-            "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await?;
+        finish_success(&state.pool, job_id).await?;
 
         return Ok(());
     }
 
     // Thumbnail regenerate: clear all thumbnails then re-generate
     if job_type == "thumbnail_regenerate" {
-        sqlx::query(
-            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW(), phase2_started_at = NOW() WHERE id = $1",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await?;
+        begin_thumbnail_job(&state.pool, job_id).await?;
 
         analyzer::regenerate_thumbnails(state, job_id, target_library_id).await?;
 
-        sqlx::query(
-            "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await?;
+        finish_success(&state.pool, job_id).await?;
 
         return Ok(());
     }
@@ -421,11 +259,7 @@ pub async fn process_job(
         total_files
     );
 
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total_files as i32)
-        .execute(&state.pool)
-        .await?;
+    set_total_files(&state.pool, job_id, total_files as i32).await?;
 
     let mut stats = scanner::JobStats {
         scanned_files: 0,
@@ -475,13 +309,12 @@ pub async fn process_job(
     }
 
     // Phase 2: Analysis (extract page_count + thumbnails for new/updated books)
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'generating_thumbnails', phase2_started_at = NOW(), stats_json = $2, current_file = NULL, processed_files = $3 WHERE id = $1",
+    begin_analysis(
+        &state.pool,
+        job_id,
+        serde_json::to_value(&stats)?,
+        total_processed_count,
     )
-    .bind(job_id)
-    .bind(serde_json::to_value(&stats)?)
-    .bind(total_processed_count)
-    .execute(&state.pool)
     .await?;
 
     analyzer::analyze_library_books(state, job_id, target_library_id, false).await?;
@@ -492,44 +325,7 @@ pub async fn process_job(
         rematch_unlinked_books(&state.pool, lib_id).await;
     }
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",
-    )
-    .bind(job_id)
-    .execute(&state.pool)
-    .await?;
+    finish_success(&state.pool, job_id).await?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn api_only_job_types_contains_metadata_refresh_all() {
-        assert!(
-            API_ONLY_JOB_TYPES.contains(&"metadata_refresh_all"),
-            "API_ONLY_JOB_TYPES must include metadata_refresh_all"
-        );
-    }
-
-    #[test]
-    fn api_only_job_types_contains_all_expected_types() {
-        let expected = &["metadata_batch", "metadata_refresh", "metadata_refresh_all"];
-        for t in expected {
-            assert!(
-                API_ONLY_JOB_TYPES.contains(t),
-                "API_ONLY_JOB_TYPES is missing: {t}"
-            );
-        }
-    }
-
-    #[test]
-    fn metadata_refresh_all_is_not_exclusive() {
-        assert!(
-            !EXCLUSIVE_JOB_TYPES.contains(&"metadata_refresh_all"),
-            "metadata_refresh_all should not be an exclusive job type"
-        );
-    }
 }

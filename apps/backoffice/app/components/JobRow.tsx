@@ -43,6 +43,8 @@ interface JobRowProps {
     current_file: string | null;
   };
   libraryName: string | undefined;
+  category?: string;
+  replayable?: boolean;
   highlighted?: boolean;
   onCancel: (id: string) => void;
   onReplay: (id: string) => void;
@@ -50,9 +52,7 @@ interface JobRowProps {
   formatDuration: (start: string, end: string | null) => string;
 }
 
-const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection", "prowlarr_rss", "ddl_search"]);
-
-export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
+export function JobRow({ job, libraryName, category, replayable = false, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();
   const isActive = isActiveJobStatus(job.status);
   const [showProgress, setShowProgress] = useState(highlighted || isActive);
@@ -105,7 +105,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
           {job.library_id ? libraryName || job.library_id.slice(0, 8) : "—"}
         </td>
         <td className="px-4 py-3">
-          <JobTypeBadge type={job.type} />
+          <JobTypeBadge type={job.type} category={category} />
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -352,7 +352,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                 {t("common.cancel")}
               </Button>
             )}
-            {!isActive && REPLAYABLE_TYPES.has(job.type) && (
+            {!isActive && replayable && (
               <Button
                 variant="secondary"
                 size="xs"

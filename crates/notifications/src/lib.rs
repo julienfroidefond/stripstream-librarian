@@ -369,14 +369,12 @@ pub enum NotificationEvent {
     },
 }
 
+/// Functional category of a job type, shared with the API and the admin UI.
+pub use stripstream_jobs::JobCategory;
+
 /// Classify an indexer job_type string into the right event constructor category.
-/// Returns "scan", "thumbnail", or "conversion".
-pub fn job_type_category(job_type: &str) -> &'static str {
-    match job_type {
-        "thumbnail_rebuild" | "thumbnail_regenerate" => "thumbnail",
-        "cbr_to_cbz" => "conversion",
-        _ => "scan",
-    }
+pub fn job_type_category(job_type: &str) -> JobCategory {
+    JobCategory::for_job_type(job_type)
 }
 
 fn format_event(event: &NotificationEvent) -> String {

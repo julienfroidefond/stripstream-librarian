@@ -1,23 +1,29 @@
 use std::time::Duration;
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use tracing::{error, info, trace};
-use uuid::Uuid;
 
-use crate::jobs::lifecycle::fail_job;
+use stripstream_jobs::{claim_next, fail_job, fail_orphaned_jobs, JobOwner};
+
 use crate::{
     downloads::{ddl_provider, detection as download_detection, rss_poll, telegram_monitor},
     metadata, reading,
 };
 
-/// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
-/// This mirrors the indexer's worker loop but for job types handled by the API.
+/// Poll for pending API-owned jobs and process them.
+///
+/// The set of claimable types, their library requirements and the mutual
+/// exclusion rules all come from `stripstream_jobs`, so the API and the indexer
+/// cannot drift apart.
 pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
 
     loop {
-        match claim_next_api_job(&pool).await {
-            Ok(Some((job_id, job_type, library_id))) => {
+        match claim_next(&pool, JobOwner::Api).await {
+            Ok(Some(claimed)) => {
+                let job_id = claimed.id;
+                let job_type = claimed.job_type;
+                let library_id = claimed.library_id;
                 info!("[JOB_POLLER] Claimed {job_type} job {job_id} library={library_id:?}");
 
                 let pool_clone = pool.clone();
@@ -65,9 +71,6 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                                 library_id.unwrap(),
                             )
                             .await
-                        }
-                        "rating_pull" => {
-                            reading::status_pull::process_rating_pull(&pool_clone, job_id).await
                         }
                         "download_detection" => download_detection::process_download_detection(
                             &pool_clone,
@@ -148,107 +151,11 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &[
-    "metadata_batch",
-    "metadata_batch_rematch",
-    "metadata_refresh",
-    "metadata_refresh_all",
-    "reading_status_push",
-    "rating_pull",
-    "download_detection",
-    "prowlarr_rss",
-    "telegram_sync",
-    "telegram_sync_incremental",
-    "ddl_search",
-];
-
-const GLOBAL_METADATA_REFRESH_JOB_TYPES: &[&str] = &["metadata_refresh", "metadata_refresh_all"];
-const API_ACTIVE_STATUSES: &[&str] = &["running"];
-
-async fn claim_next_api_job(
-    pool: &PgPool,
-) -> Result<Option<(Uuid, String, Option<Uuid>)>, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
-    let has_active_metadata_refresh: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM index_jobs
-            WHERE status = ANY($1)
-              AND type = ANY($2)
-        )
-        "#,
-    )
-    .bind(API_ACTIVE_STATUSES)
-    .bind(GLOBAL_METADATA_REFRESH_JOB_TYPES)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    let row = sqlx::query(
-        r#"
-        SELECT id, type, library_id
-        FROM index_jobs
-        WHERE status = 'pending'
-          AND type = ANY($1)
-          AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync', 'telegram_sync_incremental', 'ddl_search'))
-          AND (
-            (type = ANY($2) AND NOT $3::bool)
-            OR type != ALL($2)
-          )
-        ORDER BY created_at ASC
-        FOR UPDATE SKIP LOCKED
-        LIMIT 1
-        "#,
-    )
-    .bind(API_JOB_TYPES)
-    .bind(GLOBAL_METADATA_REFRESH_JOB_TYPES)
-    .bind(has_active_metadata_refresh)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(row) = row else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    let id: Uuid = row.get("id");
-    let job_type: String = row.get("type");
-    let library_id: Option<Uuid> = row.try_get("library_id").ok().flatten();
-
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'running', started_at = NOW(), error_opt = NULL WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(Some((id, job_type, library_id)))
-}
-
-/// Marks API jobs left `running` by a previous process as failed.
+/// Marks API jobs left active by a previous process as failed.
 ///
 /// The API runs its job types in-process, so a restart mid-job would otherwise
-/// leave the row `running` forever. Only API job types are touched, leaving
+/// leave the row active forever. Only API-owned types are touched, leaving
 /// indexer-owned jobs intact.
 pub async fn fail_orphaned_api_jobs(pool: &PgPool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE index_jobs
-        SET status = 'failed',
-            error_opt = 'interrupted by API restart',
-            finished_at = NOW()
-        WHERE status = 'running'
-          AND type = ANY($1)
-        "#,
-    )
-    .bind(API_JOB_TYPES)
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected())
+    fail_orphaned_jobs(pool, JobOwner::Api, "interrupted by API restart").await
 }
-
-#[cfg(test)]
-#[path = "tests/poller.rs"]
-mod tests;

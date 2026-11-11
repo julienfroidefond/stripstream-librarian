@@ -519,20 +519,13 @@ pub async fn scan_library_discovery(
         let should_update_progress = last_progress_update.elapsed() > Duration::from_secs(1)
             || library_processed_count % 10 == 0;
         if should_update_progress {
-            let progress_percent = if total_files > 0 {
-                ((*total_processed_count as f64 / total_files as f64) * 100.0).min(100.0) as i32
-            } else {
-                0
-            };
-
-            if let Err(e) = sqlx::query(
-                "UPDATE index_jobs SET current_file = $2, processed_files = $3, progress_percent = $4 WHERE id = $1",
+            if let Err(e) = stripstream_jobs::update_progress_checked(
+                &state.pool,
+                job_id,
+                *total_processed_count,
+                total_files as i32,
+                &file_name,
             )
-            .bind(job_id)
-            .bind(&file_name)
-            .bind(*total_processed_count)
-            .bind(progress_percent)
-            .execute(&state.pool)
             .await
             {
                 warn!("[SCAN] Failed to update progress for job {}: {}", job_id, e);

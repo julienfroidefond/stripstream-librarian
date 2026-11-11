@@ -1,9 +1,11 @@
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use tracing::info;
 use uuid::Uuid;
 
-use super::shared_sync::{self, diff_opt_i32, diff_opt_str, diff_str_vec, is_field_locked};
+use super::field_policy;
+use super::shared_sync;
+use super::types::FieldChange;
 use crate::metadata_providers;
 
 // ---------------------------------------------------------------------------
@@ -27,6 +29,14 @@ pub(crate) struct BookDiff {
     pub(crate) title: String,
     pub(crate) volume: Option<i32>,
     pub(crate) changes: Vec<FieldDiff>,
+}
+
+fn field_diff(change: FieldChange) -> FieldDiff {
+    FieldDiff {
+        field: change.field,
+        old: change.old_value,
+        new: change.new_value,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -96,13 +106,16 @@ pub(crate) async fn refresh_link(
     let links = shared_sync::fetch_approved_links(pool, series_id)
         .await
         .map_err(|e| e.to_string())?;
-    let mut fields = shared_sync::merge_series_fields(&links);
-    if let Some(raw) = fields.status.clone() {
-        fields.status = Some(super::handlers::normalize_series_status(pool, &raw).await);
-    }
-
-    // Diff + sync series metadata
-    let series_changes = sync_series_with_diff(pool, library_id, series_name, &fields).await?;
+    let series_report = field_policy::apply_series(pool, library_id, series_name, &links)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Locked fields are reported separately as skipped; a refresh diff only
+    // lists actual updates.
+    let series_changes: Vec<FieldDiff> = series_report
+        .fields_updated
+        .into_iter()
+        .map(field_diff)
+        .collect();
 
     // -- Book-level refresh --
     let books = provider
@@ -131,24 +144,19 @@ pub(crate) async fn refresh_link(
     }
 
     // Push merged book metadata across all approved links (primary first).
-    let rows = shared_sync::fetch_approved_external_books(pool, series_id)
+    let book_reports = field_policy::apply_books(pool, series_id)
         .await
         .map_err(|e| e.to_string())?;
-    for (book_id, candidate) in shared_sync::merge_book_rows(&rows) {
-        let diffs = sync_book_with_diff(pool, book_id, &candidate).await?;
-        if !diffs.is_empty() {
-            let local_title = local_books
-                .iter()
-                .find(|book| book.id == book_id)
-                .map(|book| book.title.clone())
-                .unwrap_or_default();
-            book_changes.push(BookDiff {
-                book_id: book_id.to_string(),
-                title: local_title,
-                volume: candidate.volume_number,
-                changes: diffs,
-            });
+    for report in book_reports {
+        if report.fields_updated.is_empty() {
+            continue;
         }
+        book_changes.push(BookDiff {
+            book_id: report.book_id.to_string(),
+            title: report.title,
+            volume: report.volume,
+            changes: report.fields_updated.into_iter().map(field_diff).collect(),
+        });
     }
 
     shared_sync::update_link_synced_at(pool, link_id)
@@ -172,169 +180,6 @@ pub(crate) async fn refresh_link(
         book_changes,
         error: None,
     })
-}
-
-// ---------------------------------------------------------------------------
-// Series sync with diff tracking
-// ---------------------------------------------------------------------------
-
-async fn sync_series_with_diff(
-    pool: &PgPool,
-    library_id: Uuid,
-    series_name: &str,
-    fields: &shared_sync::SeriesFields,
-) -> Result<Vec<FieldDiff>, String> {
-    let existing = shared_sync::upsert_series_metadata(pool, library_id, series_name, fields)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Build diffs from pre-update state
-    let locked = existing
-        .as_ref()
-        .map(|r| r.get::<serde_json::Value, _>("locked_fields"))
-        .unwrap_or(serde_json::json!({}));
-
-    let mut diffs: Vec<FieldDiff> = Vec::new();
-
-    if !is_field_locked(&locked, "description") {
-        let old: Option<String> = existing.as_ref().and_then(|r| r.get("description"));
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), fields.description.as_deref()) {
-            diffs.push(FieldDiff {
-                field: "description".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "authors") {
-        let old: Vec<String> = existing
-            .as_ref()
-            .map(|r| r.get("authors"))
-            .unwrap_or_default();
-        if let Some((old_v, new_v)) = diff_str_vec(&old, &fields.authors) {
-            diffs.push(FieldDiff {
-                field: "authors".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "publishers") {
-        let old: Vec<String> = existing
-            .as_ref()
-            .map(|r| r.get("publishers"))
-            .unwrap_or_default();
-        if let Some((old_v, new_v)) = diff_str_vec(&old, &fields.publishers) {
-            diffs.push(FieldDiff {
-                field: "publishers".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "start_year") {
-        let old: Option<i32> = existing.as_ref().and_then(|r| r.get("start_year"));
-        if let Some((old_v, new_v)) = diff_opt_i32(old, fields.start_year) {
-            diffs.push(FieldDiff {
-                field: "start_year".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "total_volumes") {
-        let old: Option<i32> = existing.as_ref().and_then(|r| r.get("total_volumes"));
-        if let Some((old_v, new_v)) = diff_opt_i32(old, fields.total_volumes) {
-            diffs.push(FieldDiff {
-                field: "total_volumes".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "status") {
-        let old: Option<String> = existing.as_ref().and_then(|r| r.get("status"));
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), fields.status.as_deref()) {
-            diffs.push(FieldDiff {
-                field: "status".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-
-    Ok(diffs)
-}
-
-// ---------------------------------------------------------------------------
-// Book sync with diff tracking
-// ---------------------------------------------------------------------------
-
-async fn sync_book_with_diff(
-    pool: &PgPool,
-    book_id: Uuid,
-    ext_book: &metadata_providers::BookCandidate,
-) -> Result<Vec<FieldDiff>, String> {
-    let current = shared_sync::push_book_metadata(pool, book_id, ext_book)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let locked = current.get::<serde_json::Value, _>("locked_fields");
-    let mut diffs: Vec<FieldDiff> = Vec::new();
-
-    if !is_field_locked(&locked, "summary") {
-        let old: Option<String> = current.get("summary");
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.summary.as_deref()) {
-            diffs.push(FieldDiff {
-                field: "summary".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "isbn") {
-        let old: Option<String> = current.get("isbn");
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.isbn.as_deref()) {
-            diffs.push(FieldDiff {
-                field: "isbn".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "publish_date") {
-        let old: Option<String> = current.get("publish_date");
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.publish_date.as_deref())
-        {
-            diffs.push(FieldDiff {
-                field: "publish_date".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "language") {
-        let old: Option<String> = current.get("language");
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.language.as_deref()) {
-            diffs.push(FieldDiff {
-                field: "language".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-    if !is_field_locked(&locked, "authors") {
-        let old: Vec<String> = current.get("authors");
-        if let Some((old_v, new_v)) = diff_str_vec(&old, &ext_book.authors) {
-            diffs.push(FieldDiff {
-                field: "authors".into(),
-                old: old_v,
-                new: new_v,
-            });
-        }
-    }
-
-    Ok(diffs)
 }
 
 /// Re-match external_book_metadata rows that have book_id IS NULL

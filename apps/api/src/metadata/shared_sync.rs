@@ -9,18 +9,6 @@ use crate::metadata_providers::BookCandidate;
 // Types
 // ---------------------------------------------------------------------------
 
-/// Extracted series metadata fields ready for DB upsert.
-pub(crate) struct SeriesFields {
-    pub description: Option<String>,
-    pub authors: Vec<String>,
-    pub publishers: Vec<String>,
-    pub start_year: Option<i32>,
-    pub total_volumes: Option<i32>,
-    pub status: Option<String>,
-    pub genres: Vec<String>,
-    pub cover_url: Option<String>,
-}
-
 /// Result of matching an external book to a local book.
 pub(crate) struct MatchedBook<'a> {
     pub ext_book: &'a BookCandidate,
@@ -37,12 +25,6 @@ pub(crate) struct LocalBookForMatching {
 }
 
 type LocalBookRow = (Uuid, Option<i32>, String, Option<String>, String);
-
-/// Pre-update series row returned by upsert for callers that need diff/reporting.
-pub(crate) type ExistingSeriesRow = sqlx::postgres::PgRow;
-
-/// Pre-update book row returned by push for callers that need diff/reporting.
-pub(crate) type ExistingBookRow = sqlx::postgres::PgRow;
 
 // ---------------------------------------------------------------------------
 // Series field extraction
@@ -62,17 +44,6 @@ pub(crate) fn extract_provider_rating(
     (rating, rating_count, rating_scale)
 }
 
-fn extract_string_array(json: &serde_json::Value, key: &str) -> Option<Vec<String>> {
-    json.get(key)
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .filter(|v: &Vec<String>| !v.is_empty())
-}
-
 // ---------------------------------------------------------------------------
 // Multi-provider merge (primary + secondary fallback)
 // ---------------------------------------------------------------------------
@@ -86,13 +57,6 @@ pub(crate) struct LinkMetadata {
     pub external_id: String,
     pub metadata_json: serde_json::Value,
     pub total_volumes_external: Option<i32>,
-}
-
-fn json_non_empty_str(json: &serde_json::Value, key: &str) -> Option<String> {
-    json.get(key)
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from)
 }
 
 /// Fetch the approved links of a series, ordered primary-first then by approval
@@ -124,137 +88,6 @@ pub(crate) async fn fetch_approved_links(
             total_volumes_external: r.get("total_volumes_external"),
         })
         .collect())
-}
-
-/// Merge series fields across approved links: primary first, then secondaries,
-/// taking the first non-empty value for each field. Genres are taken from the
-/// primary (the app / AI tagging remains the source of truth).
-///
-/// `status` is returned raw; the caller normalizes it (needs a DB pool).
-pub(crate) fn merge_series_fields(links: &[LinkMetadata]) -> SeriesFields {
-    let mut ordered: Vec<&LinkMetadata> = links.iter().collect();
-    ordered.sort_by_key(|l| !l.is_primary); // primary (true) first; stable
-
-    let description = ordered
-        .iter()
-        .find_map(|l| json_non_empty_str(&l.metadata_json, "description"));
-    let authors = ordered
-        .iter()
-        .find_map(|l| extract_string_array(&l.metadata_json, "authors"))
-        .unwrap_or_default();
-    let publishers = ordered
-        .iter()
-        .find_map(|l| extract_string_array(&l.metadata_json, "publishers"))
-        .unwrap_or_default();
-    let start_year = ordered.iter().find_map(|l| {
-        l.metadata_json
-            .get("start_year")
-            .and_then(|v| v.as_i64())
-            .map(|v| v as i32)
-    });
-    let total_volumes = ordered.iter().find_map(|l| l.total_volumes_external);
-    let status = ordered
-        .iter()
-        .find_map(|l| json_non_empty_str(&l.metadata_json, "status"));
-    // Genres do not participate in the priority merge: only the primary link
-    // seeds them (the app / AI tagging remains the source of truth).
-    let genres = ordered
-        .first()
-        .and_then(|l| extract_string_array(&l.metadata_json, "genres"))
-        .unwrap_or_default();
-    let cover_url = ordered
-        .iter()
-        .find_map(|l| json_non_empty_str(&l.metadata_json, "cover_url"));
-
-    SeriesFields {
-        description,
-        authors,
-        publishers,
-        start_year,
-        total_volumes,
-        status,
-        genres,
-        cover_url,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Series metadata upsert
-// ---------------------------------------------------------------------------
-
-/// Fetch the existing series row (for diff/reporting), then upsert series metadata
-/// respecting locked_fields. Returns the pre-update row if the series existed.
-pub(crate) async fn upsert_series_metadata(
-    pool: &PgPool,
-    library_id: Uuid,
-    series_name: &str,
-    fields: &SeriesFields,
-) -> Result<Option<ExistingSeriesRow>, sqlx::Error> {
-    // Fetch existing state for callers that need before/after comparison
-    let existing = sqlx::query(
-        r#"SELECT description, publishers, start_year, total_volumes, status, authors, locked_fields
-           FROM series WHERE library_id = $1 AND norm_text(name) = norm_text($2)"#,
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, cover_url, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-        ON CONFLICT (library_id, name)
-        DO UPDATE SET
-            description = CASE
-                WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
-            END,
-            publishers = CASE
-                WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers
-                WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers
-                ELSE series.publishers
-            END,
-            start_year = CASE
-                WHEN (series.locked_fields->>'start_year')::boolean IS TRUE THEN series.start_year
-                ELSE COALESCE(EXCLUDED.start_year, series.start_year)
-            END,
-            total_volumes = CASE
-                WHEN (series.locked_fields->>'total_volumes')::boolean IS TRUE THEN series.total_volumes
-                ELSE COALESCE(EXCLUDED.total_volumes, series.total_volumes)
-            END,
-            status = CASE
-                WHEN (series.locked_fields->>'status')::boolean IS TRUE THEN series.status
-                ELSE COALESCE(EXCLUDED.status, series.status)
-            END,
-            authors = CASE
-                WHEN (series.locked_fields->>'authors')::boolean IS TRUE THEN series.authors
-                WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
-                ELSE series.authors
-            END,
-            genres = CASE
-                WHEN array_length(series.genres, 1) > 0 THEN series.genres
-                WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres
-                ELSE series.genres
-            END,
-            cover_url = COALESCE(NULLIF(EXCLUDED.cover_url, ''), series.cover_url),
-            updated_at = NOW()
-        "#,
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .bind(fields.description.as_deref())
-    .bind(&fields.publishers)
-    .bind(fields.start_year)
-    .bind(fields.total_volumes)
-    .bind(fields.status.as_deref())
-    .bind(&fields.authors)
-    .bind(&fields.genres)
-    .bind(fields.cover_url.as_deref())
-    .execute(pool)
-    .await?;
-
-    Ok(existing)
 }
 
 // ---------------------------------------------------------------------------
@@ -582,69 +415,6 @@ fn merge_missing_book_fields(base: &mut BookCandidate, other: &BookCandidate) {
 }
 
 // ---------------------------------------------------------------------------
-// Push metadata to local book
-// ---------------------------------------------------------------------------
-
-/// Push external metadata to a matched local book, respecting locked_fields.
-/// Returns the pre-update row for diff/reporting.
-pub(crate) async fn push_book_metadata(
-    pool: &PgPool,
-    book_id: Uuid,
-    ext_book: &BookCandidate,
-) -> Result<ExistingBookRow, sqlx::Error> {
-    let current = sqlx::query(
-        "SELECT title, summary, isbn, publish_date, language, authors, locked_fields FROM books WHERE id = $1",
-    )
-    .bind(book_id)
-    .fetch_one(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        UPDATE books SET
-            summary = CASE
-                WHEN (locked_fields->>'summary')::boolean IS TRUE THEN summary
-                ELSE COALESCE(NULLIF($2, ''), summary)
-            END,
-            isbn = CASE
-                WHEN (locked_fields->>'isbn')::boolean IS TRUE THEN isbn
-                ELSE COALESCE(NULLIF($3, ''), isbn)
-            END,
-            publish_date = CASE
-                WHEN (locked_fields->>'publish_date')::boolean IS TRUE THEN publish_date
-                ELSE COALESCE(NULLIF($4, ''), publish_date)
-            END,
-            language = CASE
-                WHEN (locked_fields->>'language')::boolean IS TRUE THEN language
-                ELSE COALESCE(NULLIF($5, ''), language)
-            END,
-            authors = CASE
-                WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors
-                WHEN CARDINALITY($6::text[]) > 0 THEN $6
-                ELSE authors
-            END,
-            author = CASE
-                WHEN (locked_fields->>'authors')::boolean IS TRUE THEN author
-                WHEN CARDINALITY($6::text[]) > 0 THEN $6[1]
-                ELSE author
-            END,
-            updated_at = NOW()
-        WHERE id = $1
-        "#,
-    )
-    .bind(book_id)
-    .bind(&ext_book.summary)
-    .bind(&ext_book.isbn)
-    .bind(&ext_book.publish_date)
-    .bind(&ext_book.language)
-    .bind(&ext_book.authors)
-    .execute(pool)
-    .await?;
-
-    Ok(current)
-}
-
-// ---------------------------------------------------------------------------
 // Delete link book metadata
 // ---------------------------------------------------------------------------
 
@@ -765,60 +535,6 @@ pub(crate) async fn set_primary_link(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Diff helpers (used by sync.rs and refresh_sync.rs for reporting)
-// ---------------------------------------------------------------------------
-
-/// Compare old/new for a nullable string field. Returns Some only if changed.
-pub(crate) fn diff_opt_str(
-    old: Option<&str>,
-    new: Option<&str>,
-) -> Option<(Option<serde_json::Value>, Option<serde_json::Value>)> {
-    let new_val = new.filter(|s| !s.is_empty());
-    match (old, new_val) {
-        (Some(o), Some(n)) if o != n => Some((
-            Some(serde_json::Value::String(o.to_string())),
-            Some(serde_json::Value::String(n.to_string())),
-        )),
-        (None, Some(n)) => Some((None, Some(serde_json::Value::String(n.to_string())))),
-        _ => None,
-    }
-}
-
-/// Compare old/new for an optional i32 field.
-pub(crate) fn diff_opt_i32(
-    old: Option<i32>,
-    new: Option<i32>,
-) -> Option<(Option<serde_json::Value>, Option<serde_json::Value>)> {
-    match (old, new) {
-        (Some(o), Some(n)) if o != n => {
-            Some((Some(serde_json::json!(o)), Some(serde_json::json!(n))))
-        }
-        (None, Some(n)) => Some((None, Some(serde_json::json!(n)))),
-        _ => None,
-    }
-}
-
-/// Compare old/new for a string vector field.
-pub(crate) fn diff_str_vec(
-    old: &[String],
-    new: &[String],
-) -> Option<(Option<serde_json::Value>, Option<serde_json::Value>)> {
-    if new.is_empty() {
-        return None;
-    }
-    if old != new {
-        Some((Some(serde_json::json!(old)), Some(serde_json::json!(new))))
-    } else {
-        None
-    }
-}
-
-/// Check if a field is locked in the locked_fields JSON.
-pub(crate) fn is_field_locked(locked: &serde_json::Value, field: &str) -> bool {
-    locked.get(field).and_then(|v| v.as_bool()).unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -902,67 +618,6 @@ mod tests {
         let external_books = [ext];
         let matched = match_books_for_new_provider(&external_books, &books);
         assert_eq!(matched[0].local_book_id, Some(oneshot));
-    }
-
-    fn link(provider: &str, is_primary: bool, json: serde_json::Value) -> LinkMetadata {
-        LinkMetadata {
-            id: Uuid::new_v4(),
-            is_primary,
-            provider: provider.to_string(),
-            external_id: "ext".to_string(),
-            metadata_json: json,
-            total_volumes_external: None,
-        }
-    }
-
-    #[test]
-    fn merge_series_fields_primary_wins_and_secondary_fills() {
-        let primary = link(
-            "google_books",
-            true,
-            serde_json::json!({
-                "description": "from primary",
-                "authors": ["A"],
-                "start_year": 1999,
-            }),
-        );
-        let secondary = link(
-            "bdtheque",
-            false,
-            serde_json::json!({
-                "description": "from secondary",
-                "publishers": ["P"],
-                "start_year": 2001,
-                "cover_url": "http://cover",
-            }),
-        );
-        // Deliberately pass secondary first: the merge must reorder by primary.
-        let merged = merge_series_fields(&[secondary, primary]);
-        assert_eq!(merged.description.as_deref(), Some("from primary"));
-        assert_eq!(merged.authors, vec!["A".to_string()]);
-        assert_eq!(merged.publishers, vec!["P".to_string()]);
-        assert_eq!(merged.start_year, Some(1999));
-        assert_eq!(merged.cover_url.as_deref(), Some("http://cover"));
-    }
-
-    #[test]
-    fn merge_series_fields_genres_only_from_primary() {
-        let primary = link(
-            "google_books",
-            true,
-            serde_json::json!({"genres": ["Action"]}),
-        );
-        let secondary = link("bdtheque", false, serde_json::json!({"genres": ["Drame"]}));
-        let merged = merge_series_fields(&[secondary, primary]);
-        assert_eq!(merged.genres, vec!["Action".to_string()]);
-    }
-
-    #[test]
-    fn merge_series_fields_genres_not_filled_from_secondary() {
-        let primary = link("google_books", true, serde_json::json!({}));
-        let secondary = link("bdtheque", false, serde_json::json!({"genres": ["Drame"]}));
-        let merged = merge_series_fields(&[secondary, primary]);
-        assert!(merged.genres.is_empty());
     }
 
     fn ext_row(
@@ -1264,41 +919,5 @@ mod tests {
         assert_eq!(merged[0].0, book_id);
         assert_eq!(merged[0].1.summary.as_deref(), Some("primary summary"));
         assert_eq!(merged[0].1.isbn.as_deref(), Some("9782000000000"));
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn sync_series_from_links_respects_locked_fields(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        sqlx::query(
-            "UPDATE series SET description = 'kept', locked_fields = '{\"description\": true}'::jsonb \
-             WHERE id = $1",
-        )
-        .bind(series_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let primary = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        sqlx::query(
-            "UPDATE external_metadata_links \
-             SET is_primary = true, metadata_json = '{\"description\": \"from provider\"}'::jsonb \
-             WHERE id = $1",
-        )
-        .bind(primary)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        crate::metadata::sync::sync_series_from_links(&pool, series_id, true, false)
-            .await
-            .unwrap();
-
-        let description: Option<String> =
-            sqlx::query_scalar("SELECT description FROM series WHERE id = $1")
-                .bind(series_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(description.as_deref(), Some("kept"));
     }
 }

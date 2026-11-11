@@ -18,6 +18,10 @@ use super::shared_sync;
 
 // Re-exported for sibling modules; also brings the symbol into this module's scope.
 pub(crate) use super::sync::sync_series_from_links;
+pub use super::types::{
+    BookSyncReport, FieldChange, MetadataFieldCatalogDto, MetadataFieldDto, SeriesSyncReport,
+    SyncReport,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -116,41 +120,6 @@ fn default_true() -> bool {
 pub struct PatchLinkResponse {
     pub link: ExternalMetadataLinkDto,
     pub report: SyncReport,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct FieldChange {
-    pub field: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub old_value: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub new_value: Option<serde_json::Value>,
-}
-
-#[derive(Serialize, ToSchema, Default)]
-pub struct SeriesSyncReport {
-    pub fields_updated: Vec<FieldChange>,
-    pub fields_skipped: Vec<FieldChange>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct BookSyncReport {
-    #[schema(value_type = String)]
-    pub book_id: Uuid,
-    pub title: String,
-    pub volume: Option<i32>,
-    pub fields_updated: Vec<FieldChange>,
-    pub fields_skipped: Vec<FieldChange>,
-}
-
-#[derive(Serialize, ToSchema, Default)]
-pub struct SyncReport {
-    pub series: Option<SeriesSyncReport>,
-    pub books: Vec<BookSyncReport>,
-    pub books_matched: i64,
-    pub books_unmatched: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub books_message: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -286,6 +255,19 @@ pub async fn search_metadata(
 )]
 pub async fn list_metadata_providers() -> Json<Vec<ProviderDescriptor>> {
     Json(metadata_providers::available_providers())
+}
+
+/// Catalog of sync-managed fields, so admin UIs can render lock and clear
+/// controls without hardcoding the policy.
+#[utoipa::path(
+    get,
+    path = "/metadata/fields",
+    tag = "metadata",
+    responses((status = 200, body = MetadataFieldCatalogDto)),
+    security(("Bearer" = []))
+)]
+pub async fn list_metadata_fields() -> Json<MetadataFieldCatalogDto> {
+    Json(super::field_policy::catalog())
 }
 
 // ---------------------------------------------------------------------------
@@ -776,20 +758,7 @@ pub async fn delete_metadata_link(
     if remaining > 0 {
         let _ = sync_series_from_links(&state.pool, series_id, true, false).await;
     } else {
-        // Clear stale external fields on the series (respect locked_fields)
-        sqlx::query(
-            r#"UPDATE series SET
-                cover_url = NULL,
-                description = CASE WHEN (locked_fields->>'description')::boolean IS TRUE THEN description ELSE NULL END,
-                authors = CASE WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors ELSE '{}' END,
-                status = CASE WHEN (locked_fields->>'status')::boolean IS TRUE THEN status ELSE NULL END,
-                total_volumes = CASE WHEN (locked_fields->>'total_volumes')::boolean IS TRUE THEN total_volumes ELSE NULL END,
-                start_year = CASE WHEN (locked_fields->>'start_year')::boolean IS TRUE THEN start_year ELSE NULL END
-            WHERE id = $1"#,
-        )
-        .bind(series_id)
-        .execute(&state.pool)
-        .await?;
+        super::field_policy::clear_series_metadata(&state.pool, series_id).await?;
     }
 
     Ok(Json(crate::responses::DeletedResponse::new(id)))
@@ -856,89 +825,6 @@ pub(crate) async fn get_provider_for_library(
 }
 
 // Provider config loading is in super::config::load_provider_config
-
-/// Normalize provider-specific status strings using the status_mappings table.
-/// Returns None if no mapping is found -- unknown statuses are not stored.
-pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> String {
-    let lower = raw.to_lowercase();
-
-    // Try exact match first (only mapped entries)
-    if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
-        "SELECT mapped_status FROM status_mappings WHERE provider_status = $1 AND mapped_status IS NOT NULL",
-    )
-    .bind(&lower)
-    .fetch_optional(pool)
-    .await
-    {
-        return row;
-    }
-
-    // Try substring match (for Bedetheque-style statuses like "Serie finie")
-    if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
-        "SELECT mapped_status FROM status_mappings WHERE $1 LIKE '%' || provider_status || '%' AND mapped_status IS NOT NULL LIMIT 1",
-    )
-    .bind(&lower)
-    .fetch_optional(pool)
-    .await
-    {
-        return row;
-    }
-
-    // No mapping found -- return the provider status as-is (lowercased)
-    lower
-}
-
-/// Check if a field is locked based on the locked_fields JSON object.
-/// Extracted for testability.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn is_field_locked(locked_fields: &serde_json::Value, field: &str) -> bool {
-    match locked_fields.get(field) {
-        Some(serde_json::Value::Bool(b)) => *b,
-        Some(serde_json::Value::String(s)) => s.eq_ignore_ascii_case("true"),
-        Some(serde_json::Value::Number(n)) => n.as_i64().is_some_and(|v| v != 0),
-        _ => false,
-    }
-}
-
-/// Build a FieldChange and classify it as updated or skipped based on lock status.
-/// Returns (is_skipped, change). Returns None if new_value is None (nothing to sync).
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn classify_field_change(
-    field: &str,
-    old_value: Option<serde_json::Value>,
-    new_value: Option<serde_json::Value>,
-    locked_fields: &serde_json::Value,
-) -> Option<(bool, FieldChange)> {
-    if new_value.is_none() && old_value.is_none() {
-        return None;
-    }
-    let change = FieldChange {
-        field: field.to_string(),
-        old_value: old_value.clone(),
-        new_value: new_value.clone(),
-    };
-    if is_field_locked(locked_fields, field) {
-        Some((true, change)) // skipped
-    } else if old_value != new_value {
-        Some((false, change)) // updated
-    } else {
-        None // no change
-    }
-}
-
-/// Extract authors from metadata JSON as Vec<String>.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn extract_string_array(metadata: &serde_json::Value, key: &str) -> Vec<String> {
-    metadata
-        .get(key)
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 #[cfg(test)]
 #[path = "tests/handlers.rs"]

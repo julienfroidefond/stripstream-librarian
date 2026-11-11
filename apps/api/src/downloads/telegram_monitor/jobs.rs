@@ -4,7 +4,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::jobs::helpers::update_progress;
+use crate::jobs::helpers::{set_total_files, update_progress};
 use crate::jobs::lifecycle::{
     classify_job, complete_job, finish_job, job_in_flight, JobScope, JobStatus,
 };
@@ -288,11 +288,7 @@ pub async fn process_telegram_sync_incremental(
     }
 
     let total = sources.len() as i32;
-    let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
-        .await;
+    let _ = set_total_files(pool, job_id, total).await;
 
     let started_at = chrono::Utc::now();
 

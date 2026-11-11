@@ -19,6 +19,7 @@ import {
   disconnectTelegram,
   dismissTelegramBook,
   downloadTelegramBook,
+  fetchMetadataFields,
   fetchMetadataProviders,
   fetchReadingList,
   fetchReadingLists,
@@ -149,6 +150,13 @@ describe("metadata links", () => {
     await createMetadataMatch(payload);
     expect(lastCall().url).toBe("/metadata/match");
     expect(lastCall().body).toEqual(payload);
+  });
+
+  it("fetches the metadata field catalog with a long revalidate", async () => {
+    await fetchMetadataFields();
+    const call = lastCall();
+    expect(call).toMatchObject({ url: "/metadata/fields", method: "GET" });
+    expect((call.init.next as { revalidate: number }).revalidate).toBe(300);
   });
 
   it("approves and rejects matches", async () => {
