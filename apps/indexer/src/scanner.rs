@@ -100,6 +100,7 @@ mod tests {
             volume_type: "regular".to_string(),
             page_count: None,
             thumbnail_path: None,
+            analysis_status: stripstream_core::analysis::AnalysisStatus::Discovered,
         };
         assert_eq!(book.series_id, Some(series_id));
 
@@ -113,6 +114,7 @@ mod tests {
             volume_type: "regular".to_string(),
             page_count: None,
             clear_thumbnail: false,
+            analysis_status: stripstream_core::analysis::AnalysisStatus::Discovered,
         };
         assert_eq!(update.series_id, None);
     }

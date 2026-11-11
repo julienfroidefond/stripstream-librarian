@@ -52,7 +52,7 @@ Si un scan détecte que la quasi-totalité de vos fichiers ont "disparu" (par ex
 :::note[Détails techniques]
 **Phase 1 — Discovery** : WalkDir, fingerprint `SHA256(taille + mtime + nom)`, insertion avec `page_count = NULL`, skip des répertoires inchangés via `directory_mtimes`. Détecte les fichiers supprimés et les retire de la DB.
 
-**Phase 2 — Analysis** : traite les livres où `page_count IS NULL`, ouvre les archives, extrait le nombre de pages, génère une miniature WebP. Concurrence bornée par Semaphore.
+**Phase 2 — Analysis** : traite les livres `discovered`, `failed` et les `analyzing` restants (reprise après annulation), ouvre les archives, extrait le nombre de pages, génère une miniature WebP. Le livre passe ensuite à `cover_pending` (nombre de pages connu, miniature à faire) ou `complete` (les deux connus). Un échec sans nombre de pages le passe à `failed`, retenté au prochain passage. Concurrence bornée par Semaphore.
 
 **Réscan** : vide la table `directory_mtimes` avant de commencer (force le re-parcours de tous les dossiers). Toutes les données conservées.
 

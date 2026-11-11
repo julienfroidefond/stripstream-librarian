@@ -104,7 +104,7 @@ Voir aussi la [gestion des séries](/series/management) pour le filtre par type 
 :::note[Détails techniques]
 **Phase 1 — Discovery** : parcours WalkDir, empreinte `SHA256(taille + mtime + nom)` pour détecter les changements sans relire les archives, insertion avec `page_count = NULL`, skip des répertoires inchangés via la table `directory_mtimes`.
 
-**Phase 2 — Analysis** : traite les livres où `page_count IS NULL`, ouvre les archives, génère des miniatures WebP, concurrence bornée par Semaphore.
+**Phase 2 — Analysis** : traite les livres dont l'analyse est en attente (`discovered`, `failed`, ou `analyzing` laissé par une annulation), ouvre les archives, génère des miniatures WebP, concurrence bornée par Semaphore. L'état d'analyse (`books.analysis_status`) distingue les livres découverts, en cours, sans miniature, complets et en échec.
 
 **Patterns de volume reconnus** (par ordre de priorité) : `Tome ##`, `Tome.##`, `T##`, `Vol.##`, `Volume ##`, `###`, `-## `, `Tome_##`.
 

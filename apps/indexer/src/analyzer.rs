@@ -6,11 +6,15 @@ use sqlx::Row;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
+use stripstream_core::analysis::AnalysisStatus;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    batch::{flush_events, flush_page_counts, flush_parse_errors, flush_thumbnails, EventInsert},
+    batch::{
+        claim_analysis_books, flush_analysis_status, flush_events, flush_page_counts,
+        flush_parse_errors, flush_thumbnails, EventInsert,
+    },
     job::is_job_cancelled,
     AppState,
 };
@@ -28,7 +32,10 @@ struct ThumbnailConfig {
 
 /// Result of extracting one book, collected per batch so DB writes can be batched.
 enum ExtractOutcome {
-    Skipped,
+    /// Claim released without a verdict (cancellation, unsupported format).
+    Skipped {
+        book_id: Uuid,
+    },
     ResourceFork {
         book_id: Uuid,
     },
@@ -356,15 +363,15 @@ fn book_format_from_str(s: &str) -> Option<BookFormat> {
     }
 }
 
-/// Best-effort recovery of a book's page count when `analyze_book` failed
-/// (unrenderable first page, corrupt page, timeout, ...).
+/// Best-effort page count extraction without touching the first page.
 ///
-/// The page count does not depend on the first-page render, so recovering it
-/// keeps the book visible with a correct page count instead of leaving it
-/// permanently stuck on `page_count = NULL`. The thumbnail is left unset: a
-/// later thumbnail job retries it. Returns `None` when the page count cannot
-/// be determined either (the book then keeps its parse error).
-async fn recover_page_count(
+/// Used when `analyze_book` failed (unrenderable first page, corrupt page,
+/// timeout, ...) and when thumbnails are disabled. The page count does not
+/// depend on the first-page render, so extracting it keeps the book analysed
+/// instead of leaving it permanently stuck on `page_count = NULL`. The
+/// thumbnail is left unset: a later thumbnail job retries it. Returns `None`
+/// when the page count cannot be determined either.
+async fn extract_page_count(
     path: &Path,
     format: BookFormat,
     timeout_secs: u64,
@@ -380,7 +387,7 @@ async fn recover_page_count(
         Ok(Ok(Ok(count))) if count > 0 => {
             info!(
                 target: "extraction",
-                "[EXTRACTION] Recovered page count ({} pages) for {} despite extraction failure",
+                "[EXTRACTION] Extracted page count ({} pages) for {}",
                 count, file_name
             );
             Some(count)
@@ -409,8 +416,8 @@ async fn recover_page_count(
 /// **Sub-phase B (generating_thumbnails)**: load each `.raw` file, resize and encode as WebP,
 /// overwrite as `{directory}/{book_id}.webp`. CPU bound — runs at `concurrent_renders`.
 ///
-/// `thumbnail_only` = true: only process books missing thumbnail (page_count may already be set).
-/// `thumbnail_only` = false: process books missing page_count.
+/// `thumbnail_only` = true: claim books in `cover_pending` (page count already known).
+/// `thumbnail_only` = false: claim `discovered`, `failed` and leftover `analyzing` books.
 pub async fn analyze_library_books(
     state: &AppState,
     job_id: Uuid,
@@ -421,15 +428,15 @@ pub async fn analyze_library_books(
     let config = settings.config;
     let concurrency = settings.concurrency;
 
-    if !config.enabled {
-        info!("[ANALYZER] Thumbnails disabled, skipping analysis phase");
+    if !config.enabled && thumbnail_only {
+        info!("[ANALYZER] Thumbnails disabled, skipping thumbnail generation");
         return Ok(());
     }
 
     let query_filter = if thumbnail_only {
-        "b.thumbnail_path IS NULL"
+        "b.analysis_status = 'cover_pending'"
     } else {
-        "b.page_count IS NULL"
+        "b.analysis_status IN ('discovered', 'analyzing', 'failed')"
     };
 
     let count_sql = format!(
@@ -530,6 +537,9 @@ pub async fn analyze_library_books(
             attempted.insert(task.book_id);
         }
 
+        let task_ids: Vec<Uuid> = tasks.iter().map(|task| task.book_id).collect();
+        claim_analysis_books(&state.pool, &task_ids).await?;
+
         let num_batches = tasks.len().div_ceil(BATCH_SIZE);
         let task_chunks: Vec<Vec<BookTask>> = tasks
             .into_iter()
@@ -559,7 +569,9 @@ pub async fn analyze_library_books(
 
                     async move {
                         if cancelled.load(Ordering::Relaxed) {
-                            return ExtractOutcome::Skipped;
+                            return ExtractOutcome::Skipped {
+                                book_id: task.book_id,
+                            };
                         }
 
                         let local_path = match library_root.resolve(&task.abs_path) {
@@ -596,16 +608,38 @@ pub async fn analyze_library_books(
                             Some(f) => f,
                             None => {
                                 warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
-                                return ExtractOutcome::Skipped;
+                                return ExtractOutcome::Skipped { book_id };
                             }
                         };
 
-                        let pdf_scale = config.width.max(config.height);
-                        let path_owned = path.to_path_buf();
                         let timeout_secs = config.timeout_secs;
                         let file_name = path.file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| local_path.clone());
+
+                        // Thumbnails disabled: still analyse the archive so page counts do
+                        // not stay unknown forever. The book ends up cover_pending and a
+                        // later thumbnail job can generate the cover once re-enabled.
+                        if !config.enabled {
+                            debug!(target: "extraction", "[EXTRACTION] Page count only (thumbnails disabled): {}", file_name);
+                            return match extract_page_count(path, format, timeout_secs, &file_name).await {
+                                Some(page_count) => ExtractOutcome::PageCountOnly {
+                                    book_id,
+                                    local_path,
+                                    page_count,
+                                    recovered_from: None,
+                                },
+                                None => ExtractOutcome::Error {
+                                    book_id,
+                                    local_path,
+                                    parse_error: "page count extraction failed".to_string(),
+                                    message: format!("Page count extraction failed: {}", file_name),
+                                },
+                            };
+                        }
+
+                        let pdf_scale = config.width.max(config.height);
+                        let path_owned = path.to_path_buf();
 
                         debug!(target: "extraction", "[EXTRACTION] Starting: {} ({})", file_name, task.format);
                         let extract_start = std::time::Instant::now();
@@ -630,7 +664,7 @@ pub async fn analyze_library_books(
                                 // The page count is independent from the first-page render:
                                 // recover it so the book stays visible with its real error.
                                 if let Some(page_count) =
-                                    recover_page_count(&recovery_path, format, timeout_secs, &file_name).await
+                                    extract_page_count(&recovery_path, format, timeout_secs, &file_name).await
                                 {
                                     return ExtractOutcome::PageCountOnly {
                                         book_id,
@@ -657,7 +691,7 @@ pub async fn analyze_library_books(
                             Err(_) => {
                                 warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
                                 if let Some(page_count) =
-                                    recover_page_count(&recovery_path, format, timeout_secs, &file_name).await
+                                    extract_page_count(&recovery_path, format, timeout_secs, &file_name).await
                                 {
                                     return ExtractOutcome::PageCountOnly {
                                         book_id,
@@ -707,11 +741,25 @@ pub async fn analyze_library_books(
                             Ok(Ok(p)) => p,
                             Ok(Err(e)) => {
                                 warn!("[ANALYZER] save_raw_image failed for book {}: {}", book_id, e);
-                                return ExtractOutcome::Skipped;
+                                return ExtractOutcome::PageCountOnly {
+                                    book_id,
+                                    local_path,
+                                    page_count,
+                                    recovered_from: Some(format!(
+                                        "failed to store raw thumbnail: {e}"
+                                    )),
+                                };
                             }
                             Err(e) => {
                                 warn!("[ANALYZER] spawn_blocking save_raw error for book {}: {}", book_id, e);
-                                return ExtractOutcome::Skipped;
+                                return ExtractOutcome::PageCountOnly {
+                                    book_id,
+                                    local_path,
+                                    page_count,
+                                    recovered_from: Some(format!(
+                                        "failed to store raw thumbnail: {e}"
+                                    )),
+                                };
                             }
                         };
 
@@ -728,6 +776,7 @@ pub async fn analyze_library_books(
 
             let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
             let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
+            let mut status_updates: Vec<(Uuid, AnalysisStatus)> = Vec::new();
             let mut events: Vec<EventInsert> = Vec::new();
             let mut resource_forks: Vec<Uuid> = Vec::new();
 
@@ -735,7 +784,9 @@ pub async fn analyze_library_books(
 
             for outcome in batch_outcomes {
                 match outcome {
-                    ExtractOutcome::Skipped => {}
+                    ExtractOutcome::Skipped { book_id } => {
+                        status_updates.push((book_id, AnalysisStatus::Discovered));
+                    }
                     ExtractOutcome::ResourceFork { book_id } => resource_forks.push(book_id),
                     ExtractOutcome::Error {
                         book_id,
@@ -744,6 +795,7 @@ pub async fn analyze_library_books(
                         message,
                     } => {
                         parse_errors.push((book_id, parse_error));
+                        status_updates.push((book_id, AnalysisStatus::Failed));
                         events.push(EventInsert {
                             job_id,
                             event_type: "error".to_string(),
@@ -760,6 +812,7 @@ pub async fn analyze_library_books(
                         local_path,
                         message,
                     } => {
+                        status_updates.push((book_id, AnalysisStatus::Failed));
                         events.push(EventInsert {
                             job_id,
                             event_type: "error".to_string(),
@@ -832,6 +885,9 @@ pub async fn analyze_library_books(
             }
             if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
                 warn!("[ANALYZER] Failed to flush parse errors: {e}");
+            }
+            if let Err(e) = flush_analysis_status(&state.pool, &mut status_updates).await {
+                warn!("[ANALYZER] Failed to flush analysis statuses: {e}");
             }
             if let Err(e) = flush_events(&state.pool, &mut events).await {
                 warn!("[ANALYZER] Failed to flush events: {e}");
@@ -1033,9 +1089,19 @@ pub async fn regenerate_thumbnails(
     library_id: Option<Uuid>,
 ) -> Result<()> {
     let config = load_thumbnail_settings(&state.pool).await.config;
+    if !config.enabled {
+        info!("[ANALYZER] Thumbnails disabled, skipping regeneration");
+        return Ok(());
+    }
 
     let book_ids_to_clear: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL) AND thumbnail_path IS NOT NULL"#,
+        r#"
+        SELECT id FROM books
+        WHERE (library_id = $1 OR $1 IS NULL)
+          AND analysis_status = 'complete'
+          AND page_count IS NOT NULL
+          AND thumbnail_path IS NOT NULL
+        "#,
     )
     .bind(library_id)
     .fetch_all(&state.pool)
@@ -1065,10 +1131,20 @@ pub async fn regenerate_thumbnails(
         deleted_count
     );
 
-    sqlx::query(r#"UPDATE books SET thumbnail_path = NULL WHERE (library_id = $1 OR $1 IS NULL)"#)
-        .bind(library_id)
-        .execute(&state.pool)
-        .await?;
+    sqlx::query(
+        r#"
+        UPDATE books SET
+            thumbnail_path = NULL,
+            analysis_status = 'cover_pending',
+            updated_at = NOW()
+        WHERE (library_id = $1 OR $1 IS NULL)
+          AND analysis_status = 'complete'
+          AND page_count IS NOT NULL
+        "#,
+    )
+    .bind(library_id)
+    .execute(&state.pool)
+    .await?;
 
     analyze_library_books(state, job_id, library_id, true).await
 }
@@ -1438,6 +1514,17 @@ mod tests {
         .unwrap();
     }
 
+    async fn disable_thumbnails(pool: &sqlx::PgPool) {
+        sqlx::query(
+            "UPDATE app_settings \
+             SET value = jsonb_set(value, '{enabled}', 'false'::jsonb) \
+             WHERE key = 'thumbnail'",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn analyze_library_books_sets_page_count_and_thumbnail(pool: sqlx::PgPool) {
         let books_dir = tempfile::tempdir().unwrap();
@@ -1456,13 +1543,16 @@ mod tests {
             .await
             .expect("analysis must succeed");
 
-        let (page_count, thumbnail_path): (Option<i32>, Option<String>) =
-            sqlx::query_as("SELECT page_count, thumbnail_path FROM books WHERE id = $1")
-                .bind(book)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let (page_count, thumbnail_path, analysis_status): (Option<i32>, Option<String>, String) =
+            sqlx::query_as(
+                "SELECT page_count, thumbnail_path, analysis_status FROM books WHERE id = $1",
+            )
+            .bind(book)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(page_count, Some(3), "the CBZ holds three images");
+        assert_eq!(analysis_status, "complete");
 
         let thumb_path = thumbnail_path.expect("a thumbnail path must be stored");
         assert!(
@@ -1484,6 +1574,89 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn analyze_library_books_extracts_page_count_when_thumbnails_are_disabled(
+        pool: sqlx::PgPool,
+    ) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T03.cbz");
+        write_test_cbz(&cbz, 4).unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+        disable_thumbnails(&pool).await;
+
+        let state = crate::test_state(pool.clone());
+        analyze_library_books(&state, job, Some(lib), false)
+            .await
+            .expect("page-count analysis must still run");
+
+        let (page_count, thumbnail_path, analysis_status): (Option<i32>, Option<String>, String) =
+            sqlx::query_as(
+                "SELECT page_count, thumbnail_path, analysis_status FROM books WHERE id = $1",
+            )
+            .bind(book)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(page_count, Some(4));
+        assert_eq!(analysis_status, "cover_pending");
+        assert!(thumbnail_path.is_none());
+        assert!(
+            !thumb_dir.path().join(format!("{book}.webp")).exists(),
+            "no thumbnail must be written when thumbnails are disabled"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn regenerate_thumbnails_is_a_noop_when_thumbnails_are_disabled(pool: sqlx::PgPool) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T04.cbz");
+        write_test_cbz(&cbz, 2).unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        let existing = thumb_dir.path().join(format!("{book}.webp"));
+        std::fs::write(&existing, b"existing cover").unwrap();
+        sqlx::query(
+            "UPDATE books SET page_count = 2, thumbnail_path = $2, analysis_status = 'complete' \
+             WHERE id = $1",
+        )
+        .bind(book)
+        .bind(existing.to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+        disable_thumbnails(&pool).await;
+
+        let state = crate::test_state(pool.clone());
+        regenerate_thumbnails(&state, job, Some(lib))
+            .await
+            .expect("disabled regeneration must be a no-op");
+
+        assert!(existing.exists(), "existing cover must not be deleted");
+        let (thumbnail_path, analysis_status): (Option<String>, String) =
+            sqlx::query_as("SELECT thumbnail_path, analysis_status FROM books WHERE id = $1")
+                .bind(book)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            thumbnail_path.as_deref(),
+            Some(existing.to_string_lossy().as_ref())
+        );
+        assert_eq!(analysis_status, "complete");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
     async fn analyze_library_books_records_parse_error_for_corrupt_archive(pool: sqlx::PgPool) {
         let books_dir = tempfile::tempdir().unwrap();
         let thumb_dir = tempfile::tempdir().unwrap();
@@ -1501,13 +1674,14 @@ mod tests {
             .await
             .expect("a corrupt book must not fail the whole job");
 
-        let page_count: Option<i32> =
-            sqlx::query_scalar("SELECT page_count FROM books WHERE id = $1")
+        let (page_count, analysis_status): (Option<i32>, String) =
+            sqlx::query_as("SELECT page_count, analysis_status FROM books WHERE id = $1")
                 .bind(book)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         assert!(page_count.is_none(), "the page count cannot be recovered");
+        assert_eq!(analysis_status, "failed");
 
         let (status, error): (String, Option<String>) = sqlx::query_as(
             "SELECT parse_status, parse_error_opt FROM book_files WHERE book_id = $1",
@@ -1545,7 +1719,9 @@ mod tests {
         // Pretend a previous run produced a stale thumbnail.
         let stale = thumb_dir.path().join(format!("{book}.webp"));
         std::fs::write(&stale, b"stale bytes").unwrap();
-        sqlx::query("UPDATE books SET page_count = 2, thumbnail_path = $2 WHERE id = $1")
+        sqlx::query(
+            "UPDATE books SET page_count = 2, thumbnail_path = $2, analysis_status = 'complete' WHERE id = $1",
+        )
             .bind(book)
             .bind(stale.to_string_lossy().to_string())
             .execute(&pool)
@@ -1557,12 +1733,13 @@ mod tests {
             .await
             .expect("regeneration must succeed");
 
-        let thumb_path: Option<String> =
-            sqlx::query_scalar("SELECT thumbnail_path FROM books WHERE id = $1")
+        let (thumb_path, analysis_status): (Option<String>, String) =
+            sqlx::query_as("SELECT thumbnail_path, analysis_status FROM books WHERE id = $1")
                 .bind(book)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
+        assert_eq!(analysis_status, "complete");
         let thumb_path = thumb_path.expect("a fresh thumbnail must be stored");
         let bytes = std::fs::read(&thumb_path).unwrap();
         assert!(

@@ -57,7 +57,7 @@ Une valeur inconnue est ignorée (aucun filtre appliqué). Les compteurs du rés
 
 **Définition des lacunes** :
 
-- *Sans couverture* (série) : `cover_url` nul ou vide ; (livre) : `thumbnail_path` nul
+- *Sans couverture* (série) : `cover_url` nul ou vide ; (livre) : `analysis_status = 'cover_pending'` (nombre de pages connu, miniature encore à générer). Les livres `discovered` et `failed` n'ont pas encore de miniature mais ne sont pas comptés comme une lacune de métadonnées.
 - *Sans auteur* (livre) : ni `authors` (tableau non vide) ni `author` (chaîne non vide)
 - *Sans numéro de volume* : `volume` nul
 - *Sans note communautaire* (série) : aucun lien fournisseur approuvé ne porte de note exploitable (`provider_rating` nul ou ≤ 0)

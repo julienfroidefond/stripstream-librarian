@@ -1759,6 +1759,7 @@ const en: Record<TranslationKey, string> = {
   "diagnostics.totalSize": "Size",
   "diagnostics.missingThumbnails": "Missing thumbnails",
   "diagnostics.pendingAnalysis": "Unanalysed books",
+  "diagnostics.failedAnalysis": "Failed analyses",
   "diagnostics.thumbnailDirectory": "Directory",
   "diagnostics.jobs": "Indexing jobs",
   "diagnostics.jobsHint": "Queue and recent failures.",

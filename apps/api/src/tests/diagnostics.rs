@@ -56,8 +56,8 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     // One fully analysed book with a thumbnail and a 2 KB file…
     let analysed_book = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO books (id, library_id, kind, title, format, volume, page_count, thumbnail_path) \
-         VALUES ($1, $2, 'bd', 'Gon T01', 'cbz', 1, 12, '/data/thumbnails/gon-1.webp')",
+        "INSERT INTO books (id, library_id, kind, title, format, volume, page_count, thumbnail_path, analysis_status) \
+         VALUES ($1, $2, 'bd', 'Gon T01', 'cbz', 1, 12, '/data/thumbnails/gon-1.webp', 'complete')",
     )
     .bind(analysed_book)
     .bind(lib_id)
@@ -154,9 +154,11 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     assert_eq!(report.cache.hits, 0);
     assert_eq!(report.cache.misses, 0);
 
-    // Thumbnails: unresolved books are counted even when the directory walk is empty.
-    assert_eq!(report.thumbnails.missing, 1);
+    // Thumbnails: discovered books are pending, not missing; only cover_pending
+    // books wait for a thumbnail job.
+    assert_eq!(report.thumbnails.missing, 0);
     assert_eq!(report.thumbnails.pending_analysis, 1);
+    assert_eq!(report.thumbnails.failed_analysis, 0);
     assert!(!report.thumbnails.directory.is_empty());
 
     // Jobs
@@ -190,7 +192,8 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     assert!(library.enabled);
     assert_eq!(library.book_count, 2);
     assert_eq!(library.pending_analysis, 1);
-    assert_eq!(library.missing_thumbnails, 1);
+    assert_eq!(library.missing_thumbnails, 0);
+    assert_eq!(library.failed_analysis, 0);
     assert_eq!(library.size_bytes, 3072);
     assert_eq!(library.size_pretty, "3.0 KB");
     assert_eq!(
@@ -229,6 +232,84 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     assert_eq!(report.disks.len(), 3);
     let ids: Vec<_> = report.disks.iter().map(|d| d.id.as_str()).collect();
     assert_eq!(ids, ["libraries", "thumbnails", "image_cache"]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn diagnostics_separate_thumbnail_pending_failed_and_placeholders(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = Uuid::new_v4();
+
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Gon', '/libraries/gon')")
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Page count known, cover still to generate.
+    let cover_pending = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, kind, title, format, page_count, analysis_status) \
+         VALUES ($1, $2, 'bd', 'Cover pending', 'cbz', 10, 'cover_pending')",
+    )
+    .bind(cover_pending)
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+         VALUES ($1, $2, 'cbz', '/libraries/gon/pending.cbz', 100, NOW(), 'fp-pending')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(cover_pending)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Analysis produced no page count: a retry candidate, not pending work.
+    let failed = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, kind, title, format, analysis_status) \
+         VALUES ($1, $2, 'bd', 'Failed', 'cbr', 'failed')",
+    )
+    .bind(failed)
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status) \
+         VALUES ($1, $2, 'cbr', '/libraries/gon/failed.cbr', 200, NOW(), 'fp-failed', 'error')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(failed)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Download placeholder: no archive on disk, so it cannot be analysed.
+    sqlx::query(
+        "INSERT INTO books (id, library_id, kind, title, format) \
+         VALUES ($1, $2, 'bd', 'Missing volume', 'cbz')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let Json(report) = get_diagnostics(State(state)).await.unwrap();
+
+    assert_eq!(report.thumbnails.missing, 1);
+    assert_eq!(report.thumbnails.pending_analysis, 0);
+    assert_eq!(report.thumbnails.failed_analysis, 1);
+
+    let library = &report.libraries[0];
+    assert_eq!(library.book_count, 3);
+    assert_eq!(library.pending_analysis, 0);
+    assert_eq!(library.missing_thumbnails, 1);
+    assert_eq!(library.failed_analysis, 1);
+    assert_eq!(report.integrity.books_without_files, 1);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

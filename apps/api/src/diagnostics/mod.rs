@@ -140,10 +140,12 @@ pub struct ThumbnailDiagnostics {
     pub total_size_pretty: String,
     pub file_count: u64,
     pub directory: String,
-    /// Books whose thumbnail has not been generated yet.
+    /// Books waiting for a thumbnail (`cover_pending`).
     pub missing: i64,
-    /// Books discovered but not analysed yet (`page_count IS NULL`).
+    /// Books discovered or claimed but not analysed yet (`discovered`, `analyzing`).
     pub pending_analysis: i64,
+    /// Books whose last analysis produced no page count.
+    pub failed_analysis: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -214,6 +216,7 @@ pub struct LibraryDiagnostics {
     pub book_count: i64,
     pub pending_analysis: i64,
     pub missing_thumbnails: i64,
+    pub failed_analysis: i64,
     pub size_bytes: i64,
     pub size_pretty: String,
     pub last_scan_at: Option<DateTime<Utc>>,
@@ -340,13 +343,18 @@ async fn libraries_diagnostics(
             COALESCE(books.book_count, 0) AS book_count,
             COALESCE(books.pending_analysis, 0) AS pending_analysis,
             COALESCE(books.missing_thumbnails, 0) AS missing_thumbnails,
+            COALESCE(books.failed_analysis, 0) AS failed_analysis,
             COALESCE(files.size_bytes, 0) AS size_bytes
         FROM libraries l
         LEFT JOIN LATERAL (
             SELECT
                 COUNT(*) AS book_count,
-                COUNT(*) FILTER (WHERE b.page_count IS NULL) AS pending_analysis,
-                COUNT(*) FILTER (WHERE b.thumbnail_path IS NULL) AS missing_thumbnails
+                COUNT(*) FILTER (
+                    WHERE b.analysis_status IN ('discovered', 'analyzing')
+                      AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
+                ) AS pending_analysis,
+                COUNT(*) FILTER (WHERE b.analysis_status = 'cover_pending') AS missing_thumbnails,
+                COUNT(*) FILTER (WHERE b.analysis_status = 'failed') AS failed_analysis
             FROM books b
             WHERE b.library_id = l.id
         ) books ON TRUE
@@ -373,6 +381,7 @@ async fn libraries_diagnostics(
                 book_count: row.get("book_count"),
                 pending_analysis: row.get("pending_analysis"),
                 missing_thumbnails: row.get("missing_thumbnails"),
+                failed_analysis: row.get("failed_analysis"),
                 size_bytes,
                 size_pretty: format_bytes(size_bytes.max(0) as u64),
                 last_scan_at: row.get("last_scan_at"),

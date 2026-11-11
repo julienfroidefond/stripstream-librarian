@@ -67,7 +67,7 @@ const BOOKS_GAP_SQL: &str = r#"
         COUNT(*) AS books_total,
         COUNT(*) FILTER (WHERE summary IS NULL OR summary = '') AS books_no_summary,
         COUNT(*) FILTER (WHERE isbn IS NULL OR isbn = '') AS books_no_isbn,
-        COUNT(*) FILTER (WHERE thumbnail_path IS NULL) AS books_no_cover,
+        COUNT(*) FILTER (WHERE analysis_status = 'cover_pending') AS books_no_cover,
         COUNT(*) FILTER (WHERE COALESCE(
             NULLIF(b.authors, '{}'),
             CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END

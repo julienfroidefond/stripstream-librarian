@@ -210,7 +210,7 @@ pub async fn list_books(
     let gap_cond = match query.gap.as_deref() {
         Some("no_summary") => "AND (b.summary IS NULL OR b.summary = '')".to_string(),
         Some("no_isbn") => "AND (b.isbn IS NULL OR b.isbn = '')".to_string(),
-        Some("no_cover") => "AND b.thumbnail_path IS NULL".to_string(),
+        Some("no_cover") => "AND b.analysis_status = 'cover_pending'".to_string(),
         Some("no_author") => "AND COALESCE(NULLIF(b.authors, '{}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) = ARRAY[]::text[]".to_string(),
         Some("no_publish_date") => "AND (b.publish_date IS NULL OR b.publish_date = '')".to_string(),
         Some("no_language") => "AND (b.language IS NULL OR b.language = '')".to_string(),
@@ -820,12 +820,23 @@ async fn persist_rendered_thumbnail(
     let thumbnail_path = write_thumbnail_file(directory_path, book_id, data, content_type).await?;
 
     let path = thumbnail_path.to_string_lossy().into_owned();
-    sqlx::query("UPDATE books SET thumbnail_path = $1 WHERE id = $2")
-        .bind(&path)
-        .bind(book_id)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    sqlx::query(
+        r#"
+        UPDATE books SET
+            thumbnail_path = $1,
+            analysis_status = CASE
+                WHEN analysis_status = 'cover_pending' AND page_count IS NOT NULL THEN 'complete'
+                ELSE analysis_status
+            END,
+            updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(&path)
+    .bind(book_id)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(e.to_string()))?;
 
     Ok(path)
 }

@@ -23,6 +23,8 @@ Supprime toutes les miniatures existantes d'une bibliothèque avant de les recr�
 
 **Quand l'utiliser :** si des miniatures sont corrompues, ou après un changement des paramètres de génération.
 
+Si les miniatures sont désactivées dans les réglages, ces tâches ne suppriment rien : l'analyse continue d'extraire les nombres de pages (les livres passent en `cover_pending`) et les couvertures seront générées quand les miniatures seront réactivées.
+
 ---
 
 ## Conversion CBR → CBZ
@@ -36,9 +38,9 @@ Voir [Conversion CBR → CBZ](/books/conversion/) pour plus de détails.
 :::note[Détails techniques]
 Les deux tâches de miniatures sont **exclusives** — elles ne coexistent pas avec d'autres tâches exclusives sur la même bibliothèque. Priorité 3.
 
-`thumbnail_rebuild` : status `generating_thumbnails` (pas de phase discovery). Ne traite que les livres sans miniature (`thumbnail_path IS NULL`).
+`thumbnail_rebuild` : status `generating_thumbnails` (pas de phase discovery). Ne traite que les livres en attente de miniature (`analysis_status = 'cover_pending'`, c'est-à-dire dont le nombre de pages est déjà connu). Les livres encore `discovered` ou `failed` sont laissés à la phase d'analyse complète.
 
-`thumbnail_regenerate` : supprime les fichiers de miniature existants pour la bibliothèque (toutes extensions : webp, jpg, png, raw), puis recrée chaque miniature.
+`thumbnail_regenerate` : supprime les fichiers de miniature existants pour la bibliothèque (toutes extensions : webp, jpg, png, raw), repasse les livres `complete` à `cover_pending`, puis recrée chaque miniature. Les livres `failed` restent en échec et ne sont pas promus par cette tâche.
 
 `cbr_to_cbz` : non-exclusif. Nécessite `book_id` sur le job. Pipeline : extraction du CBR en mémoire via le crate `unrar` → écriture du `.cbz` → mise à jour `book_files` en DB → suppression du CBR original (best-effort). Aucun binaire externe requis ; en cas d'échec, le CBR original reste intact.
 

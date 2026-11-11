@@ -309,3 +309,61 @@ async fn update_book_sanitizes_locked_fields(pool: sqlx::PgPool) {
         serde_json::json!({"summary": true, "language": true})
     );
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn rendered_thumbnail_completes_only_cover_pending_books(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let directory = tempfile::tempdir().unwrap();
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('thumbnail', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({ "directory": directory.path() }))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let library = create_test_library(&pool, "thumbnail-state").await;
+    let cover_pending = create_test_book(&pool, library, None, "Cover", "bd").await;
+    let analyzing = create_test_book(&pool, library, None, "Analyzing", "bd").await;
+    let failed = create_test_book(&pool, library, None, "Failed", "bd").await;
+
+    sqlx::query("UPDATE books SET page_count = 3, analysis_status = 'cover_pending' WHERE id = $1")
+        .bind(cover_pending)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE books SET analysis_status = 'analyzing' WHERE id = $1")
+        .bind(analyzing)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE books SET analysis_status = 'failed' WHERE id = $1")
+        .bind(failed)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for book_id in [cover_pending, analyzing, failed] {
+        super::persist_rendered_thumbnail(&state, book_id, b"cover", "image/webp")
+            .await
+            .unwrap();
+    }
+
+    let statuses: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, analysis_status, thumbnail_path FROM books WHERE library_id = $1 ORDER BY title",
+    )
+    .bind(library)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    // Ordered by title: Analyzing, Cover, Failed.
+    assert_eq!(statuses[0].1, "analyzing");
+    assert_eq!(statuses[1].1, "complete");
+    assert_eq!(statuses[2].1, "failed");
+    assert!(
+        statuses.iter().all(|(_, _, path)| path.is_some()),
+        "the rendered thumbnail must be stored for every book"
+    );
+}

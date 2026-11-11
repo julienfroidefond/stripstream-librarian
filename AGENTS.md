@@ -205,9 +205,10 @@ alias.
 
 ### Path Remapping & Indexer Pipeline
 
-Path remapping (`remap_libraries_path` / `unmap_libraries_path`, `crates/core/src/paths.rs` /
-`apps/indexer/src/utils.rs`) and the 2-phase indexer architecture (discovery then analysis) are
-documented in `apps/indexer/AGENTS.md`.
+Path handling uses typed `LibraryRoot` / `LibraryPath` values from `crates/core/src/paths.rs`
+(`resolve`, `to_local`, `to_db`) — never join `/libraries` by hand. The 2-phase indexer
+architecture (discovery then analysis) and the `books.analysis_status` lifecycle are documented in
+`apps/indexer/AGENTS.md`.
 
 ---
 

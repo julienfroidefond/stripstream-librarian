@@ -11,13 +11,13 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** |
 | `job.rs` | `claim_next_job` (verrouillage exclusif), `process_job`, `fail_job`, `cleanup_stale_jobs`, `is_job_cancelled` |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), skip dossiers inchangés via mtime, batching DB |
-| `analyzer.rs` | Phase 2 analysis : ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
+| `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) |
-| `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/BookUpdate/FileInsert/FileUpdate/ErrorInsert/EventInsert` |
+| `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/BookUpdate/FileInsert/FileUpdate/ErrorInsert/EventInsert`, `claim_analysis_books` / `flush_analysis_status` |
 | `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
 | `watcher.rs` | Polling filesystem toutes les **30 s** (snapshot, pas d'inotify) — crée des jobs `rebuild` |
 | `api.rs` | Handlers HTTP de l'indexer (`/health`, `/version`, `/ready`) |
-| `utils.rs` | `remap_libraries_path`, `unmap_libraries_path`, `compute_fingerprint`, `kind_from_format`, `file_display_name` |
+| `utils.rs` | `compute_fingerprint`, `kind_from_format`, `file_display_name` |
 
 ## Cycle de vie d'un job
 
@@ -27,13 +27,13 @@ claim_next_job (SELECT ... FOR UPDATE SKIP LOCKED puis UPDATE, status pending→
        ├─ Phase 1 : scanner::scan_library_discovery
        │    ├─ WalkDir + parse_metadata_fast (zéro I/O archive)
        │    ├─ skip dossiers via directory_mtimes (table DB)
-       │    └─ INSERT books (page_count=NULL) → livres visibles immédiatement
+       │    └─ INSERT books (analysis_status='discovered', page_count=NULL) → livres visibles immédiatement
        ├─ analyzer::cleanup_orphaned_thumbnails (full_rebuild uniquement)
        └─ Phase 2 : analyzer::analyze_library_books
-            ├─ SELECT books WHERE page_count IS NULL
+            ├─ claim analysis_status='analyzing' (discovered / failed / analyzing)
             ├─ parsers::analyze_book(path, format, pdf_render_scale) → (page_count, first_page_bytes)
             ├─ generate_thumbnail (downscale rapide + encode, format configurable — WebP par défaut)
-            └─ UPDATE books SET page_count, thumbnail_path
+            └─ UPDATE books SET page_count, thumbnail_path, analysis_status
 
 Jobs spéciaux :
   thumbnail_rebuild    → analyze_library_books(thumbnail_only=true)
@@ -79,26 +79,45 @@ Pipeline allégé — **zéro ouverture d'archive** :
 1. Charger `directory_mtimes` depuis la DB
 2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké → skip si inchangé
 3. Pour chaque fichier : `parse_metadata_fast` (title/series/volume depuis filename uniquement)
-4. INSERT/UPDATE avec `page_count = NULL` — les livres sont visibles immédiatement
+4. INSERT/UPDATE avec `analysis_status = 'discovered'` et `page_count = NULL` — les livres sont visibles immédiatement
 5. Upsert `directory_mtimes` en fin de scan
 
 Fingerprint = SHA256(taille + mtime + filename) pour détecter les changements sans relire le fichier.
 
 ### Phase 2 : Analysis (`analyzer.rs`)
 
-Traitement progressif en background :
-- Query `WHERE page_count IS NULL` (ou `thumbnail_path IS NULL` pour thumbnail jobs)
+Traitement progressif en background, piloté par `books.analysis_status` (voir ci-dessous) :
+- Analyse complète : claim `discovered`, `failed` et `analyzing` (reprise après job interrompu).
+- Miniatures seules (`thumbnail_only`) : claim `cover_pending` uniquement.
 - Concurrence bornée via `buffer_unordered(concurrency)` — défaut `(num_cpus / 2).clamp(1, 2)` soit
   1–2, surchargeable par `app_settings.limits.concurrent_renders`
 - Par livre : `parsers::analyze_book(path, format, pdf_render_scale)` → `(page_count, first_page_bytes)`
-- Si `analyze_book` échoue (rendu de la 1re page impossible, timeout…), `recover_page_count`
+- Si `analyze_book` échoue (rendu de la 1re page impossible, timeout…), `extract_page_count`
   retente via `parsers::page_count_only` : le livre conserve son `page_count` (donc reste visible)
   sans vignette, et un événement `pages_extracted` de niveau `warning` est enregistré.
 - Thumbnail en **2 sous-phases** : A) extraction brute vers `{book_id}.raw` ; B) redimensionnement /
   encodage vers `{book_id}.{ext}`. Downscale rapide (`img.thumbnail()`, pas de Lanczos3), format
   `webp` (défaut) / `jpeg` / `png` / `original`
-- UPDATE `books SET page_count, thumbnail_path`
 - Config DB lue depuis `app_settings` (clés `'thumbnail'` et `'limits'`)
+
+#### États d'analyse
+
+| État | Signification | Sélectionné par |
+|------|---------------|-----------------|
+| `discovered` | Indexé, archive jamais ouverte | analyse complète |
+| `analyzing` | Claim d'un job en cours (ou interrompu) | analyse complète (reprise) |
+| `cover_pending` | Nombre de pages connu, miniature à générer | miniatures seules |
+| `complete` | Nombre de pages et miniature connus | — |
+| `failed` | Dernière analyse sans nombre de pages | analyse complète (retry) |
+
+Transitions : skip/annulation → `discovered` ; erreur d'extraction ou page count irrécupérable →
+`failed` ; page count récupéré → `cover_pending` ou `complete` selon la miniature déjà présente ;
+miniature écrite → `complete`. Un échec de redimensionnement laisse l'état courant (`analyzing` en
+analyse complète, `cover_pending` en miniatures seules) pour que le prochain job reprenne le livre.
+Si les miniatures sont désactivées, l'analyse complète extrait seulement le page count
+(`page_count_only`) et laisse le livre en `cover_pending` ; aucun fichier n'est supprimé par une
+regénération. `failed` n'est pas compté comme « en attente » dans les diagnostics : il est exposé
+séparément (`failed_analysis`).
 
 ## Configuration
 
@@ -111,19 +130,29 @@ Traitement progressif en background :
 
 ## Path remapping
 
+`AppState.library_root` est construit une seule fois depuis la config
+(`LibraryRoot::from_env`, `crates/core/src/paths.rs`), puis passé aux fonctions qui touchent aux
+fichiers. `LibraryRoot` expose `from_db_path`, `from_local_path` et `resolve` ; le résultat
+`LibraryPath` porte `to_local()` et `to_db()`. Ne jamais joindre `/libraries` à la main.
+
 ```rust
-// abs_path en DB = chemin conteneur (/libraries/...)
-// Sur l'hôte : LIBRARIES_ROOT_PATH remplace /libraries
-utils::remap_libraries_path(&abs_path)    // DB → filesystem local
-utils::unmap_libraries_path(&local_path) // filesystem local → DB
+let path = state.library_root.resolve(&db_path)?;
+std::fs::read(path.to_local())
+// chemin local → DB :
+state.library_root.resolve(&local_path)?.to_db()
 ```
+
+`resolve` traite dans l'ordre : préfixe DB `/libraries` → racine locale → chemin absolu inchangé
+(bibliothèque hors montage, données historiques).
 
 ## Gotchas
 
-- **Thumbnails** : générés **directement par l'indexer** (phase 2, `analyzer.rs`). L'API ne gère plus
-  la génération — elle crée juste les jobs en DB.
-- **page_count = NULL** : après la phase discovery, tous les nouveaux livres ont `page_count = NULL`.
-  La phase analysis les remplit progressivement. Ne pas confondre avec une erreur.
+- **Thumbnails** : générés **directement par l'indexer** (phase 2, `analyzer.rs`). L'API ne crée que
+  les jobs en DB ; elle peut toutefois rendre et persister une miniature à la demande (`GET
+  /books/{id}/thumbnail`), ce qui fait passer un livre `cover_pending` à `complete`.
+- **analysis_status** : source de vérité de l'avancement de l'analyse. Ne pas déduire l'état de
+  `page_count IS NULL` ou `thumbnail_path IS NULL` : un livre `failed` n'a pas de page count sans
+  être en attente, et un livre `discovered` peut déjà avoir une miniature rendue par l'API.
 - **directory_mtimes** : table DB qui stocke le mtime de chaque dossier scanné. Vidée au full_rebuild
   (et par le job `rescan`), mise à jour après chaque scan. Permet de skipper les dossiers inchangés.
 - **full_rebuild** : supprime toutes les données puis re-insère. Ignore les fingerprints et les
