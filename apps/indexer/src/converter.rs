@@ -1,31 +1,11 @@
 use anyhow::Result;
-use sqlx::{PgPool, Row};
+use sqlx::Row;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{utils, AppState};
+use stripstream_jobs::{finish_success, insert_entity_event, set_current_file};
 
-async fn insert_event(
-    pool: &PgPool,
-    job_id: Uuid,
-    event_type: &str,
-    level: &str,
-    entity_name: Option<&str>,
-    message: Option<&str>,
-    detail: Option<serde_json::Value>,
-) {
-    let _ = sqlx::query(
-        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(job_id)
-    .bind(event_type)
-    .bind(level)
-    .bind(entity_name)
-    .bind(message)
-    .bind(detail)
-    .execute(pool)
-    .await;
-}
+use crate::{utils, AppState};
 
 /// Execute a `cbr_to_cbz` job for the given `book_id`.
 ///
@@ -44,7 +24,7 @@ pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Resu
 
     match convert_book_inner(state, job_id, book_id).await {
         Ok(book_name) => {
-            insert_event(
+            insert_entity_event(
                 &state.pool,
                 job_id,
                 "converted",
@@ -57,7 +37,7 @@ pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Resu
             Ok(())
         }
         Err(e) => {
-            insert_event(
+            insert_entity_event(
                 &state.pool,
                 job_id,
                 "error",
@@ -112,11 +92,7 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
     info!("[CONVERTER] Converting {} → CBZ", cbr_path.display());
 
     // Update job status to running (already set by claim_next_job, this updates current_file)
-    sqlx::query("UPDATE index_jobs SET current_file = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(&abs_path)
-        .execute(&state.pool)
-        .await?;
+    set_current_file(&state.pool, job_id, &abs_path).await?;
 
     // Do the conversion
     let cbz_path = parsers::convert_cbr_to_cbz(cbr_path)?;
@@ -155,12 +131,7 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
     }
 
     // Mark job success
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",
-    )
-    .bind(job_id)
-    .execute(&state.pool)
-    .await?;
+    finish_success(&state.pool, job_id).await?;
 
     info!("[CONVERTER] Job {} completed successfully", job_id);
     Ok(book_name)
@@ -169,6 +140,7 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::PgPool;
 
     async fn create_library(pool: &PgPool) -> Uuid {
         let id = Uuid::new_v4();

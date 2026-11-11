@@ -8,7 +8,7 @@ use uuid::Uuid;
 use stripstream_core::http::build_http_client_with_agent;
 
 use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr, store};
-use crate::jobs::helpers::insert_entity_event as insert_event;
+use crate::jobs::helpers::{insert_entity_event as insert_event, set_total_files};
 use crate::jobs::lifecycle::{
     classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
 };
@@ -159,10 +159,7 @@ pub(crate) async fn process_rss_poll(
     }
 
     let total = targets.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startReadingStatusPull, startDownloadDetection, startRssPoll, startDdlSearchAll } from "@/lib/api";
+import { apiFetch, IndexJobDto, listJobTypes, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startReadingStatusPull, startDownloadDetection, startRssPoll, startDdlSearchAll } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
 
 export const POST = withRoute(async (
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  const job = await apiFetch<IndexJobDto>(`/index/jobs/${id}`);
+  const [job, jobTypeCatalog] = await Promise.all([
+    apiFetch<IndexJobDto>(`/index/jobs/${id}`),
+    listJobTypes(),
+  ]);
+  const catalogEntry = jobTypeCatalog.find((entry) => entry.job_type === job.type);
+  if (!catalogEntry?.replayable) {
+    return NextResponse.json({ error: `Cannot replay job type: ${job.type}` }, { status: 400 });
+  }
+
   const libraryId = job.library_id ?? undefined;
+  if (catalogEntry.requires_library && !libraryId) {
+    return NextResponse.json({ error: `Library ID required for ${job.type}` }, { status: 400 });
+  }
 
   switch (job.type) {
     case "rebuild":
@@ -23,30 +34,22 @@ export const POST = withRoute(async (
     case "thumbnail_regenerate":
       return NextResponse.json(await regenerateThumbnails(libraryId));
     case "metadata_batch":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata batch" }, { status: 400 });
       return NextResponse.json(await startMetadataBatch(libraryId));
     case "metadata_batch_rematch":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata rematch" }, { status: 400 });
       return NextResponse.json(await startMetadataBatch(libraryId, true));
     case "metadata_refresh":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata refresh" }, { status: 400 });
       return NextResponse.json(await startMetadataRefresh(libraryId));
     case "metadata_refresh_all":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata refresh all" }, { status: 400 });
       return NextResponse.json(await startMetadataRefreshAll(libraryId));
     case "reading_status_match":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for reading status match" }, { status: 400 });
       return NextResponse.json(await startReadingStatusMatch(libraryId));
     case "reading_status_push":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for reading status push" }, { status: 400 });
       return NextResponse.json(await startReadingStatusPush(libraryId));
     case "rating_pull":
       return NextResponse.json(await startReadingStatusPull());
     case "download_detection":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for download detection" }, { status: 400 });
       return NextResponse.json(await startDownloadDetection(libraryId));
     case "prowlarr_rss":
-      if (!libraryId) return NextResponse.json({ error: "Library ID required for Prowlarr RSS poll" }, { status: 400 });
       return NextResponse.json(await startRssPoll(libraryId));
     case "ddl_search":
       return NextResponse.json(await startDdlSearchAll());

@@ -13,11 +13,12 @@ interface JobOverviewCardProps {
     finished_at: string | null;
   };
   typeInfo: { label: string; description: string | null };
+  category?: string;
   t: TranslateFunction;
   formatDuration: (start: string, end: string | null) => string;
 }
 
-export function JobOverviewCard({ job, typeInfo, t, formatDuration }: JobOverviewCardProps) {
+export function JobOverviewCard({ job, typeInfo, category, t, formatDuration }: JobOverviewCardProps) {
   return (
     <Card>
       <CardHeader>
@@ -34,7 +35,7 @@ export function JobOverviewCard({ job, typeInfo, t, formatDuration }: JobOvervie
         <div className="flex items-center justify-between py-2 border-b border-border/60">
           <span className="text-sm text-muted-foreground">{t("jobsList.type")}</span>
           <div className="flex items-center gap-2">
-            <JobTypeBadge type={job.type} />
+            <JobTypeBadge type={job.type} category={category} />
             <span className="text-sm text-muted-foreground">{typeInfo.label}</span>
           </div>
         </div>

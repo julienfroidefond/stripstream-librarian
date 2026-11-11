@@ -12,6 +12,8 @@ use tokio_stream::Stream;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use stripstream_jobs::cancel_job as cancel_job_in_flight;
+
 use crate::{error::ApiError, state::AppState};
 
 /// Column list + join shared by every job list response (see [`map_row`]).
@@ -235,14 +237,9 @@ pub async fn cancel_job(
     State(state): State<AppState>,
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<IndexJobResponse>, ApiError> {
-    let rows_affected = sqlx::query(
-        "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1 AND status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')",
-    )
-    .bind(id.0)
-    .execute(&state.pool)
-    .await?;
+    let rows_affected = cancel_job_in_flight(&state.pool, id.0).await?;
 
-    if rows_affected.rows_affected() == 0 {
+    if rows_affected == 0 {
         return Err(ApiError::not_found("job not found or already finished"));
     }
 

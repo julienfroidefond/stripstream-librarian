@@ -70,6 +70,12 @@ describe("JobTypeBadge", () => {
     expect(badge.className).toContain("bg-info-soft");
   });
 
+  it("uses the catalog category when provided", () => {
+    render(<JobTypeBadge type="rating_pull" category="download" />);
+    const badge = screen.getByText("jobType.rating_pull");
+    expect(badge.className).toContain("bg-highlight-soft");
+  });
+
   it("falls back for an unknown type", () => {
     render(<JobTypeBadge type="mystery" />);
     expect(screen.getByText("mystery").className).toContain("bg-muted/60");

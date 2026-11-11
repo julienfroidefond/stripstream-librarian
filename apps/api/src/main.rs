@@ -182,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(books::start_thumbnails_regenerate),
         )
         .route("/index/status", get(index_jobs::list_index_jobs))
+        .route("/index/job-types", get(jobs::catalog::list_job_types))
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))
         .route("/index/jobs/{id}", get(index_jobs::get_job_details))
         .route(

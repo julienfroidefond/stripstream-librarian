@@ -9,13 +9,13 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::jobs::lifecycle::{
-    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+    cancel_job, classify_job, fail_job, finish_job, job_in_flight, start_job, JobScope, JobStatus,
 };
 use crate::metadata_providers;
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{
     error::ApiError,
-    job_helpers::{insert_event, is_job_cancelled, update_progress},
+    job_helpers::{insert_event, is_job_cancelled, set_total_files, update_progress},
     state::AppState,
 };
 
@@ -579,11 +579,7 @@ pub(crate) async fn process_metadata_batch(
     let force_rematch = job_type == "metadata_batch_rematch";
 
     // Set job to running
-    sqlx::query("UPDATE index_jobs SET status = 'running', started_at = NOW() WHERE id = $1")
-        .bind(job_id)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    start_job(pool, job_id).await.map_err(|e| e.to_string())?;
 
     // Get library provider config
     let lib_row = sqlx::query(
@@ -644,10 +640,7 @@ pub(crate) async fn process_metadata_batch(
     .map_err(|e| e.to_string())?;
 
     let total = series_names.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -664,13 +657,7 @@ pub(crate) async fn process_metadata_batch(
     for series_name in &series_names {
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
-            sqlx::query(
-                "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+            cancel_job(pool, job_id).await.map_err(|e| e.to_string())?;
             return Ok(());
         }
 

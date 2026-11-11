@@ -18,6 +18,7 @@ jpeg-decoder.workspace = true
 lru.workspace = true
 notifications = { path = "../../crates/notifications" }
 stripstream-core = { path = "../../crates/core" }
+stripstream-jobs = { path = "../../crates/jobs" }
 parsers = { path = "../../crates/parsers" }
 rand.workspace = true
 tokio-stream = "0.1"

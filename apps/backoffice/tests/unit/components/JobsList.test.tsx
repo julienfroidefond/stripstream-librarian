@@ -156,6 +156,16 @@ describe("JobsList", () => {
       <JobsList
         initialJobs={[makeJob("aaaaaaaa1111", { type: "rescan" })]}
         libraries={libraries}
+        jobTypeCatalog={[
+          {
+            job_type: "rescan",
+            owner: "indexer",
+            category: "scan",
+            claimable: true,
+            replayable: true,
+            requires_library: false,
+          },
+        ]}
       />
     );
 

@@ -72,9 +72,12 @@ La valeur **Manuel** désactive l'automatisation pour une tâche donnée.
 
 ## Nettoyage des tâches bloquées
 
-Au démarrage, les tâches bloquées sont automatiquement marquées comme échouées :
-- Tâches "en cours" depuis le redémarrage précédent (crash ou redémarrage du service), pour l'indexer comme pour l'API
-- Tâches "en attente" depuis plus de 30 minutes (probablement bloquées par une tâche exclusive)
+Au démarrage, les tâches bloquées sont automatiquement marquées comme échouées. Le nettoyage est
+**par service** : chaque service ne touche qu'aux types de tâches qu'il possède.
+- L'indexer marque comme échouées ses tâches actives interrompues par un redémarrage, ainsi que ses
+  tâches en attente depuis plus de 30 minutes (probablement bloquées par une tâche exclusive).
+- L'API marque comme échouées ses propres tâches actives interrompues par un redémarrage. Elle ne
+  nettoie jamais les tâches de l'indexer, et inversement.
 
 ---
 
@@ -111,5 +114,6 @@ Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_
 | `GET` | `/index/jobs/{id}/events` | Événements du job |
 | `GET` | `/index/jobs/{id}/errors` | Erreurs non fatales |
 | `GET` | `/index/jobs/{id}/indexed-books` | Livres indexés pendant un scan |
+| `GET` | `/index/job-types` | Catalogue des types de tâches (propriétaire, catégorie, relançable, bibliothèque requise) |
 | `POST` | `/index/cancel/{id}` | Annuler un job |
 :::

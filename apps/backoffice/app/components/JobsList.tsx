@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslation } from "@/lib/i18n/context";
+import type { JobTypeCatalogDto } from "@/lib/api";
 import { JobRow } from "./JobRow";
 import { formatDateTime, formatDuration } from "@/lib/format";
 
@@ -40,10 +41,11 @@ interface Job {
 interface JobsListProps {
   initialJobs: Job[];
   libraries: Map<string, string>;
+  jobTypeCatalog?: JobTypeCatalogDto[];
   highlightJobId?: string;
 }
 
-export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
+export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highlightJobId }: JobsListProps) {
   const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
   const [filterType, setFilterType] = useState<string>("");
@@ -64,8 +66,10 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
 
   const formatDate = (dateStr: string): string => formatDateTime(dateStr, locale);
 
+  const catalogByType = new Map(jobTypeCatalog.map((entry) => [entry.job_type, entry]));
+
   // Derive unique types, statuses, libraries for filter options
-  const jobTypes = [...new Set(jobs.map(j => j.type))].sort();
+  const jobTypes = [...new Set([...jobTypeCatalog.map(entry => entry.job_type), ...jobs.map(j => j.type)])].sort();
   // `partial` is always offered even when the current page holds none: the
   // whole point of the status is to find those runs.
   const jobStatuses = [...new Set([...jobs.map(j => j.status), "partial"])].sort();
@@ -197,6 +201,8 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
                 key={job.id}
                 job={job}
                 libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
+                category={catalogByType.get(job.type)?.category}
+                replayable={catalogByType.get(job.type)?.replayable ?? false}
                 highlighted={job.id === highlightJobId}
                 onCancel={handleCancel}
                 onReplay={handleReplay}

@@ -1,9 +1,12 @@
-use crate::{job, scheduler, watcher, AppState};
 use sqlx::Row;
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, trace};
 use uuid::Uuid;
+
+use stripstream_jobs::JobCategory;
+
+use crate::{job, scheduler, watcher, AppState};
 
 pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
@@ -229,12 +232,12 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         duration_seconds: u64,
     ) -> notifications::NotificationEvent {
         match notifications::job_type_category(job_type) {
-            "thumbnail" => notifications::NotificationEvent::ThumbnailCompleted {
+            JobCategory::Thumbnail => notifications::NotificationEvent::ThumbnailCompleted {
                 job_type: job_type.to_string(),
                 library_name,
                 duration_seconds,
             },
-            "conversion" => notifications::NotificationEvent::ConversionCompleted {
+            JobCategory::Conversion => notifications::NotificationEvent::ConversionCompleted {
                 library_name,
                 book_title,
                 thumbnail_path,
@@ -256,12 +259,12 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         error: String,
     ) -> notifications::NotificationEvent {
         match notifications::job_type_category(job_type) {
-            "thumbnail" => notifications::NotificationEvent::ThumbnailFailed {
+            JobCategory::Thumbnail => notifications::NotificationEvent::ThumbnailFailed {
                 job_type: job_type.to_string(),
                 library_name,
                 error,
             },
-            "conversion" => notifications::NotificationEvent::ConversionFailed {
+            JobCategory::Conversion => notifications::NotificationEvent::ConversionFailed {
                 library_name,
                 book_title,
                 thumbnail_path,
@@ -310,7 +313,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                 } else {
                     info!("[INDEXER] Job {} completed", job_id);
                     let stats = load_scan_stats(&state.pool, job_id).await;
-                    if notifications::job_type_category(&info.job_type) == "scan" {
+                    if notifications::job_type_category(&info.job_type) == JobCategory::Scan {
                         if let Some(lid) = library_id {
                             cleanup_available_downloads(&state.pool, lid).await;
                         }

@@ -9,6 +9,7 @@ export function createApiMock() {
     updateSetting: vi.fn(),
     config: vi.fn(() => ({ baseUrl: "http://api:7080", token: "test-token" })),
     listJobs: vi.fn(),
+    listJobTypes: vi.fn(),
     listFolders: vi.fn(),
     fetchStats: vi.fn(),
     fetchSeriesMetadata: vi.fn(),

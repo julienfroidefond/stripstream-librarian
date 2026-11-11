@@ -27,8 +27,8 @@ use crate::downloads::blacklist;
 use crate::downloads::detection::AvailableReleaseDto;
 use crate::downloads::missing;
 use crate::downloads::store;
-use crate::jobs::helpers::{insert_event, is_job_cancelled, update_progress};
-use crate::jobs::lifecycle::{finish_job, JobStatus};
+use crate::jobs::helpers::{insert_event, is_job_cancelled, set_total_files, update_progress};
+use crate::jobs::lifecycle::{cancel_job, finish_job, JobStatus};
 
 use super::service;
 use super::types::DdlProviderSearchResultDto;
@@ -78,11 +78,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
         .map_err(|e| e.to_string())?;
 
     let total = targets.len() as i32;
-    let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
-        .await;
+    let _ = set_total_files(pool, job_id, total).await;
 
     info!(
         "[DDL_SEARCH] job {job_id}: {} series, {} provider(s)",
@@ -110,12 +106,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
     for target in targets {
         if is_job_cancelled(pool, job_id).await {
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'cancelled', finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .execute(pool)
-            .await;
+            let _ = cancel_job(pool, job_id).await;
             return Ok(());
         }
 

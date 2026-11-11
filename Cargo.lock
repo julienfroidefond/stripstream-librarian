@@ -105,6 +105,7 @@ dependencies = [
  "sha2 0.11.1",
  "sqlx",
  "stripstream-core",
+ "stripstream-jobs",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -1595,6 +1596,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "stripstream-core",
+ "stripstream-jobs",
  "tempfile",
  "tokio",
  "tracing",
@@ -2013,6 +2015,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "stripstream-core",
+ "stripstream-jobs",
  "tokio",
  "tracing",
 ]
@@ -3347,6 +3350,17 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "stripstream-jobs"
+version = "3.32.121"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

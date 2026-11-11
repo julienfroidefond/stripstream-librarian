@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::jobs::helpers::{
-    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+    insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{
@@ -200,10 +200,7 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
     .map_err(|e| e.to_string())?;
 
     let total = link_rows.len() as i32;
-    sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(total)
-        .execute(pool)
+    set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 

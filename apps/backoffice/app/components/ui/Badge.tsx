@@ -125,13 +125,35 @@ const jobTypeStyles: Record<string, string> = {
 
 interface JobTypeBadgeProps {
   type: string;
+  /**
+   * Catalog category (`scan`, `thumbnail`, `conversion`, `metadata`, `reading`,
+   * `download`, `search`, `other`). When provided it takes precedence over the
+   * hardcoded per-type fallback, so colours follow the shared registry.
+   */
+  category?: string;
   className?: string;
 }
 
-export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
+// Category colours mirror the registry families. They keep the same tokens as
+// the historical per-type map so existing badges look unchanged.
+const jobCategoryStyles: Record<string, string> = {
+  scan: "bg-primary-soft text-primary",
+  thumbnail: "bg-highlight-soft text-highlight",
+  conversion: "bg-warning-soft text-warning",
+  metadata: "bg-info-soft text-info",
+  reading: "bg-success-soft text-success",
+  download: "bg-highlight-soft text-highlight",
+  search: "bg-highlight-soft text-highlight",
+  other: "bg-muted/60 text-muted-foreground",
+};
+
+export function JobTypeBadge({ type, category, className = "" }: JobTypeBadgeProps) {
   const { t } = useTranslation();
   const key = type.toLowerCase();
-  const style = jobTypeStyles[key] || "bg-muted/60 text-muted-foreground";
+  const style =
+    (category ? jobCategoryStyles[category] : undefined) ||
+    jobTypeStyles[key] ||
+    "bg-muted/60 text-muted-foreground";
   const jobTypeLabels: Record<string, string> = {
     rebuild: t("jobType.rebuild"),
     rescan: t("jobType.rescan"),

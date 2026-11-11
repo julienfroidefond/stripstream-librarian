@@ -210,7 +210,15 @@ describe("JobRow", () => {
   });
 
   it("replays a finished replayable job", () => {
-    const { onReplay } = renderRow({ type: "rescan", status: "success" });
+    const { onReplay } = renderRow({ type: "rescan", status: "success" }, { replayable: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "jobRow.replay" }));
+
+    expect(onReplay).toHaveBeenCalledWith("abcdef1234567890");
+  });
+
+  it("replays rating_pull when the catalog allows it", () => {
+    const { onReplay } = renderRow({ type: "rating_pull", status: "success" }, { replayable: true });
 
     fireEvent.click(screen.getByRole("button", { name: "jobRow.replay" }));
 
@@ -218,12 +226,15 @@ describe("JobRow", () => {
   });
 
   it("does not offer replay for a non-replayable job", () => {
-    renderRow({ type: "rating_pull", status: "success" });
+    renderRow({ type: "telegram_sync", status: "success" }, { replayable: false });
     expect(screen.queryByRole("button", { name: "jobRow.replay" })).toBeNull();
   });
 
   it("replays a finished DDL search", () => {
-    const { onReplay } = renderRow({ type: "ddl_search", status: "success", library_id: null });
+    const { onReplay } = renderRow(
+      { type: "ddl_search", status: "success", library_id: null },
+      { replayable: true }
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "jobRow.replay" }));
 
