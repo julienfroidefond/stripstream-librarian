@@ -14,13 +14,13 @@ import {
   fetchAllSeries,
   fetchAuthors,
   fetchBooks,
-  fetchDownloadsEnabled,
   fetchGapSummary,
   fetchLibraries,
   fetchRelatedSeries,
   fetchSeriesById,
   fetchSeriesOwnedVolumes,
   fetchSeriesUserActivity,
+  fetchSettingsSnapshot,
   fetchStats,
   listFolders,
   markSeriesRead,
@@ -366,17 +366,14 @@ describe("settings", () => {
     });
   });
 
-  it("reads the downloads flag", async () => {
-    fetchMock.mockResolvedValue(makeResponse({ enabled: true }));
-    await expect(fetchDownloadsEnabled()).resolves.toBe(true);
-
-    fetchMock.mockResolvedValue(makeResponse({ enabled: false }));
-    await expect(fetchDownloadsEnabled()).resolves.toBe(false);
-  });
-
-  it("returns false when the downloads flag cannot be read", async () => {
-    fetchMock.mockRejectedValue(new Error("offline"));
-    await expect(fetchDownloadsEnabled()).resolves.toBe(false);
+  it("reads the full settings snapshot once", async () => {
+    fetchMock.mockResolvedValue(makeResponse({ downloads_enabled: { enabled: true } }));
+    await expect(fetchSettingsSnapshot()).resolves.toEqual({ downloads_enabled: { enabled: true } });
+    expect(lastCall()).toMatchObject({
+      url: "http://api:7080/settings",
+      method: "GET",
+    });
+    expect(lastCall().init.next).toEqual({ revalidate: 60 });
   });
 });
 

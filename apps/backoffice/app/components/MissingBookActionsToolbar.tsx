@@ -2,6 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
 import type { QuickSearch } from "./ProwlarrSearchModal";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -28,11 +29,7 @@ interface Props {
   libraryId: string;
   volumeNumber: number | null;
   missingBook: MissingBookItem;
-  prowlarrConfigured: boolean;
-  qbConfigured: boolean;
-  alldebridConfigured?: boolean;
-  telegramEnabled: boolean;
-  ddlProviderEnabled?: boolean;
+  readiness: AcquisitionReadiness;
 }
 
 export function MissingBookActionsToolbar({
@@ -40,11 +37,7 @@ export function MissingBookActionsToolbar({
   libraryId,
   volumeNumber,
   missingBook,
-  prowlarrConfigured,
-  qbConfigured,
-  alldebridConfigured,
-  telegramEnabled,
-  ddlProviderEnabled = false,
+  readiness,
 }: Props) {
   const { t } = useTranslation();
 
@@ -63,9 +56,7 @@ export function MissingBookActionsToolbar({
           seriesName={seriesName}
           libraryId={libraryId}
           missingBooks={[missingBook]}
-          initialProwlarrConfigured={prowlarrConfigured}
-          initialQbConfigured={qbConfigured}
-          initialAlldebridConfigured={alldebridConfigured}
+          initialReadiness={readiness}
           initialQuery={initialQuery}
           quickSearches={quickSearches}
           defaultExpectedVolumes={volumeNumber != null ? [volumeNumber] : undefined}
@@ -76,11 +67,11 @@ export function MissingBookActionsToolbar({
             </ActionsMenuItem>
           )}
         </ProwlarrSearchModal>
-        {telegramEnabled && (
+        {readiness.telegram && (
           <TelegramSearchModal
             seriesName={seriesName}
             missingBooks={[missingBook]}
-            initialEnabled={telegramEnabled}
+            initialEnabled={readiness.telegram}
             initialQuery={initialQuery}
           >
             {(open) => (
@@ -90,14 +81,14 @@ export function MissingBookActionsToolbar({
             )}
           </TelegramSearchModal>
         )}
-        {ddlProviderEnabled && (
+        {readiness.ddl && (
           <DdlProviderSearchModal
             seriesName={seriesName}
             libraryId={libraryId}
             missingBooks={[missingBook]}
             targetVolume={volumeNumber}
             initialQuery={initialQuery}
-            initialEnabled={ddlProviderEnabled}
+            initialEnabled={readiness.ddl}
           >
             {(open) => (
               <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>

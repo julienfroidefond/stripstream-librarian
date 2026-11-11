@@ -2,6 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import type { BookDto } from "@/lib/api";
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 import { ConvertButton } from "./ConvertButton";
@@ -28,7 +29,7 @@ const DdlProviderSearchModal = nextDynamic(
   () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
 );
 
-export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false, ddlProviderEnabled = false, ownedVolumes }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean; ddlProviderEnabled?: boolean; ownedVolumes?: number[] }) {
+export function BookActionsToolbar({ book, hasActiveUser = true, readiness, ownedVolumes }: { book: BookDto; hasActiveUser?: boolean; readiness: AcquisitionReadiness; ownedVolumes?: number[] }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book
@@ -52,6 +53,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
             seriesName={searchSeries}
             libraryId={book.library_id}
             missingBooks={null}
+            initialReadiness={readiness}
             initialQuery={initialQuery}
             quickSearches={quickSearches}
             defaultExpectedVolumes={defaultExpectedVolumes}
@@ -62,12 +64,12 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               </ActionsMenuItem>
             )}
           </ProwlarrSearchModal>
-          {telegramEnabled && (
+          {readiness.telegram && (
             <TelegramSearchModal
               seriesName={searchSeries}
               missingBooks={null}
               ownedVolumes={ownedVolumes}
-              initialEnabled={telegramEnabled}
+              initialEnabled={readiness.telegram}
               initialQuery={initialQuery}
             >
               {(open) => (
@@ -77,13 +79,13 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               )}
             </TelegramSearchModal>
           )}
-          {ddlProviderEnabled && (
+          {readiness.ddl && (
             <DdlProviderSearchModal
               seriesName={searchSeries}
               libraryId={book.library_id}
               targetVolume={book.volume}
               initialQuery={initialQuery}
-              initialEnabled={ddlProviderEnabled}
+              initialEnabled={readiness.ddl}
             >
               {(open) => (
                 <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>

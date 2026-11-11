@@ -86,16 +86,19 @@ export type StartDdlProviderDownloadRequest = {
   volume_number?: number | null;
 };
 
-/** Every known DDL provider with its enabled state. */
-export async function fetchDdlProviders(): Promise<DdlProviderDto[]> {
-  return apiFetch<DdlProviderDto[]>("/ddl-providers");
-}
+export type DdlProviderReadOptions = {
+  /** Cache Next.js demandé pour cette lecture (secondes). */
+  revalidate?: number;
+};
 
-/** True when at least one DDL provider is enabled (gates the search action in toolbars). */
-export async function hasEnabledDdlProvider(): Promise<boolean> {
-  return apiFetch<DdlProviderDto[]>("/ddl-providers", { next: { revalidate: 60 } })
-    .then((list) => list.some((p) => p.enabled))
-    .catch(() => false);
+/** Every known DDL provider with its enabled state. */
+export async function fetchDdlProviders(
+  options?: DdlProviderReadOptions
+): Promise<DdlProviderDto[]> {
+  return apiFetch<DdlProviderDto[]>(
+    "/ddl-providers",
+    options?.revalidate ? { next: { revalidate: options.revalidate } } : undefined
+  );
 }
 
 /** Enable/disable a DDL provider and, optionally, override its base URL. */

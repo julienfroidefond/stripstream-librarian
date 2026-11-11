@@ -1,4 +1,5 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
+import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus } from "@/lib/api";
+import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
 import { getActiveUser } from "@/lib/activeUser";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
@@ -41,15 +42,13 @@ export default async function BookDetailPage({
   // rest of the page data. Without a series they stay `undefined` (highlight
   // nothing) — an empty list would be read as "owns no volume" and highlight
   // every search result.
-  const [libraries, telegramStatus, ddlProviderEnabled, ownedVolumes] = await Promise.all([
+  const [libraries, readiness, ownedVolumes] = await Promise.all([
     fetchLibraries().catch(() => [] as { id: string; name: string }[]),
-    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
-    hasEnabledDdlProvider(),
+    loadAcquisitionReadiness(),
     book.series_id
       ? fetchSeriesOwnedVolumes(book.series_id).catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
-  const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 
   const { t, locale } = await getServerTranslations();
 
@@ -172,7 +171,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} ownedVolumes={ownedVolumes ?? undefined} />
+          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} readiness={readiness} ownedVolumes={ownedVolumes ?? undefined} />
         </div>
       </div>
 

@@ -1,4 +1,5 @@
-import { fetchLibraries, fetchSeriesById, fetchSeriesMetadata, getMissingBooks, apiFetch, fetchDownloadsEnabled, hasEnabledDdlProvider, SeriesMetadataDto, MissingBooksDto, TelegramMonitorStatus } from "@/lib/api";
+import { fetchLibraries, fetchSeriesById, fetchSeriesMetadata, getMissingBooks, SeriesMetadataDto, MissingBooksDto } from "@/lib/api";
+import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
 import { MissingBookActionsToolbar } from "@/app/components/MissingBookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -23,27 +24,18 @@ export default async function MissingBookDetailPage({
     notFound();
   }
 
-  const [seriesDto, missingData, libraries, seriesMeta, prowlarrConfigured, qbConfigured, alldebridConfigured, telegramStatus, ddlProviderEnabled] = await Promise.all([
+  const [seriesDto, missingData, libraries, seriesMeta, readiness] = await Promise.all([
     fetchSeriesById(seriesId).catch(() => null),
     getMissingBooks(linkId).catch(() => null as MissingBooksDto | null),
     fetchLibraries().catch(() => [] as { id: string; name: string }[]),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
-    fetchDownloadsEnabled(),
-    apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent", { next: { revalidate: 3600 } })
-      .then(d => !!(d?.url?.trim() && d?.username?.trim()))
-      .catch(() => false),
-    apiFetch<{ enabled?: boolean; api_key?: string }>("/settings/alldebrid", { next: { revalidate: 3600 } })
-      .then(d => d?.enabled === true && !!d?.api_key?.trim())
-      .catch(() => false),
-    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
-    hasEnabledDdlProvider(),
+    loadAcquisitionReadiness(),
   ]);
 
   if (!seriesDto) {
     notFound();
   }
 
-  const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
   const library = libraries.find(l => l.id === seriesDto.library_id);
   const seriesName = seriesMeta?.series_name ?? seriesDto.name;
 
@@ -137,11 +129,7 @@ export default async function MissingBookDetailPage({
             libraryId={seriesDto.library_id}
             volumeNumber={missingBook.volume_number}
             missingBook={missingBook}
-            prowlarrConfigured={prowlarrConfigured}
-            qbConfigured={qbConfigured}
-            alldebridConfigured={alldebridConfigured}
-            telegramEnabled={telegramEnabled}
-            ddlProviderEnabled={ddlProviderEnabled}
+            readiness={readiness}
           />
         </div>
       </div>

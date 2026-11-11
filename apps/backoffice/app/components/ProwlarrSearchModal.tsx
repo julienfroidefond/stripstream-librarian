@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import { DownloadClientProvider, DownloadClientButton } from "./DownloadClientButton";
-import { isClientConfigured } from "@/lib/downloadClient";
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import { useAcquisitionReadiness } from "./AcquisitionReadinessProvider";
 import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
 
 interface MissingBookItem {
@@ -23,9 +24,11 @@ interface ProwlarrSearchModalProps {
   seriesName: string;
   libraryId?: string;
   missingBooks: MissingBookItem[] | null;
-  initialProwlarrConfigured?: boolean;
-  initialQbConfigured?: boolean;
-  initialAlldebridConfigured?: boolean;
+  /**
+   * Readiness résolue côté serveur. À défaut, la modale consomme celle du
+   * provider de layout : aucun refetch de settings au montage.
+   */
+  initialReadiness?: AcquisitionReadiness | null;
   /** Pre-fill the search input. Defaults to `"${seriesName}"`. */
   initialQuery?: string;
   /** Override the default quick-search badges (series + missing volumes). */
@@ -57,50 +60,18 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
   return Array.from(groups.entries()).map(([title, items]) => ({ title, items }));
 }
 
-export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, initialAlldebridConfigured, initialQuery, quickSearches, defaultExpectedVolumes, children }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialReadiness, initialQuery, quickSearches, defaultExpectedVolumes, children }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
+  const providedReadiness = useAcquisitionReadiness();
+  const readiness = initialReadiness ?? providedReadiness;
   const [isOpen, setIsOpen] = useState(false);
-  const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<ProwlarrRelease[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-
-  // Download client state
-  const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
-  const [isAlldebridConfigured, setIsAlldebridConfigured] = useState(initialAlldebridConfigured ?? false);
   const [sortCol, setSortCol] = useState<"title" | "seeders" | "size">("seeders");
   const [sortAsc, setSortAsc] = useState(false);
-
-  // Check if Prowlarr and download clients are configured on mount (skip if server provided)
-  useEffect(() => {
-    if (initialProwlarrConfigured !== undefined && initialQbConfigured !== undefined && initialAlldebridConfigured !== undefined) return;
-    if (initialProwlarrConfigured === undefined) {
-      fetch("/api/settings/downloads_enabled")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          setIsConfigured(!!(data?.enabled));
-        })
-        .catch(() => setIsConfigured(false));
-    }
-    if (initialQbConfigured === undefined) {
-      fetch("/api/settings/qbittorrent")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          setIsQbConfigured(isClientConfigured("qbittorrent", data));
-        })
-        .catch(() => setIsQbConfigured(false));
-    }
-    if (initialAlldebridConfigured === undefined) {
-      fetch("/api/settings/alldebrid")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          setIsAlldebridConfigured(isClientConfigured("alldebrid", data));
-        })
-        .catch(() => setIsAlldebridConfigured(false));
-    }
-  }, [initialProwlarrConfigured, initialQbConfigured, initialAlldebridConfigured]);
 
   const strippedName = stripLeadingArticle(seriesName);
   const defaultQuery = initialQuery ?? `"${strippedName}"`;
@@ -156,8 +127,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   }
 
   // Don't render button if not configured
-  if (isConfigured === false) return null;
-  if (isConfigured === null) return null;
+  if (!readiness?.prowlarr) return null;
 
   const modal = (
     <Modal isOpen={isOpen} onClose={handleClose} maxWidth="5xl" title={t("prowlarr.modalTitle")}>
@@ -383,7 +353,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     // that appears only once results are rendered would expose a fallback
     // client for the first frames — long enough to send a snatch to the wrong
     // backend.
-    <DownloadClientProvider initialClients={{ qbittorrent: isQbConfigured, alldebrid: isAlldebridConfigured }}>
+    <DownloadClientProvider initialClients={{ qbittorrent: readiness.qbittorrent, alldebrid: readiness.alldebrid }}>
       {children ? (
         children(handleOpen)
       ) : (

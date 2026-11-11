@@ -3,6 +3,17 @@ import type { ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+
+const readiness: AcquisitionReadiness = {
+  downloads: true,
+  prowlarr: false,
+  qbittorrent: false,
+  alldebrid: false,
+  telegram: false,
+  ddl: false,
+};
+
 const { refreshMock, refreshSeriesByIdAction } = vi.hoisted(() => ({
   refreshMock: vi.fn(),
   refreshSeriesByIdAction: vi.fn(),
@@ -48,10 +59,7 @@ const baseProps: ComponentProps<typeof SeriesActionsToolbar> = {
   hiddenProviders: [],
   readingStatusProvider: null,
   readingStatusLink: null,
-  prowlarrConfigured: false,
-  qbConfigured: false,
-  telegramEnabled: false,
-  ddlProviderEnabled: false,
+  readiness,
   renameFormat: null,
   renameFormatHs: null,
 };

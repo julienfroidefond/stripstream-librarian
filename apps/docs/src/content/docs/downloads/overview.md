@@ -20,7 +20,7 @@ Les téléchargements sont désactivés par défaut. Pour les activer :
 
 **Paramètres → onglet Outils de téléchargement → activer « Activer les fonctionnalités de téléchargement »**
 
-Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'envoi au client de téléchargement et les options de détection automatique dans les bibliothèques.
+Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'envoi au client de téléchargement, les recherches Prowlarr, Telegram et téléchargement direct, ainsi que les options de détection automatique dans les bibliothèques.
 
 ---
 

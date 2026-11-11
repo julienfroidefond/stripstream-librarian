@@ -16,7 +16,9 @@ import { MotionReveal } from "@/app/components/MotionReveal";
 import { RouteTransition } from "@/app/components/RouteTransition";
 import { ScrollProgress } from "@/app/components/motion";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
-import { fetchUsers, fetchDownloadsEnabled, fetchMetadataFields } from "@/lib/api";
+import { fetchUsers, fetchMetadataFields } from "@/lib/api";
+import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { AcquisitionReadinessProvider } from "@/app/components/AcquisitionReadinessProvider";
 import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
 import { ACTIVE_USER_COOKIE, getActiveUser } from "@/lib/activeUser";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -69,9 +71,9 @@ const navEntries: NavEntry[] = [
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { t } = await getServerTranslations();
   const { userId: activeUserId } = await getActiveUser();
-  const [users, downloadsEnabled, metadataFields] = await Promise.all([
+  const [users, readiness, metadataFields] = await Promise.all([
     fetchUsers().catch(() => []),
-    fetchDownloadsEnabled(),
+    loadAcquisitionReadiness(),
     fetchMetadataFields().catch(() => null),
   ]);
 
@@ -153,7 +155,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 setActiveUserAction={setActiveUserAction}
               />
             </div>
-            {downloadsEnabled && <DownloadsIndicator />}
+            {readiness.downloads && <DownloadsIndicator />}
             <JobsIndicator />
             <ThemeToggle />
             <div className="hidden md:flex items-center">
@@ -209,9 +211,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           paddingBottom: "max(4rem, env(safe-area-inset-bottom))",
         }}
       >
-        <MetadataFieldsProvider catalog={metadataFields}>
-          <RouteTransition>{children}</RouteTransition>
-        </MetadataFieldsProvider>
+        <AcquisitionReadinessProvider readiness={readiness}>
+          <MetadataFieldsProvider catalog={metadataFields}>
+            <RouteTransition>{children}</RouteTransition>
+          </MetadataFieldsProvider>
+        </AcquisitionReadinessProvider>
       </main>
 
       <Toaster />
