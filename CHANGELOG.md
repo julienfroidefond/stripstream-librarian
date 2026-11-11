@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.126 — 2026-11-11
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump lopdf from 0.46.0 to 0.47.0 ([#252](https://github.com/julienfroidefond/stripstream-librarian/pull/252))
+
+</details>
+
 ## v3.32.125 — 2026-11-11
 
 <details>
