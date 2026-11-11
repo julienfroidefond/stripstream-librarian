@@ -18,10 +18,13 @@ async function mockSettingsWrites(page: Page): Promise<void> {
       await route.continue();
       return;
     }
+    // Match the real proxy: the written value is echoed back and adopted as the
+    // draft's acknowledged baseline.
+    const body = route.request().postDataJSON() as { value: unknown };
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ success: true }),
+      body: JSON.stringify(body.value),
     });
   });
 }
@@ -65,9 +68,11 @@ test.describe("paramètres — test de connexion", () => {
 
     const prowlarr = settingsCard(page, "Prowlarr");
     await expect(prowlarr).toBeVisible();
-    await ensureEnabled(prowlarr);
+    // Fill the connection fields before enabling: enabling an integration with
+    // missing credentials is rejected by the shared validation policy.
     await prowlarr.getByPlaceholder("http://localhost:9696").fill("http://prowlarr.e2e:9696");
     await prowlarr.getByPlaceholder("Prowlarr API key").fill("e2e-prowlarr-key");
+    await ensureEnabled(prowlarr);
     const prowlarrTest = prowlarr.getByRole("button", { name: "Test connection", exact: true });
     await expect(prowlarrTest).toBeEnabled();
     await prowlarrTest.click();
@@ -75,9 +80,9 @@ test.describe("paramètres — test de connexion", () => {
 
     const qbittorrent = settingsCard(page, "qBittorrent");
     await expect(qbittorrent).toBeVisible();
-    await ensureEnabled(qbittorrent);
     await qbittorrent.getByPlaceholder("http://localhost:8080").fill("http://qbittorrent.e2e:8080");
     await qbittorrent.locator('input[type="text"]').fill("e2e-qbittorrent");
+    await ensureEnabled(qbittorrent);
     const qbTest = qbittorrent.getByRole("button", { name: "Test connection", exact: true });
     await expect(qbTest).toBeEnabled();
     await qbTest.click();
@@ -98,9 +103,11 @@ test.describe("paramètres — test de connexion", () => {
 
     const telegram = settingsCard(page, "Telegram");
     await expect(telegram).toBeVisible();
-    await ensureEnabled(telegram);
+    // Fill the credentials before enabling: the shared validation policy keeps
+    // a disabled bot from being enabled without a token and a chat id.
     await telegram.locator("#telegram-bot-token").fill("123456:e2e-bot-token");
     await telegram.locator("#telegram-chat-id").fill("987654321");
+    await ensureEnabled(telegram);
     const testButton = telegram.getByRole("button", { name: "Test connection", exact: true });
     await expect(testButton).toBeEnabled();
     await testButton.click();

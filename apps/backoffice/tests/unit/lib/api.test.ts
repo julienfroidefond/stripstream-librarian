@@ -131,6 +131,22 @@ describe("apiFetch", () => {
       "API /libraries failed (500): boom",
     );
   });
+
+  it("exposes the upstream error field as the ApiError detail", async () => {
+    fetchMock.mockResolvedValue(makeResponse({ error: "cache directory must be absolute" }, 400));
+    await expect(apiFetch("/settings/cache")).rejects.toMatchObject({
+      status: 400,
+      detail: "cache directory must be absolute",
+    });
+  });
+
+  it("exposes a plain-text error body as the ApiError detail", async () => {
+    fetchMock.mockResolvedValue(makeResponse("upstream unavailable", 502));
+    await expect(apiFetch("/settings/cache")).rejects.toMatchObject({
+      status: 502,
+      detail: "upstream unavailable",
+    });
+  });
 });
 
 describe("getBookCoverUrl", () => {

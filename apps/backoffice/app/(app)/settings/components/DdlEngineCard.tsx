@@ -4,6 +4,8 @@ import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Icon, Tooltip } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
+import type { LimitsSettings } from "@/lib/settingsSections";
+import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
 /**
  * Download-engine knobs stored under `app_settings.limits` for the direct
@@ -38,31 +40,44 @@ function clamp(key: keyof DdlEngineLimits, raw: string): number {
   return Math.min(max, Math.max(min, parsed));
 }
 
-export function DdlEngineCard({
-  limits,
-  onSave,
-}: {
-  limits: Partial<DdlEngineLimits>;
-  onSave: (partial: Partial<DdlEngineLimits>) => void;
-}) {
+function effectiveValue(limits: LimitsSettings, key: keyof DdlEngineLimits): number {
+  const stored = limits[key];
+  return typeof stored === "number" && Number.isFinite(stored) ? stored : DDL_ENGINE_RANGES[key].default;
+}
+
+export function DdlEngineCard() {
   const { t } = useTranslation();
+  const draft = useSettingsDraft();
+  const section = useSettingsSection<LimitsSettings>("limits");
+  const limits = section.value;
   // Raw strings so a value can be typed freely; clamped only on blur.
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      KEYS.map((key) => {
-        const stored = limits[key];
-        const value = typeof stored === "number" && Number.isFinite(stored)
-          ? stored
-          : DDL_ENGINE_RANGES[key].default;
-        return [key, String(value)];
-      })
-    )
+    Object.fromEntries(KEYS.map((key) => [key, String(effectiveValue(limits, key))]))
   );
 
-  function commit(key: keyof DdlEngineLimits) {
+  async function commit(key: keyof DdlEngineLimits) {
     const value = clamp(key, drafts[key]);
     setDrafts((prev) => ({ ...prev, [key]: String(value) }));
-    onSave({ [key]: value });
+    if (key === "concurrent_ddl_provider_downloads") {
+      section.patch({ concurrent_ddl_provider_downloads: value });
+    } else if (key === "ddl_download_connections") {
+      section.patch({ ddl_download_connections: value });
+    } else if (key === "download_max_attempts") {
+      section.patch({ download_max_attempts: value });
+    } else if (key === "download_stall_timeout_seconds") {
+      section.patch({ download_stall_timeout_seconds: value });
+    } else {
+      section.patch({ download_timeout_minutes: value });
+    }
+    const result = await section.save();
+    // Adopt a normalized or rolled-back value without touching the other rows
+    // the user may be editing while this request is in flight.
+    if (result.status !== "unchanged") {
+      const stored = draft.get<LimitsSettings>("limits");
+      if (stored) {
+        setDrafts((prev) => ({ ...prev, [key]: String(effectiveValue(stored, key)) }));
+      }
+    }
   }
 
   function row(key: keyof DdlEngineLimits, labelKey: TranslationKey, helpKey: TranslationKey) {

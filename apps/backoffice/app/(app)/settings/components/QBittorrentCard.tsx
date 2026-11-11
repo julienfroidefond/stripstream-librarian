@@ -1,34 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
-import { isClientConfigured } from "@/lib/downloadClient";
+import type { QbittorrentSettings } from "@/lib/settingsSections";
+import { useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 
-export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onConfiguredChange }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialQbittorrent: Record<string, unknown> | null; onConfiguredChange?: (configured: boolean) => void }) {
+export function QBittorrentCard() {
   const { t } = useTranslation();
-  const [qbUrl, setQbUrl] = useState(initialQbittorrent?.url ? String(initialQbittorrent.url) : "");
-  const [qbUsername, setQbUsername] = useState(initialQbittorrent?.username ? String(initialQbittorrent.username) : "");
-  const [qbPassword, setQbPassword] = useState(initialQbittorrent?.password ? String(initialQbittorrent.password) : "");
-  const [enabled, setEnabled] = useState(initialQbittorrent?.enabled !== false);
-
-  // Keep the parent (download-client picker) in sync with the local edits.
-  useEffect(() => {
-    onConfiguredChange?.(
-      isClientConfigured("qbittorrent", { url: qbUrl, username: qbUsername, password: qbPassword, enabled })
-    );
-  }, [qbUrl, qbUsername, qbPassword, enabled, onConfiguredChange]);
-
-  function saveQbittorrent(overrides: Record<string, unknown> = {}) {
-    handleUpdateSetting("qbittorrent", {
-      url: qbUrl,
-      username: qbUsername,
-      password: qbPassword,
-      enabled,
-      ...overrides,
-    });
-  }
+  const section = useSettingsSection<QbittorrentSettings>("qbittorrent");
+  const value = section.value;
 
   return (
     <SettingsCard
@@ -37,12 +18,11 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onCon
       description={t("settings.qbittorrentDesc")}
       action={
         <Switch
-          checked={enabled}
+          checked={value.enabled}
           aria-label={t("settings.qbittorrentEnabled")}
           onChange={(e) => {
-            const val = e.target.checked;
-            setEnabled(val);
-            saveQbittorrent({ enabled: val });
+            section.patch({ enabled: e.target.checked });
+            void section.save();
           }}
         />
       }
@@ -51,9 +31,9 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onCon
         <FormInput
           type="url"
           placeholder={t("settings.qbittorrentUrlPlaceholder")}
-          value={qbUrl}
-          onChange={(e) => setQbUrl(e.target.value)}
-          onBlur={() => saveQbittorrent()}
+          value={value.url}
+          onChange={(e) => section.patch({ url: e.target.value })}
+          onBlur={() => void section.save()}
           autoComplete="off"
           data-lpignore="true"
           data-1p-ignore
@@ -63,9 +43,9 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onCon
       <SettingsRow label={t("settings.qbittorrentUsername")}>
         <FormInput
           type="text"
-          value={qbUsername}
-          onChange={(e) => setQbUsername(e.target.value)}
-          onBlur={() => saveQbittorrent()}
+          value={value.username}
+          onChange={(e) => section.patch({ username: e.target.value })}
+          onBlur={() => void section.save()}
           autoComplete="off"
           data-lpignore="true"
           data-1p-ignore
@@ -75,9 +55,9 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onCon
       <SettingsRow label={t("settings.qbittorrentPassword")}>
         <FormInput
           type="password"
-          value={qbPassword}
-          onChange={(e) => setQbPassword(e.target.value)}
-          onBlur={() => saveQbittorrent()}
+          value={value.password}
+          onChange={(e) => section.patch({ password: e.target.value })}
+          onBlur={() => void section.save()}
           autoComplete="off"
           data-lpignore="true"
           data-1p-ignore
@@ -88,10 +68,9 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, onCon
       <div className="pt-1">
         <TestConnectionButton
           endpoint="/api/qbittorrent/test"
-          disabled={!enabled || !qbUrl || !qbUsername}
+          disabled={!value.enabled || !value.url || !value.username}
         />
       </div>
-
     </SettingsCard>
   );
 }

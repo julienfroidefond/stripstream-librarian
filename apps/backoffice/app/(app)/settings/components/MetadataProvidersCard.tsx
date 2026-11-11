@@ -5,6 +5,8 @@ import { SettingsCard, SettingsRow, FormInput } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import type { MetadataProviderDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import type { MetadataProvidersSettings } from "@/lib/settingsSections";
+import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
 export const METADATA_LANGUAGES = [
   { value: "en", label: "English" },
@@ -12,22 +14,23 @@ export const METADATA_LANGUAGES = [
   { value: "es", label: "Español" },
 ] as const;
 
-function extractInitialApiKeys(data: Record<string, unknown> | null): Record<string, string> {
+function extractApiKeys(data: MetadataProvidersSettings): Record<string, string> {
   const keys: Record<string, string> = {};
-  if (data) {
-    const comicvine = data.comicvine as Record<string, unknown> | undefined;
-    const googleBooks = data.google_books as Record<string, unknown> | undefined;
-    if (comicvine?.api_key) keys.comicvine = String(comicvine.api_key);
-    if (googleBooks?.api_key) keys.google_books = String(googleBooks.api_key);
-  }
+  if (data.comicvine?.api_key) keys.comicvine = data.comicvine.api_key;
+  if (data.google_books?.api_key) keys.google_books = data.google_books.api_key;
   return keys;
 }
 
-export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
+export function MetadataProvidersCard() {
   const { t } = useTranslation();
-  const [defaultProvider, setDefaultProvider] = useState(initialData?.default_provider ? String(initialData.default_provider) : "google_books");
-  const [metadataLanguage, setMetadataLanguage] = useState(initialData?.metadata_language ? String(initialData.metadata_language) : "en");
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(extractInitialApiKeys(initialData));
+  const draft = useSettingsDraft();
+  const section = useSettingsSection<MetadataProvidersSettings>("metadata_providers");
+  const value = section.value;
+  const defaultProvider = value.default_provider;
+  const metadataLanguage = value.metadata_language;
+  // Raw key inputs so they can be typed; re-synced from the acknowledged
+  // section when a save normalizes or a rollback restores it.
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => extractApiKeys(value));
   const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
 
   useEffect(() => {
@@ -37,15 +40,19 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
       .catch(() => setProviders([]));
   }, []);
 
-  function save(provider: string, lang: string, keys: Record<string, string>) {
-    const value: Record<string, unknown> = {
+  async function save(provider: string, lang: string, keys: Record<string, string>) {
+    const next: MetadataProvidersSettings = {
       default_provider: provider,
       metadata_language: lang,
     };
-    for (const [k, v] of Object.entries(keys)) {
-      if (v) value[k] = { api_key: v };
+    if (keys.google_books) next.google_books = { api_key: keys.google_books };
+    if (keys.comicvine) next.comicvine = { api_key: keys.comicvine };
+    section.set(next);
+    const result = await section.save();
+    if (result.status !== "unchanged") {
+      const stored = draft.get<MetadataProvidersSettings>("metadata_providers");
+      if (stored) setApiKeys(extractApiKeys(stored));
     }
-    handleUpdateSetting("metadata_providers", value);
   }
 
   return (
@@ -57,10 +64,7 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
             <button
               key={p.id}
               type="button"
-              onClick={() => {
-                setDefaultProvider(p.id);
-                save(p.id, metadataLanguage, apiKeys);
-              }}
+              onClick={() => save(p.id, metadataLanguage, apiKeys)}
               className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 defaultProvider === p.id
                   ? "bg-primary/15 font-semibold text-primary"
@@ -81,10 +85,7 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
             <button
               key={l.value}
               type="button"
-              onClick={() => {
-                setMetadataLanguage(l.value);
-                save(defaultProvider, l.value, apiKeys);
-              }}
+              onClick={() => save(defaultProvider, l.value, apiKeys)}
               className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 metadataLanguage === l.value
                   ? "bg-primary/15 font-semibold text-primary"

@@ -4,48 +4,21 @@ import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Icon, Switch } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { useTranslation } from "@/lib/i18n/context";
+import {
+  DEFAULT_TELEGRAM_EVENTS,
+  type TelegramSettings,
+} from "@/lib/settingsSections";
+import { useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 
-export const DEFAULT_EVENTS = {
-  scan_completed: true,
-  scan_failed: true,
-  scan_cancelled: true,
-  thumbnail_completed: true,
-  thumbnail_failed: true,
-  conversion_completed: true,
-  conversion_failed: true,
-  metadata_approved: true,
-  metadata_batch_completed: true,
-  metadata_batch_failed: true,
-  metadata_refresh_completed: true,
-  metadata_refresh_failed: true,
-  reading_status_match_completed: true,
-  reading_status_match_failed: true,
-  reading_status_push_completed: true,
-  reading_status_push_failed: true,
-  download_detection_completed: true,
-  download_detection_partial: true,
-  download_detection_failed: true,
-};
+export const DEFAULT_EVENTS = DEFAULT_TELEGRAM_EVENTS;
 
-export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
+export function TelegramCard() {
   const { t } = useTranslation();
-  const [botToken, setBotToken] = useState(initialData?.bot_token ? String(initialData.bot_token) : "");
-  const [chatId, setChatId] = useState(initialData?.chat_id ? String(initialData.chat_id) : "");
-  const [enabled, setEnabled] = useState(initialData?.enabled === true);
-  const [events, setEvents] = useState(
-    initialData?.events ? { ...DEFAULT_EVENTS, ...(initialData.events as Record<string, boolean>) } : DEFAULT_EVENTS
-  );
+  const section = useSettingsSection<TelegramSettings>("telegram");
+  const value = section.value;
+  const events = value.events ?? DEFAULT_TELEGRAM_EVENTS;
   const [showHelp, setShowHelp] = useState(false);
-
-  function saveTelegram(token?: string, chat?: string, en?: boolean, ev?: typeof events) {
-    handleUpdateSetting("telegram", {
-      bot_token: token ?? botToken,
-      chat_id: chat ?? chatId,
-      enabled: en ?? enabled,
-      events: ev ?? events,
-    });
-  }
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 xl:items-start">
@@ -77,25 +50,25 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
             </div>
           )}
         </div>
-  
+
         <SettingsRow label={t("settings.telegramEnabled")} controlClassName="sm:max-w-none">
           <Switch
-            checked={enabled}
+            checked={value.enabled}
             onChange={(e) => {
-              setEnabled(e.target.checked);
-              saveTelegram(undefined, undefined, e.target.checked);
+              section.patch({ enabled: e.target.checked });
+              void section.save();
             }}
           />
         </SettingsRow>
-  
+
         <SettingsRow label={t("settings.botToken")} htmlFor="telegram-bot-token">
           <FormInput
             id="telegram-bot-token"
             type="password" autoComplete="off"
             placeholder={t("settings.botTokenPlaceholder")}
-            value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
-            onBlur={() => saveTelegram()}
+            value={value.bot_token}
+            onChange={(e) => section.patch({ bot_token: e.target.value })}
+            onBlur={() => void section.save()}
           />
         </SettingsRow>
         <SettingsRow label={t("settings.chatId")} htmlFor="telegram-chat-id">
@@ -103,20 +76,20 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
             id="telegram-chat-id"
             type="text"
             placeholder={t("settings.chatIdPlaceholder")}
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-            onBlur={() => saveTelegram()}
+            value={value.chat_id}
+            onChange={(e) => section.patch({ chat_id: e.target.value })}
+            onBlur={() => void section.save()}
           />
         </SettingsRow>
-  
+
         <div className="flex items-center gap-3 pt-1">
           <TestConnectionButton
             endpoint="/api/telegram/test"
-            disabled={!botToken || !chatId || !enabled}
+            disabled={!value.bot_token || !value.chat_id || !value.enabled}
           />
         </div>
       </SettingsCard>
-  
+
       <SettingsCard icon="bell" title={t("settings.telegramEvents")}>
           <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             {([
@@ -191,9 +164,8 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
                       label={<span className="text-sm text-foreground group-hover:text-foreground/80">{label}</span>}
                       checked={events[key]}
                       onChange={(e) => {
-                        const updated = { ...events, [key]: e.target.checked };
-                        setEvents(updated);
-                        saveTelegram(undefined, undefined, undefined, updated);
+                        section.patch({ events: { ...events, [key]: e.target.checked } });
+                        void section.save();
                       }}
                     />
                   ))}

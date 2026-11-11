@@ -8,6 +8,7 @@ vi.mock("@/lib/api", async () => {
   return createApiMock();
 });
 
+import { ApiError } from "@/lib/api/errors";
 import { apiFetch, clearCache, getCacheStats, updateSetting } from "@/lib/api";
 import { GET as getSetting, POST as postSetting } from "@/app/api/settings/[key]/route";
 import { POST as clear } from "@/app/api/settings/cache/clear/route";
@@ -46,6 +47,18 @@ describe("/api/settings/[key]", () => {
     expect(
       (await postSetting(jsonRequest("/api/settings/foo", { method: "POST", body: { value: 1 } }), routeCtx({ key: "foo" }))).status
     ).toBe(500);
+  });
+
+  it("POST forwards the upstream status and detail", async () => {
+    vi.mocked(updateSetting).mockRejectedValue(
+      new ApiError(400, "API /settings/cache failed (400): invalid", "invalid cache directory"),
+    );
+    const res = await postSetting(
+      jsonRequest("/api/settings/cache", { method: "POST", body: { value: { directory: "" } } }),
+      routeCtx({ key: "cache" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid cache directory" });
   });
 });
 

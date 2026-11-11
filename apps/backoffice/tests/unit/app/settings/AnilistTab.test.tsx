@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnilistTab } from "@/app/(app)/settings/components/AnilistTab";
+import { renderWithSettingsDraft } from "../../helpers/settingsDraft";
 
 const fetchMock = vi.fn();
 const locationMock = { origin: "http://localhost:7082", href: "" };
@@ -18,9 +19,13 @@ function ok(payload: unknown) {
   return { ok: true, json: async () => payload };
 }
 
+const users = [
+  { id: "u1", username: "Local" } as never,
+  { id: "u2", username: "Second" } as never,
+];
+
 describe("AnilistTab", () => {
   it("renders saved settings, saves, connects and runs reports", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url === "/api/anilist/status") {
         return ok({ username: "viewer", site_url: "http://anilist/u", user_id: 5 });
@@ -58,27 +63,25 @@ describe("AnilistTab", () => {
       return ok({});
     });
 
-    render(
-      <AnilistTab
-        handleUpdateSetting={handleUpdateSetting}
-        users={[
-          { id: "u1", username: "Local" } as never,
-          { id: "u2", username: "Second" } as never,
-        ]}
-        initialData={{ client_id: "cid", access_token: "tok", user_id: "5", local_user_id: "u1" }}
-      />,
-    );
+    const { writer } = renderWithSettingsDraft(<AnilistTab users={users} />, {
+      initial: {
+        anilist: { client_id: "cid", access_token: "tok", user_id: 5, local_user_id: "u1" },
+      },
+    });
 
     expect(await screen.findByText("http://localhost:7082/anilist/callback")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "u2" } });
-    expect(handleUpdateSetting).toHaveBeenCalledWith(
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
       "anilist",
       expect.objectContaining({ local_user_id: "u2" }),
-    );
+    ));
 
     await userEvent.click(screen.getByRole("button", { name: "common.save" }));
-    expect(handleUpdateSetting).toHaveBeenCalledWith("anilist", expect.objectContaining({ client_id: "cid" }));
+    await waitFor(() => expect(writer).toHaveBeenLastCalledWith(
+      "anilist",
+      expect.objectContaining({ client_id: "cid" }),
+    ));
 
     await userEvent.click(screen.getByRole("button", { name: "settings.anilistConnectButton" }));
     await waitFor(() => expect(locationMock.href).toContain("client_id=cid"));
@@ -102,7 +105,6 @@ describe("AnilistTab", () => {
   });
 
   it("handles empty initial data and surfaces action errors", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/anilist/status") {
         return { ok: false, json: async () => ({ error: "bad token" }) };
@@ -113,7 +115,7 @@ describe("AnilistTab", () => {
       return ok({});
     });
 
-    render(<AnilistTab handleUpdateSetting={handleUpdateSetting} users={[] as never} initialData={null} />);
+    renderWithSettingsDraft(<AnilistTab users={[]} />);
 
     expect(await screen.findByText("http://localhost:7082/anilist/callback")).toBeInTheDocument();
 
@@ -141,19 +143,14 @@ describe("AnilistTab", () => {
   });
 
   it("reports a connection failure and auto-fills the user id", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/anilist/status") return ok({ username: "v", site_url: "http://u", user_id: 77 });
       return ok({});
     });
 
-    render(
-      <AnilistTab
-        handleUpdateSetting={handleUpdateSetting}
-        users={[] as never}
-        initialData={{ access_token: "tok" }}
-      />,
-    );
+    renderWithSettingsDraft(<AnilistTab users={[]} />, {
+      initial: { anilist: { access_token: "tok" } },
+    });
 
     await userEvent.click(screen.getByRole("button", { name: "settings.anilistTestConnection" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/anilist/status"));
@@ -161,29 +158,23 @@ describe("AnilistTab", () => {
   });
 
   it("surfaces a thrown connection error", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     fetchMock.mockRejectedValue("boom");
 
-    render(
-      <AnilistTab
-        handleUpdateSetting={handleUpdateSetting}
-        users={[] as never}
-        initialData={{ access_token: "tok" }}
-      />,
-    );
+    renderWithSettingsDraft(<AnilistTab users={[]} />, {
+      initial: { anilist: { access_token: "tok" } },
+    });
 
     await userEvent.click(screen.getByRole("button", { name: "settings.anilistTestConnection" }));
     expect(await screen.findByText("Connection failed")).toBeInTheDocument();
   });
 
   it("surfaces a non-error preview failure", async () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/anilist/sync/preview") throw "down";
       return ok({});
     });
 
-    render(<AnilistTab handleUpdateSetting={handleUpdateSetting} users={[] as never} initialData={null} />);
+    renderWithSettingsDraft(<AnilistTab users={[]} />);
 
     await userEvent.click(screen.getByRole("button", { name: "settings.anilistPreviewButton" }));
     expect(await screen.findByText("Preview failed")).toBeInTheDocument();

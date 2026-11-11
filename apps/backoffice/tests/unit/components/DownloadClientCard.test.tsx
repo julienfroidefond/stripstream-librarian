@@ -1,19 +1,38 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import { DownloadClientCard } from "@/app/(app)/settings/components/DownloadClientCard";
+import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settingsSections";
+import { useSettingsSection } from "@/app/(app)/settings/SettingsDraftProvider";
+import { renderWithSettingsDraft } from "../helpers/settingsDraft";
+
+function ConfigureQbittorrent({ patch }: { patch: Partial<QbittorrentSettings> }) {
+  const section = useSettingsSection<QbittorrentSettings>("qbittorrent");
+  return (
+    <button type="button" onClick={() => section.patch(patch)}>
+      configure-qbittorrent
+    </button>
+  );
+}
+
+function ConfigureAlldebrid({ patch }: { patch: Partial<AlldebridSettings> }) {
+  const section = useSettingsSection<AlldebridSettings>("alldebrid");
+  return (
+    <button type="button" onClick={() => section.patch(patch)}>
+      configure-alldebrid
+    </button>
+  );
+}
 
 describe("DownloadClientCard", () => {
-  it("saves the selected client", () => {
-    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-    render(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient="qbittorrent"
-        qbConfigured
-        alldebridConfigured
-      />
-    );
+  it("saves the selected client", async () => {
+    const { writer } = renderWithSettingsDraft(<DownloadClientCard />, {
+      initial: {
+        download_client: { client: "qbittorrent" },
+        qbittorrent: { url: "http://qb", username: "admin" },
+        alldebrid: { enabled: true, api_key: "********" },
+      },
+    });
 
     const radios = screen.getAllByRole("radio");
     expect(radios).toHaveLength(2);
@@ -21,52 +40,49 @@ describe("DownloadClientCard", () => {
 
     fireEvent.click(radios[1]);
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith("download_client", { client: "alldebrid" });
-    expect(radios[1]).toBeChecked();
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("download_client", {
+      client: "alldebrid",
+    }));
+    await waitFor(() => expect(radios[1]).toBeChecked());
     expect(radios[0]).not.toBeChecked();
   });
 
   it("disables a client that is not configured", () => {
-    const handleUpdateSetting = vi.fn();
-    render(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient="qbittorrent"
-        qbConfigured
-        alldebridConfigured={false}
-      />
-    );
+    renderWithSettingsDraft(<DownloadClientCard />, {
+      initial: {
+        download_client: { client: "qbittorrent" },
+        qbittorrent: { url: "http://qb", username: "admin" },
+        alldebrid: { enabled: true, api_key: "" },
+      },
+    });
 
     const radios = screen.getAllByRole("radio");
     expect(radios[1]).toBeDisabled();
 
     fireEvent.click(radios[1]);
-    expect(handleUpdateSetting).not.toHaveBeenCalled();
+    expect(radios[0]).toBeChecked();
   });
 
   it("preselects the first configured client when nothing is stored", () => {
-    render(
-      <DownloadClientCard
-        handleUpdateSetting={vi.fn()}
-        initialClient={null}
-        qbConfigured={false}
-        alldebridConfigured
-      />
-    );
+    renderWithSettingsDraft(<DownloadClientCard />, {
+      initial: {
+        qbittorrent: { enabled: false },
+        alldebrid: { enabled: true, api_key: "********" },
+      },
+    });
 
     const radios = screen.getAllByRole("radio");
     expect(radios[1]).toBeChecked();
   });
 
   it("ignores a stored choice whose client is no longer configured", () => {
-    render(
-      <DownloadClientCard
-        handleUpdateSetting={vi.fn()}
-        initialClient="alldebrid"
-        qbConfigured
-        alldebridConfigured={false}
-      />
-    );
+    renderWithSettingsDraft(<DownloadClientCard />, {
+      initial: {
+        download_client: { client: "alldebrid" },
+        qbittorrent: { url: "http://qb", username: "admin" },
+        alldebrid: { enabled: false, api_key: "********" },
+      },
+    });
 
     // AllDebrid is stored but unconfigured, so snatches actually go to
     // qBittorrent: the card must show the same client as the runtime fallback.
@@ -75,15 +91,18 @@ describe("DownloadClientCard", () => {
     expect(radios[1]).not.toBeChecked();
   });
 
-  it("reacts when a client is enabled/configured above", () => {
-    const handleUpdateSetting = vi.fn();
-    const { rerender } = render(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient={null}
-        qbConfigured={false}
-        alldebridConfigured={false}
-      />
+  it("reacts when a client is enabled/configured above", async () => {
+    renderWithSettingsDraft(
+      <>
+        <DownloadClientCard />
+        <ConfigureAlldebrid patch={{ enabled: true, api_key: "key" }} />
+      </>,
+      {
+        initial: {
+          qbittorrent: { enabled: false },
+          alldebrid: { enabled: false, api_key: "" },
+        },
+      },
     );
 
     let radios = screen.getAllByRole("radio");
@@ -93,40 +112,32 @@ describe("DownloadClientCard", () => {
 
     // AllDebrid gets configured elsewhere in the page: the card must pick it up
     // without remounting.
-    rerender(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient={null}
-        qbConfigured={false}
-        alldebridConfigured
-      />
-    );
+    fireEvent.click(screen.getByRole("button", { name: "configure-alldebrid" }));
 
+    await waitFor(() => expect(screen.getAllByRole("radio")[1]).toBeEnabled());
     radios = screen.getAllByRole("radio");
-    expect(radios[1]).toBeEnabled();
     expect(radios[1]).toBeChecked();
   });
 
-  it("falls back when the selected client is disabled above", () => {
-    const handleUpdateSetting = vi.fn();
-    const { rerender } = render(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient="qbittorrent"
-        qbConfigured
-        alldebridConfigured
-      />
+  it("falls back when the selected client is disabled above", async () => {
+    renderWithSettingsDraft(
+      <>
+        <DownloadClientCard />
+        <ConfigureQbittorrent patch={{ enabled: false }} />
+        <ConfigureAlldebrid patch={{ enabled: true, api_key: "********" }} />
+      </>,
+      {
+        initial: {
+          download_client: { client: "qbittorrent" },
+          qbittorrent: { url: "http://qb", username: "admin" },
+          alldebrid: { enabled: true, api_key: "********" },
+        },
+      },
     );
     expect(screen.getAllByRole("radio")[0]).toBeChecked();
 
-    rerender(
-      <DownloadClientCard
-        handleUpdateSetting={handleUpdateSetting}
-        initialClient="qbittorrent"
-        qbConfigured={false}
-        alldebridConfigured
-      />
-    );
-    expect(screen.getAllByRole("radio")[1]).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "configure-qbittorrent" }));
+
+    await waitFor(() => expect(screen.getAllByRole("radio")[1]).toBeChecked());
   });
 });

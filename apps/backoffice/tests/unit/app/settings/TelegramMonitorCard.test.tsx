@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,7 @@ vi.mock("@/app/components/ui", async (importOriginal) => {
 import { toast } from "@/app/components/ui";
 
 import { TelegramMonitorCard } from "@/app/(app)/settings/components/TelegramMonitorCard";
+import { renderWithSettingsDraft } from "../../helpers/settingsDraft";
 
 const fetchMock = vi.fn();
 
@@ -56,11 +57,9 @@ describe("TelegramMonitorCard", () => {
       },
     });
 
-    render(
-      <TelegramMonitorCard
-        initialLibraries={[{ id: "l1", name: "Lib1" } as never]}
-        initialConcurrentDownloads={3}
-      />,
+    const { writer } = renderWithSettingsDraft(
+      <TelegramMonitorCard initialLibraries={[{ id: "l1", name: "Lib1" } as never]} />,
+      { initial: { limits: { concurrent_telegram_downloads: 3 } } },
     );
 
     expect(await screen.findByDisplayValue("123")).toBeInTheDocument();
@@ -95,6 +94,10 @@ describe("TelegramMonitorCard", () => {
     const concurrent = screen.getByDisplayValue("3");
     fireEvent.change(concurrent, { target: { value: "5" } });
     fireEvent.blur(concurrent);
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
+      "limits",
+      expect.objectContaining({ concurrent_telegram_downloads: 5 }),
+    ));
   });
 
   it("manages sources and channel suggestions", async () => {
@@ -113,11 +116,8 @@ describe("TelegramMonitorCard", () => {
       "DELETE /api/telegram-monitor/auth": () => ok({}),
     });
 
-    render(
-      <TelegramMonitorCard
-        initialLibraries={[{ id: "l1", name: "Lib1" } as never]}
-        onSaveConcurrentDownloads={vi.fn()}
-      />,
+    renderWithSettingsDraft(
+      <TelegramMonitorCard initialLibraries={[{ id: "l1", name: "Lib1" } as never]} />,
     );
 
     expect(await screen.findByText("@c1")).toBeInTheDocument();
@@ -152,15 +152,19 @@ describe("TelegramMonitorCard", () => {
     routes({
       "GET /api/telegram-monitor/status": () => ok({ ...statusBase, authorized: true }),
     });
-    const onSave = vi.fn();
 
-    render(<TelegramMonitorCard initialDownloadConnections={6} onSaveDownloadConnections={onSave} />);
+    const { writer } = renderWithSettingsDraft(<TelegramMonitorCard />, {
+      initial: { limits: { telegram_download_connections: 6 } },
+    });
     const input = await screen.findByDisplayValue("6");
 
     fireEvent.change(input, { target: { value: "3" } });
     fireEvent.blur(input);
 
-    expect(onSave).toHaveBeenCalledWith(3);
+    await waitFor(() => expect(writer).toHaveBeenCalledWith(
+      "limits",
+      expect.objectContaining({ telegram_download_connections: 3 }),
+    ));
   });
 
   it("reports request failures", async () => {
@@ -176,7 +180,7 @@ describe("TelegramMonitorCard", () => {
       "GET /api/telegram-monitor/channels?q=x": () => failing,
     });
 
-    render(<TelegramMonitorCard />);
+    renderWithSettingsDraft(<TelegramMonitorCard />);
     expect(await screen.findByText("@c1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /telegramMonitor.apiCredentials/ }));
@@ -218,7 +222,7 @@ describe("TelegramMonitorCard", () => {
       }),
     });
 
-    render(<TelegramMonitorCard />);
+    renderWithSettingsDraft(<TelegramMonitorCard />);
     expect(await screen.findByRole("button", { name: "telegramMonitor.sendCode" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "telegramMonitor.saveSettings" }));
@@ -243,7 +247,7 @@ describe("TelegramMonitorCard", () => {
       }),
     });
 
-    render(<TelegramMonitorCard />);
+    renderWithSettingsDraft(<TelegramMonitorCard />);
     await userEvent.click(await screen.findByRole("button", { name: "telegramMonitor.sendCode" }));
 
     const code = await screen.findByPlaceholderText("telegramMonitor.codePlaceholder");
@@ -260,7 +264,7 @@ describe("TelegramMonitorCard", () => {
       return ok({});
     });
 
-    render(<TelegramMonitorCard />);
+    renderWithSettingsDraft(<TelegramMonitorCard />);
     expect(await screen.findByPlaceholderText("telegramMonitor.apiHashPlaceholder")).toBeInTheDocument();
     expect(screen.getByText("telegramMonitor.notAuthorized")).toBeInTheDocument();
   });

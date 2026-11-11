@@ -5,25 +5,23 @@ import { SettingsCard, SettingsRow, Button, FormInput, Icon } from "@/app/compon
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import { useIsMounted } from "@/lib/useIsMounted";
+import type { AnilistSettings } from "@/lib/settingsSections";
+import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
-export function AnilistTab({
-  handleUpdateSetting,
-  users,
-  initialData,
-}: {
-  handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
-  users: UserDto[];
-  initialData: Record<string, unknown> | null;
-}) {
+export function AnilistTab({ users }: { users: UserDto[] }) {
   const { t } = useTranslation();
 
   const mounted = useIsMounted();
   const origin = mounted ? window.location.origin : "";
+  const draft = useSettingsDraft();
+  const section = useSettingsSection<AnilistSettings>("anilist");
+  const value = section.value;
 
-  const [clientId, setClientId] = useState(initialData?.client_id ? String(initialData.client_id) : "");
-  const [token, setToken] = useState(initialData?.access_token ? String(initialData.access_token) : "");
-  const [userId, setUserId] = useState(initialData?.user_id ? String(initialData.user_id) : "");
-  const [localUserId, setLocalUserId] = useState(initialData?.local_user_id ? String(initialData.local_user_id) : "");
+  // Raw inputs kept local until an explicit action saves them: the card has a
+  // "Connect" flow and a manual-token form, neither of which saves per keystroke.
+  const [clientId, setClientId] = useState(value.client_id);
+  const [token, setToken] = useState(value.access_token);
+  const [userId, setUserId] = useState(value.user_id != null ? String(value.user_id) : "");
   const [isTesting, setIsTesting] = useState(false);
   const [viewer, setViewer] = useState<AnilistStatusDto | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -36,25 +34,41 @@ export function AnilistTab({
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewItems, setPreviewItems] = useState<AnilistSyncPreviewItemDto[] | null>(null);
 
-  function buildAnilistSettings() {
+  function buildAnilistSettings(localUserId?: string): AnilistSettings {
     return {
-      client_id: clientId || undefined,
-      access_token: token || undefined,
-      user_id: userId ? Number(userId) : undefined,
-      local_user_id: localUserId || undefined,
+      client_id: clientId,
+      access_token: token,
+      user_id: userId ? Number(userId) : null,
+      local_user_id: localUserId ?? value.local_user_id,
     };
   }
 
-  function handleConnect() {
+  async function save(settings: AnilistSettings) {
+    section.set(settings);
+    const result = await section.save();
+    // A save may normalize the section, and a validation error or rollback
+    // restores it: mirror the acknowledged value back into the local inputs.
+    if (result.status !== "unchanged") {
+      const stored = draft.get<AnilistSettings>("anilist");
+      if (stored) {
+        setClientId(stored.client_id);
+        setToken(stored.access_token);
+        setUserId(stored.user_id != null ? String(stored.user_id) : "");
+      }
+    }
+    return result;
+  }
+
+  async function handleConnect() {
     if (!clientId) return;
     // Save client_id first, then open OAuth URL
-    handleUpdateSetting("anilist", buildAnilistSettings()).then(() => {
-      window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token`;
-    });
+    const result = await save(buildAnilistSettings());
+    if (result.status === "error") return;
+    window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token`;
   }
 
   async function handleSaveToken() {
-    await handleUpdateSetting("anilist", buildAnilistSettings());
+    await save(buildAnilistSettings());
   }
 
   async function handleTestConnection() {
@@ -63,7 +77,7 @@ export function AnilistTab({
     setTestError(null);
     try {
       // Save token first so the API reads the current value
-      await handleUpdateSetting("anilist", buildAnilistSettings());
+      await save(buildAnilistSettings());
       const resp = await fetch("/api/anilist/status");
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Connection failed");
@@ -204,14 +218,10 @@ export function AnilistTab({
           controlClassName="sm:max-w-none"
         >
           <select
-            value={localUserId}
+            value={value.local_user_id}
             onChange={(e) => {
-              const newLocalUserId = e.target.value;
-              setLocalUserId(newLocalUserId);
-              handleUpdateSetting("anilist", {
-                ...buildAnilistSettings(),
-                local_user_id: newLocalUserId || undefined,
-              });
+              const next = e.target.value;
+              void save(buildAnilistSettings(next));
             }}
             autoComplete="off"
             className="h-10 w-full px-3 py-2.5 text-sm sm:max-w-md"

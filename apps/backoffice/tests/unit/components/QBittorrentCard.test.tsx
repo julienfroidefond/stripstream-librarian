@@ -1,21 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import { QBittorrentCard } from "@/app/(app)/settings/components/QBittorrentCard";
+import { renderWithSettingsDraft } from "../helpers/settingsDraft";
 
-function renderCard(
-  initialQbittorrent: Record<string, unknown> | null = null,
-  onConfiguredChange?: (configured: boolean) => void
-) {
-  const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-  render(
-    <QBittorrentCard
-      handleUpdateSetting={handleUpdateSetting}
-      initialQbittorrent={initialQbittorrent}
-      onConfiguredChange={onConfiguredChange}
-    />
-  );
-  return { handleUpdateSetting };
+function renderCard(initial?: Record<string, unknown>) {
+  return renderWithSettingsDraft(<QBittorrentCard />, { initial });
 }
 
 const enabledSwitch = () => screen.getByRole("checkbox", { name: "settings.qbittorrentEnabled" });
@@ -31,9 +21,9 @@ describe("QBittorrentCard", () => {
   });
 
   it("prefills the connection details", () => {
-    renderCard(
-      { url: "http://qb:8080", username: "admin", password: "pw", enabled: true }
-    );
+    renderCard({
+      qbittorrent: { url: "http://qb:8080", username: "admin", password: "pw", enabled: true },
+    });
 
     expect(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder")).toHaveValue(
       "http://qb:8080"
@@ -44,66 +34,94 @@ describe("QBittorrentCard", () => {
     expect(enabledSwitch()).toBeChecked();
   });
 
-  it("reflects a disabled client from the initial data", () => {
-    renderCard({ url: "http://qb", username: "admin", password: "pw", enabled: false });
+  it("reflects a disabled client from the stored section", () => {
+    renderCard({ qbittorrent: { url: "http://qb", username: "admin", password: "pw", enabled: false } });
     expect(enabledSwitch()).not.toBeChecked();
   });
 
-  it("saves the connection on blur", () => {
-    const { handleUpdateSetting } = renderCard();
+  it("saves the connection on blur", async () => {
+    const { writer } = renderCard({
+      qbittorrent: { url: "http://old:8080", username: "admin", password: "", enabled: true },
+    });
 
     fireEvent.change(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder"), {
       target: { value: "http://qb:8080" },
     });
     fireEvent.blur(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder"));
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith("qbittorrent", {
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("qbittorrent", {
       url: "http://qb:8080",
-      username: "",
+      username: "admin",
       password: "",
       enabled: true,
-    });
+    }));
   });
 
-  it("saves the username and password on blur", () => {
-    const { handleUpdateSetting } = renderCard();
+  it("saves the username and password on blur", async () => {
+    const { writer } = renderCard({
+      qbittorrent: { url: "http://qb", username: "", password: "", enabled: true },
+    });
 
     const username = screen.getAllByRole("textbox")[1];
     fireEvent.change(username, { target: { value: "admin" } });
     fireEvent.blur(username);
-    expect(handleUpdateSetting).toHaveBeenLastCalledWith("qbittorrent", {
-      url: "",
+    await waitFor(() => expect(writer).toHaveBeenLastCalledWith("qbittorrent", {
+      url: "http://qb",
       username: "admin",
       password: "",
       enabled: true,
-    });
+    }));
 
     const password = document.querySelector('input[type="password"]') as HTMLInputElement;
     fireEvent.change(password, { target: { value: "pw" } });
     fireEvent.blur(password);
-    expect(handleUpdateSetting).toHaveBeenLastCalledWith("qbittorrent", {
-      url: "",
-      username: "admin",
-      password: "pw",
-      enabled: true,
-    });
-  });
-
-  it("saves the enabled toggle", () => {
-    const { handleUpdateSetting } = renderCard({
+    await waitFor(() => expect(writer).toHaveBeenLastCalledWith("qbittorrent", {
       url: "http://qb",
       username: "admin",
       password: "pw",
+      enabled: true,
+    }));
+  });
+
+  it("saves a field while default-enabled and connection fields are incomplete", async () => {
+    const { writer } = renderCard();
+
+    fireEvent.change(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder"), {
+      target: { value: "http://qb" },
+    });
+    fireEvent.blur(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder"));
+
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("qbittorrent", {
+      url: "http://qb",
+      username: "",
+      password: "",
+      enabled: true,
+    }));
+    expect(enabledSwitch()).toBeChecked();
+  });
+
+  it("does not enable a disabled client without its connection fields", async () => {
+    const { writer } = renderCard({ qbittorrent: { enabled: false } });
+
+    fireEvent.click(enabledSwitch());
+    await waitFor(() => expect(enabledSwitch()).not.toBeChecked());
+
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it("saves the enabled toggle", async () => {
+    const { writer } = renderCard({
+      qbittorrent: { url: "http://qb", username: "admin", password: "pw" },
     });
 
     fireEvent.click(enabledSwitch());
 
-    expect(handleUpdateSetting).toHaveBeenCalledWith("qbittorrent", {
+    await waitFor(() => expect(writer).toHaveBeenCalledWith("qbittorrent", {
       url: "http://qb",
       username: "admin",
       password: "pw",
       enabled: false,
-    });
+    }));
     expect(enabledSwitch()).not.toBeChecked();
   });
 
@@ -121,22 +139,8 @@ describe("QBittorrentCard", () => {
   });
 
   it("disables the test button when the client is switched off", () => {
-    renderCard({ url: "http://qb", username: "admin", password: "pw", enabled: false });
+    renderCard({ qbittorrent: { url: "http://qb", username: "admin", password: "pw", enabled: false } });
     expect(screen.getByRole("button", { name: "settings.testConnection" })).toBeDisabled();
-  });
-
-  it("reports its usability to the parent", () => {
-    const onConfiguredChange = vi.fn();
-    renderCard(null, onConfiguredChange);
-
-    expect(onConfiguredChange).toHaveBeenLastCalledWith(false);
-
-    fireEvent.change(screen.getByPlaceholderText("settings.qbittorrentUrlPlaceholder"), {
-      target: { value: "http://qb" },
-    });
-    fireEvent.change(screen.getAllByRole("textbox")[1], { target: { value: "admin" } });
-
-    expect(onConfiguredChange).toHaveBeenLastCalledWith(true);
   });
 
   it("hides the credentials from browser and password-manager autofill", () => {

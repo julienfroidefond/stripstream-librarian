@@ -7,6 +7,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Upstream `error` field, when the response body exposed one. */
+    readonly detail?: string,
   ) {
     super(message);
     this.name = "ApiError";

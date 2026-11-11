@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Icon, Tooltip, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import type { AlldebridSettings, LimitsSettings } from "@/lib/settingsSections";
+import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 
 /** AllDebrid tuning read from `app_settings.limits`, with the server defaults. */
@@ -30,66 +32,63 @@ function clamp(key: keyof AlldebridLimits, raw: string): number {
  * The API key is write-only: the API never returns it (it is redacted), so the
  * input always starts empty and an empty submit keeps the stored key untouched.
  * The two tuning values live under `limits`, not under `alldebrid`, and are
- * saved through `onSaveLimits`.
+ * written to the shared limits slice of the draft.
  */
-export function AlldebridCard({
-  handleUpdateSetting,
-  initialData,
-  limits = {},
-  onSaveLimits,
-  onConfiguredChange,
-}: {
-  handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
-  initialData: Record<string, unknown> | null;
-  limits?: Partial<AlldebridLimits>;
-  onSaveLimits?: (partial: Partial<AlldebridLimits>) => void;
-  onConfiguredChange?: (configured: boolean) => void;
-}) {
+export function AlldebridCard() {
   const { t } = useTranslation();
+  const draft = useSettingsDraft();
+  const section = useSettingsSection<AlldebridSettings>("alldebrid");
+  const value = section.value;
+  const limits = useSettingsSection<LimitsSettings>("limits");
   const [apiKey, setApiKey] = useState("");
-  const [configured, setConfigured] = useState(
-    typeof initialData?.api_key === "string" && initialData.api_key.trim().length > 0
-  );
-  const [enabled, setEnabled] = useState(initialData?.enabled === true);
   // Raw strings so a value can be typed freely; clamped only on blur.
   const [concurrencyDraft, setConcurrencyDraft] = useState(
-    String(
-      typeof limits.concurrent_alldebrid_downloads === "number"
-        ? limits.concurrent_alldebrid_downloads
-        : ALLDEBRID_LIMIT_RANGES.concurrent_alldebrid_downloads.default
-    )
+    String(limits.value.concurrent_alldebrid_downloads)
   );
   const [stallTimeoutDraft, setStallTimeoutDraft] = useState(
-    String(
-      typeof limits.alldebrid_stall_timeout_minutes === "number"
-        ? limits.alldebrid_stall_timeout_minutes
-        : ALLDEBRID_LIMIT_RANGES.alldebrid_stall_timeout_minutes.default
-    )
+    String(limits.value.alldebrid_stall_timeout_minutes)
   );
 
-  function commitLimit(key: keyof AlldebridLimits) {
-    const draft = key === "concurrent_alldebrid_downloads" ? concurrencyDraft : stallTimeoutDraft;
-    const value = clamp(key, draft);
-    if (key === "concurrent_alldebrid_downloads") setConcurrencyDraft(String(value));
-    else setStallTimeoutDraft(String(value));
-    onSaveLimits?.({ [key]: value });
+  const configured = typeof value.api_key === "string" && value.api_key.trim().length > 0;
+
+  async function save(overrides: Partial<AlldebridSettings> = {}) {
+    const trimmed = apiKey.trim();
+    const patch: Partial<AlldebridSettings> = { ...overrides };
+    if (trimmed) patch.api_key = trimmed;
+    section.patch(patch);
+    if (!trimmed) {
+      await section.save();
+      return;
+    }
+    const result = await section.save();
+    // Keep the typed key on screen when the write fails (validation or
+    // upstream); clear it only once the server acknowledged the value. The
+    // acknowledged section then carries the redacted placeholder.
+    if (result.status === "saved") setApiKey("");
   }
 
-  // Keep the parent (download-client picker) in sync: AllDebrid is only usable
-  // when it is both enabled and holding a key.
-  useEffect(() => {
-    onConfiguredChange?.(configured && enabled);
-  }, [configured, enabled, onConfiguredChange]);
-
-  function save(overrides: Record<string, unknown> = {}) {
-    const value: Record<string, unknown> = { enabled, ...overrides };
-    const trimmed = apiKey.trim();
-    if (trimmed) {
-      value.api_key = trimmed;
-      setConfigured(true);
-      setApiKey("");
+  async function commitLimit(key: keyof AlldebridLimits) {
+    const raw = key === "concurrent_alldebrid_downloads" ? concurrencyDraft : stallTimeoutDraft;
+    const next = clamp(key, raw);
+    if (key === "concurrent_alldebrid_downloads") {
+      setConcurrencyDraft(String(next));
+      limits.patch({ concurrent_alldebrid_downloads: next });
+    } else {
+      setStallTimeoutDraft(String(next));
+      limits.patch({ alldebrid_stall_timeout_minutes: next });
     }
-    handleUpdateSetting("alldebrid", value);
+    const result = await limits.save();
+    // Adopt a normalized or rolled-back value without touching the other row.
+    if (result.status !== "unchanged") {
+      const stored = draft.get<LimitsSettings>("limits");
+      if (stored) {
+        if (key === "concurrent_alldebrid_downloads") {
+          setConcurrencyDraft(String(stored.concurrent_alldebrid_downloads));
+        } else {
+          setStallTimeoutDraft(String(stored.alldebrid_stall_timeout_minutes));
+        }
+      }
+    }
   }
 
   return (
@@ -99,13 +98,9 @@ export function AlldebridCard({
       description={t("settings.alldebridDesc")}
       action={
         <Switch
-          checked={enabled}
+          checked={value.enabled}
           aria-label={t("settings.alldebridEnabled")}
-          onChange={(e) => {
-            const val = e.target.checked;
-            setEnabled(val);
-            save({ enabled: val });
-          }}
+          onChange={(e) => void save({ enabled: e.target.checked })}
         />
       }
     >
@@ -118,7 +113,7 @@ export function AlldebridCard({
           data-bwignore
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          onBlur={() => save()}
+          onBlur={() => void save()}
           placeholder={configured ? t("settings.alldebridApiKeyConfigured") : t("settings.alldebridApiKeyPlaceholder")}
         />
       </SettingsRow>
@@ -172,7 +167,7 @@ export function AlldebridCard({
       <div className="pt-1">
         <TestConnectionButton
           endpoint="/api/alldebrid/test"
-          disabled={!enabled || !configured}
+          disabled={!value.enabled || !configured}
         />
       </div>
 

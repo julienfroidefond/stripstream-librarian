@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { SettingsCard, SettingsRow, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import type { KomgaSettings } from "@/lib/settingsSections";
+import { useSettingsSection } from "../SettingsDraftProvider";
 
 async function loadKomgaReports(): Promise<KomgaSyncReportSummary[] | null> {
   try {
@@ -13,12 +15,12 @@ async function loadKomgaReports(): Promise<KomgaSyncReportSummary[] | null> {
   return null;
 }
 
-export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initialData: Record<string, unknown> | null }) {
+export function KomgaSyncCard({ users }: { users: UserDto[] }) {
   const { t, locale } = useTranslation();
-  const [komgaUrl, setKomgaUrl] = useState(initialData?.url ? String(initialData.url) : "");
-  const [komgaUsername, setKomgaUsername] = useState(initialData?.username ? String(initialData.username) : "");
+  const section = useSettingsSection<KomgaSettings>("komga");
+  const value = section.value;
   const [komgaPassword, setKomgaPassword] = useState("");
-  const [komgaUserId, setKomgaUserId] = useState(initialData?.user_id ? String(initialData.user_id) : (users[0]?.id ?? ""));
+  const [komgaUserId, setKomgaUserId] = useState(value.user_id || users[0]?.id || "");
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<KomgaSyncResponse | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -70,7 +72,12 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
       const response = await fetch("/api/komga/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: komgaUrl, username: komgaUsername, password: komgaPassword, user_id: komgaUserId }),
+        body: JSON.stringify({
+          url: value.url,
+          username: value.username,
+          password: komgaPassword,
+          user_id: komgaUserId,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -78,11 +85,10 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
       } else {
         setSyncResult(data);
         fetchReports();
-        fetch("/api/settings/komga", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: { url: komgaUrl, username: komgaUsername, user_id: komgaUserId } }),
-        }).catch(() => {});
+        // Persist the connection details only after a successful sync, like the
+        // previous direct POST; the password itself is never stored.
+        section.patch({ url: value.url, username: value.username, user_id: komgaUserId });
+        void section.save();
       }
     } catch {
       setSyncError("Failed to connect to sync endpoint");
@@ -94,10 +100,18 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
   return (
     <SettingsCard icon="refresh" title={t("settings.komgaSync")} description={t("settings.komgaDesc")}>
       <SettingsRow label={t("settings.komgaUrl")}>
-        <FormInput type="url" placeholder="https://komga.example.com" value={komgaUrl} onChange={(e) => setKomgaUrl(e.target.value)} />
+        <FormInput
+          type="url"
+          placeholder="https://komga.example.com"
+          value={value.url}
+          onChange={(e) => section.patch({ url: e.target.value })}
+        />
       </SettingsRow>
       <SettingsRow label={t("settings.username")}>
-        <FormInput value={komgaUsername} onChange={(e) => setKomgaUsername(e.target.value)} />
+        <FormInput
+          value={value.username}
+          onChange={(e) => section.patch({ username: e.target.value })}
+        />
       </SettingsRow>
       <SettingsRow label={t("settings.password")}>
         <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
@@ -111,7 +125,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
           </FormSelect>
         </SettingsRow>
       )}
-      <Button onClick={handleKomgaSync} disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword || !komgaUserId}>
+      <Button onClick={handleKomgaSync} disabled={isSyncing || !value.url || !value.username || !komgaPassword || !komgaUserId}>
         {isSyncing ? (
           <><Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />{t("settings.syncing")}</>
         ) : (
