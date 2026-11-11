@@ -210,6 +210,15 @@ The counter decrements by the number of **distinct volumes actually removed** fr
 release — never by the number of imported files or release matches. Do not re-implement the
 release JSON filtering in the API or the indexer.
 
+### Series Identity (`crates/core/src/series_identity.rs`)
+
+The SQL `norm_text(name)` key (lowercase + unaccent) is the only series-name key. `find` /
+`find_id`, `find_many`, `resolve_many` and `existing_names` own point and batch lookups; all but
+`existing_names` are library-scoped. Callers pass **raw names** and get series rows back — never
+hand-write `LOWER(name)` or a new `norm_text` join. The database normalizes the raw side, so the
+Rust and SQL keys cannot drift on accents. Set-based joins that already use `norm_text` stay as-is;
+any new lookup must go through this module.
+
 ### Metadata Providers
 
 `available_providers()`: `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`,

@@ -38,7 +38,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use stripstream_core::series_identity;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -225,19 +225,14 @@ pub async fn get_series_by_name(
     State(state): State<AppState>,
     Path((library_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<SeriesLookup>, ApiError> {
-    let row = sqlx::query(
-        "SELECT id, library_id, name FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)",
-    )
-    .bind(library_id)
-    .bind(&name)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", name)))?;
+    let identity = series_identity::find(&state.pool, library_id, &name)
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", name)))?;
 
     Ok(Json(SeriesLookup {
-        id: row.get("id"),
-        library_id: row.get("library_id"),
-        name: row.get("name"),
+        id: identity.id,
+        library_id: identity.library_id,
+        name: identity.name,
     }))
 }
 

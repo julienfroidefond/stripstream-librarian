@@ -13,6 +13,7 @@ use uuid::Uuid;
 use stripstream_core::availability::{self, PresentVolumes};
 use stripstream_core::http::build_http_client;
 use stripstream_core::paths::normalize_lexically;
+use stripstream_core::series_identity;
 
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
@@ -177,28 +178,36 @@ pub async fn list_torrent_downloads(
     let rows = sqlx::query(
         "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.client, td.external_id, \
          td.qb_hash, td.name, td.content_path, td.status, td.imported_files, td.error_message, td.progress, td.file_size, \
-         td.download_speed, td.eta, td.seeders, td.created_at, td.updated_at, s.id AS series_id \
+         td.download_speed, td.eta, td.seeders, td.created_at, td.updated_at \
          FROM torrent_downloads td \
-         LEFT JOIN series s ON s.library_id = td.library_id AND LOWER(s.name) = LOWER(td.series_name) \
          ORDER BY td.created_at DESC LIMIT 100",
     )
     .fetch_all(&state.pool)
     .await?;
+
+    let lookups: Vec<(Uuid, String)> = rows
+        .iter()
+        .map(|row| (row.get("library_id"), row.get("series_name")))
+        .collect();
+    let identities = series_identity::resolve_many(&state.pool, &lookups).await?;
 
     let dtos = rows
         .into_iter()
         .map(|row| {
             let id: Uuid = row.get("id");
             let library_id: Uuid = row.get("library_id");
-            let series_id: Option<Uuid> = row.get("series_id");
+            let series_name: String = row.get("series_name");
+            let series_id = identities
+                .get(&(library_id, series_name.clone()))
+                .map(|identity| identity.id.to_string());
             let expected_volumes: Vec<i32> = row.get("expected_volumes");
             let created_at: DateTime<Utc> = row.get("created_at");
             let updated_at: DateTime<Utc> = row.get("updated_at");
             TorrentDownloadDto {
                 id: id.to_string(),
                 library_id: library_id.to_string(),
-                series_id: series_id.map(|u| u.to_string()),
-                series_name: row.get("series_name"),
+                series_id,
+                series_name,
                 expected_volumes,
                 client: row.get("client"),
                 external_id: row.get("external_id"),
@@ -804,16 +813,19 @@ pub(super) async fn process_torrent_import(
             }
 
             // Refresh metadata for this series if it has an approved metadata link
-            let link_row = sqlx::query(
-                "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \
-                 JOIN series s ON s.id = eml.series_id \
-                 WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2) AND eml.status = 'approved' \
-                 ORDER BY eml.is_primary DESC, eml.approved_at ASC NULLS LAST, eml.id ASC LIMIT 1",
-            )
-            .bind(library_id)
-            .bind(&series_name)
-            .fetch_optional(&pool)
-            .await?;
+            let link_row = match series_identity::find_id(&pool, library_id, &series_name).await? {
+                Some(series_id) => {
+                    sqlx::query(
+                        "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \
+                         WHERE eml.series_id = $1 AND eml.status = 'approved' \
+                         ORDER BY eml.is_primary DESC, eml.approved_at ASC NULLS LAST, eml.id ASC LIMIT 1",
+                    )
+                    .bind(series_id)
+                    .fetch_optional(&pool)
+                    .await?
+                }
+                None => None,
+            };
 
             if let Some(link) = link_row {
                 let link_id: Uuid = link.get("id");
@@ -960,14 +972,9 @@ pub(super) async fn prune_imported_volumes(
         return;
     }
 
-    let series_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let series_id = series_identity::find_id(pool, library_id, series_name)
+        .await
+        .unwrap_or(None);
 
     if let Some(series_id) = series_id {
         let _ = availability::prune_series(

@@ -9,6 +9,10 @@ mod related;
 mod update;
 mod volumes;
 
+use axum::extract::{Path, State};
+use axum::Json;
+use sqlx::Row;
+
 use super::helpers::get_or_create_series;
 use super::update::UpdateSeriesResponse;
 use super::*;
@@ -798,4 +802,18 @@ async fn missing_count_normal_without_integral(pool: sqlx::PgPool) {
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
     assert_eq!(missing, 2, "5 total - 3 regular = 2 missing (no integral)");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_by_name_matches_accents(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "lookup_accent").await;
+    let sid = create_series(&pool, lib_id, "Astérix").await;
+
+    let state = crate::state::test_state(pool.clone());
+    let Json(lookup) = get_series_by_name(State(state), Path((lib_id, "Asterix".to_string())))
+        .await
+        .unwrap();
+
+    assert_eq!(lookup.id, sid);
+    assert_eq!(lookup.name, "Astérix");
 }

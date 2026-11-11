@@ -47,6 +47,13 @@ La liste du haut regroupe tous les téléchargements en cours ou terminés — P
 
 **Actions** : Retry (↺) pour relancer, Annuler pour interrompre, Supprimer pour effacer de l'historique.
 
+:::note[Rattachement à la série]
+Le nom de série d'un téléchargement est rapproché de la bibliothèque sans tenir compte de la casse
+ni des accents (`Astérix` et `Asterix` désignent la même série). Ce rattachement alimente le lien
+vers la série, le rafraîchissement des métadonnées après import et le nettoyage des volumes
+importés dans les disponibilités.
+:::
+
 ### Disponibles au téléchargement
 
 En bas de la page, la liste unifiée des releases Prowlarr, des fichiers Telegram **et** des offres des fournisseurs directs détectés mais pas encore téléchargés.

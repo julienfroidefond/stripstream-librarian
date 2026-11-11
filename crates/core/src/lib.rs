@@ -8,4 +8,5 @@ pub mod heartbeat;
 pub mod http;
 pub mod paths;
 pub mod schedule;
+pub mod series_identity;
 pub mod settings;
