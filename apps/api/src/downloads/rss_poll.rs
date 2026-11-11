@@ -5,9 +5,10 @@ use sqlx::{PgPool, Row};
 use tracing::info;
 use uuid::Uuid;
 
+use stripstream_core::availability;
 use stripstream_core::http::build_http_client_with_agent;
 
-use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr, store};
+use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr};
 use crate::jobs::helpers::{insert_entity_event as insert_event, set_total_files};
 use crate::jobs::lifecycle::{
     classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
@@ -302,8 +303,14 @@ pub(crate) async fn process_rss_poll(
         )
         .await;
 
-        let _ = store::upsert_releases(pool, *lib_id, *series_id, missing_count, &matched_releases)
-            .await;
+        let _ = availability::merge_releases(
+            pool,
+            *lib_id,
+            *series_id,
+            missing_count,
+            &matched_releases,
+        )
+        .await;
     }
 
     // Count from events

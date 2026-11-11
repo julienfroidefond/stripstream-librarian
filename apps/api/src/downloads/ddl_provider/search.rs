@@ -23,10 +23,11 @@ use sqlx::PgPool;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use stripstream_core::availability;
+
 use crate::downloads::blacklist;
 use crate::downloads::detection::AvailableReleaseDto;
 use crate::downloads::missing;
-use crate::downloads::store;
 use crate::jobs::helpers::{insert_event, is_job_cancelled, set_total_files, update_progress};
 use crate::jobs::lifecycle::{cancel_job, finish_job, JobStatus};
 
@@ -220,7 +221,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
         )
         .await;
 
-        store::upsert_releases(
+        availability::merge_releases(
             pool,
             target.library_id,
             target.series_id,
@@ -233,7 +234,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
     // Rows emptied by the refresh step (a series that used to have DDL offers and
     // now matches nothing) are dropped, like the detection cleanup does.
-    let _ = store::delete_empty(pool, None).await;
+    let _ = availability::delete_empty(pool, None).await;
 
     let status = ddl_search_status(attempted, errors);
     failed_providers.sort();

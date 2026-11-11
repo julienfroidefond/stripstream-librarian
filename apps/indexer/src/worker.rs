@@ -4,6 +4,7 @@ use std::time::Duration;
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
+use stripstream_core::availability::{self, PresentVolumes, PruneOutcome};
 use stripstream_core::coverage::SeriesCoverage;
 use stripstream_jobs::JobCategory;
 
@@ -377,27 +378,28 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
 }
 
 /// After a scan completes, prune `available_downloads` entries by removing volumes
-/// that are now present in the library. Deletes releases with no remaining matched
-/// volumes, and deletes rows with no remaining releases.
+/// that are now present in the library. The availability module owns the release
+/// JSON walk, the counter derivation and the empty-row deletion.
 async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
-    let rows = match sqlx::query(
-        "SELECT id, series_id, available_releases, missing_count \
-         FROM available_downloads WHERE library_id = $1",
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            error!("[CLEANUP] Failed to fetch available_downloads: {e}");
-            return;
-        }
-    };
+    let series_ids: Vec<Uuid> =
+        match sqlx::query_scalar("SELECT series_id FROM available_downloads WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_all(pool)
+            .await
+        {
+            Ok(ids) => ids,
+            Err(e) => {
+                error!("[CLEANUP] Failed to fetch available_downloads: {e}");
+                return;
+            }
+        };
+
+    if series_ids.is_empty() {
+        return;
+    }
 
     // Preload coverage facts for every series referenced by these rows in one
     // query. `SeriesCoverage` owns the volume-type and integral rules.
-    let series_ids: Vec<Uuid> = rows.iter().map(|r| r.get("series_id")).collect();
     let coverage_by_series: HashMap<Uuid, SeriesCoverage> = match sqlx::query(
         "SELECT series_id, volume_type, volume FROM books WHERE series_id = ANY($1)",
     )
@@ -423,94 +425,32 @@ async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
         }
     };
 
-    for row in rows {
-        let ad_id: Uuid = row.get("id");
-        let series_id: Uuid = row.get("series_id");
-        let releases_json: Option<serde_json::Value> = row.get("available_releases");
-        let old_missing: i32 = row.get("missing_count");
+    let present_by_series: HashMap<Uuid, PresentVolumes> = coverage_by_series
+        .iter()
+        .map(|(series_id, coverage)| (*series_id, PresentVolumes::from(coverage)))
+        .collect();
 
-        let Some(coverage) = coverage_by_series.get(&series_id) else {
-            continue;
-        };
-
-        // An unnumbered integral covers the whole series: every stored release
-        // is now obsolete.
-        if coverage.has_unnumbered_integral() {
-            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
-                .bind(ad_id)
-                .execute(pool)
-                .await;
-            info!(
-                "[CLEANUP] Deleted available_downloads {ad_id} (unnumbered integral covers the series)"
-            );
-            continue;
-        }
-
-        let present_volumes: std::collections::HashSet<i32> =
-            coverage.owned_volumes().into_iter().collect();
-        if present_volumes.is_empty() {
-            continue;
-        }
-
-        let Some(serde_json::Value::Array(releases)) = releases_json else {
-            continue;
-        };
-
-        let mut pruned_vols: std::collections::HashSet<i32> = std::collections::HashSet::new();
-        let updated: Vec<serde_json::Value> = releases
-            .into_iter()
-            .filter_map(|mut release| {
-                if let Some(matched) = release.get_mut("matched_missing_volumes") {
-                    if let Some(arr) = matched.as_array() {
-                        let filtered: Vec<serde_json::Value> = arr
-                            .iter()
-                            .filter(|v| {
-                                let vol = v.as_i64().unwrap_or(-1) as i32;
-                                let present = present_volumes.contains(&vol);
-                                if present {
-                                    pruned_vols.insert(vol);
-                                }
-                                !present
-                            })
-                            .cloned()
-                            .collect();
-                        if filtered.is_empty() {
-                            return None;
-                        }
-                        *matched = serde_json::Value::Array(filtered);
-                    }
+    match availability::prune_library(pool, library_id, &present_by_series).await {
+        Ok(outcomes) => {
+            for series in outcomes {
+                match series.outcome {
+                    PruneOutcome::Deleted => info!(
+                        "[CLEANUP] Deleted available_downloads for series {} (all volumes present)",
+                        series.series_id
+                    ),
+                    PruneOutcome::Updated {
+                        removed_volumes,
+                        missing_count,
+                    } => info!(
+                        "[CLEANUP] Pruned {} volume(s) from available_downloads for series {} (missing_count={missing_count})",
+                        removed_volumes.len(),
+                        series.series_id
+                    ),
+                    PruneOutcome::Missing | PruneOutcome::Unchanged => {}
                 }
-                Some(release)
-            })
-            .collect();
-
-        if pruned_vols.is_empty() {
-            continue;
+            }
         }
-
-        if updated.is_empty() {
-            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
-                .bind(ad_id)
-                .execute(pool)
-                .await;
-            info!("[CLEANUP] Deleted available_downloads {ad_id} (all volumes now present)");
-        } else {
-            let new_missing = (old_missing - pruned_vols.len() as i32).max(0);
-            let _ = sqlx::query(
-                "UPDATE available_downloads \
-                 SET available_releases = $1, missing_count = $2, updated_at = NOW() \
-                 WHERE id = $3",
-            )
-            .bind(serde_json::Value::Array(updated))
-            .bind(new_missing)
-            .bind(ad_id)
-            .execute(pool)
-            .await;
-            info!(
-                "[CLEANUP] Pruned {} volume(s) from available_downloads {ad_id}",
-                pruned_vols.len()
-            );
-        }
+        Err(e) => error!("[CLEANUP] Failed to prune available_downloads: {e}"),
     }
 }
 
@@ -633,6 +573,42 @@ mod tests {
         assert_eq!(
             releases[0]["matched_missing_volumes"],
             serde_json::json!([1, 2])
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_counts_a_shared_volume_once(pool: sqlx::PgPool) {
+        let library = seed_library(&pool, "lib").await;
+        let series = seed_series(&pool, library, "Series").await;
+        seed_book(&pool, library, series, "regular", Some(1)).await;
+        sqlx::query(
+            "INSERT INTO available_downloads \
+             (library_id, series_id, missing_count, available_releases) \
+             VALUES ($1, $2, 3, $3)",
+        )
+        .bind(library)
+        .bind(series)
+        .bind(serde_json::json!([
+            {"title": "R1", "matched_missing_volumes": [1, 2]},
+            {"title": "R2", "matched_missing_volumes": [1, 3]}
+        ]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        cleanup_available_downloads(&pool, library).await;
+
+        let (missing_count, releases) = stored_releases(&pool, series).await.unwrap();
+        assert_eq!(
+            missing_count, 2,
+            "the same volume offered by two releases decrements once"
+        );
+        assert_eq!(
+            releases,
+            serde_json::json!([
+                {"title": "R1", "matched_missing_volumes": [2]},
+                {"title": "R2", "matched_missing_volumes": [3]}
+            ])
         );
     }
 

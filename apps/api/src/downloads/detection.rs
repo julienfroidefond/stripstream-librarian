@@ -9,9 +9,10 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use stripstream_core::availability;
 use stripstream_core::http::build_http_client_with_agent;
 
-use super::{blacklist, missing, prowlarr, store};
+use super::{blacklist, missing, prowlarr};
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
@@ -887,10 +888,7 @@ pub(crate) async fn process_download_detection(
             .await;
             // Series is complete, remove from available_downloads
             if let Some(&sid) = series_id_map.get(series_name) {
-                let _ = sqlx::query("DELETE FROM available_downloads WHERE series_id = $1")
-                    .bind(sid)
-                    .execute(pool)
-                    .await;
+                let _ = availability::delete_for_series(pool, sid).await;
             }
             continue;
         }
@@ -915,7 +913,7 @@ pub(crate) async fn process_download_detection(
                 if matched_releases.is_empty() {
                     insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": _raw_count, "all_blacklisted": true}))).await;
                     if let Some(&sid) = series_id_map.get(series_name) {
-                        let _ = store::update_missing_count(pool, sid, missing_count).await;
+                        let _ = availability::set_missing_count(pool, sid, missing_count).await;
                     }
                     continue;
                 }
@@ -928,7 +926,7 @@ pub(crate) async fn process_download_detection(
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
                 if let Some(&sid) = series_id_map.get(series_name) {
-                    let _ = store::upsert_releases(
+                    let _ = availability::merge_releases(
                         pool,
                         library_id,
                         sid,
@@ -950,7 +948,7 @@ pub(crate) async fn process_download_detection(
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
-                    let _ = store::update_missing_count(pool, sid, missing_count).await;
+                    let _ = availability::set_missing_count(pool, sid, missing_count).await;
                 }
             }
             Err(e) => {
@@ -969,33 +967,11 @@ pub(crate) async fn process_download_detection(
         }
     }
 
-    // Clean up volume 0 from stored available_downloads releases
-    // (legacy data from before the volume 0 filter was added)
-    let _ = sqlx::query(
-        r#"
-        UPDATE available_downloads SET available_releases = (
-            SELECT COALESCE(jsonb_agg(
-                jsonb_set(release, '{matched_missing_volumes}',
-                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                     WHERE v::int > 0)
-                )
-            ) FILTER (WHERE jsonb_array_length(
-                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                 WHERE v::int > 0)
-            ) > 0), '[]'::jsonb)
-            FROM jsonb_array_elements(available_releases) AS release
-        )
-        WHERE library_id = $1
-        "#,
-    )
-    .bind(library_id)
-    .execute(pool)
-    .await;
-
-    // Remove entries that now have empty releases
-    let _ = store::delete_empty(pool, Some(library_id)).await;
+    // Drop legacy non-tome volumes from stored releases and delete rows left
+    // without any release. Non-tomes never counted as missing, so the counter
+    // is left untouched.
+    let _ = availability::normalize_library(pool, library_id).await;
+    let _ = availability::delete_empty(pool, Some(library_id)).await;
 
     // Build final stats from events
     let counts = sqlx::query(

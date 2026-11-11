@@ -172,8 +172,10 @@ state.library_root.resolve(&local_path)?.to_db()
   `books.volume_type`. Un simple rescan suffit donc à corriger des livres mal classés
   HS/oneshot/integral.
 - **Nettoyage des disponibilités** : `cleanup_available_downloads` construit un
-  `stripstream_core::coverage::SeriesCoverage` par série et suit la règle canonique. Une intégrale
-  non numérotée supprime la ligne `available_downloads` ; une intégrale numérotée ne prune que son
-  propre tome. HS, one-shots et volume `0` ne comptent jamais.
+  `stripstream_core::coverage::SeriesCoverage` par série puis délègue le prune à
+  `stripstream_core::availability::prune_library`. Une intégrale non numérotée supprime la ligne
+  `available_downloads` ; une intégrale numérotée ne prune que son propre tome. HS, one-shots et
+  volume `0` ne comptent jamais. Le `missing_count` ne décrémente que des volumes distincts
+  réellement retirés d'au moins une release (un tome proposé par deux releases compte une fois).
 - **Aucun outil externe** : la conversion CBR→CBZ et l'extraction passent par le crate `unrar` et
   `pdfium-render`, jamais par un binaire système.

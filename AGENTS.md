@@ -199,6 +199,17 @@ the whole series; `hs`, `oneshot` and volume `0` never count. Database adapters 
 type in `cleanup_available_downloads`. Never re-encode this rule in a handler or a one-off SQL
 query.
 
+### Download Availability (`crates/core/src/availability.rs`)
+
+`available_downloads` is written from two sides: detection/RSS/DDL **merge** releases in, and
+scan cleanup, torrent import and detection normalization **prune** volumes out. Both directions
+and the `missing_count` derivation live in the core module. `PresentVolumes` wraps a
+`SeriesCoverage` (or imported volumes); `prune_releases` / `normalize_releases` own the release
+JSON walk; `merge_releases`, `prune_series`, `prune_library` and `normalize_library` own the SQL.
+The counter decrements by the number of **distinct volumes actually removed** from at least one
+release — never by the number of imported files or release matches. Do not re-implement the
+release JSON filtering in the API or the indexer.
+
 ### Metadata Providers
 
 `available_providers()`: `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`,

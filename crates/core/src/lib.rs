@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod availability;
 pub mod config;
 pub mod coverage;
 pub mod disk;

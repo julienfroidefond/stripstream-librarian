@@ -59,6 +59,8 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 - Filtre la blacklist `release_blacklist` avant matching
 - Les rapprochements ambigus de titre ou de tome restent affichés, mais nécessitent une confirmation avant l'envoi au client de téléchargement
 - Fusion dans `available_downloads` : `detected_at` préservé pour les releases déjà connues
+- Nettoyage : les volumes possédés sont retirés des releases ; le `missing_count` ne décrémente que des volumes distincts réellement retirés (un tome proposé par plusieurs releases compte une fois), et les lignes sans release restante sont supprimées
+- Les anciens volumes `0` stockés dans les releases sont normalisés puis ignorés
 - Résultats par série : `downloads_found`, `downloads_not_found`, `no_missing_volumes`, `no_metadata`, `prowlarr_no_results`, `error`
 - `API : POST /download-detection/start { "library_id": "uuid" }`
 

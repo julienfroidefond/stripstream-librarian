@@ -994,3 +994,73 @@ async fn do_import_replaces_volume_and_removes_superseded_file(pool: sqlx::PgPoo
         remaining
     );
 }
+
+// ─── availability prune after import (sqlx::test) ─────────────────────
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn imported_volumes_prune_availability_once(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Lib', '/libraries/lib')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Series')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO available_downloads \
+         (library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, 2, $3, NOW())",
+    )
+    .bind(library_id)
+    .bind(series_id)
+    .bind(serde_json::json!([
+        {"title": "R1", "matched_missing_volumes": [1, 2]},
+        {"title": "R2", "matched_missing_volumes": [1]}
+    ]))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let imported = vec![
+        ImportedFile {
+            volume: 1,
+            source: "a.cbz".to_string(),
+            destination: "a.cbz".to_string(),
+            already_existed: false,
+        },
+        ImportedFile {
+            volume: 1,
+            source: "b.cbz".to_string(),
+            destination: "b.cbz".to_string(),
+            already_existed: true,
+        },
+    ];
+    crate::downloads::torrent_import::prune_imported_volumes(
+        &pool, library_id, "Series", &imported,
+    )
+    .await;
+
+    let (missing_count, releases): (i32, serde_json::Value) = sqlx::query_as(
+        "SELECT missing_count, available_releases FROM available_downloads WHERE series_id = $1",
+    )
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        missing_count, 1,
+        "a duplicated imported volume must decrement the counter once"
+    );
+    assert_eq!(
+        releases,
+        serde_json::json!([{"title": "R1", "matched_missing_volumes": [2]}])
+    );
+}
