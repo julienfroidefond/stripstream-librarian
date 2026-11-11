@@ -4,71 +4,38 @@ import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
-  AvailableReleaseDto,
   TorrentDownloadDto,
   LatestFoundPerLibraryDto,
-  TelegramAvailableBookDto,
   TelegramAvailableGroupDto,
   TelegramDownloadItemDto,
   DdlProviderDownloadDto,
   DownloadClient,
 } from "@/lib/api";
+import {
+  availableLibraries,
+  availableSourceVolumes,
+  buildAvailableGroups,
+  downloadStatusClass,
+  downloadStatusLabel,
+  filterAvailableGroups,
+  matchesDownloadFilter,
+  mergeDownloads,
+  sortAvailableGroups,
+  summarizeAvailableSources,
+  useDownloadsStream,
+  visibleAvailableSources,
+  type AvailableGroup,
+  type AvailableSortKey,
+  type AvailableSource,
+  type AvailableSourceFilter,
+  type DownloadFilter,
+} from "@/lib/downloads";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
 import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
 import { isTelegramDownloadRetryable, showsDownloadProgress } from "@/lib/download";
-import { useEventSource } from "@/lib/useEventSource";
-import type { TranslationKey } from "@/lib/i18n/fr";
-
-type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
-
-
-const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
-
-/** Group releases by identical title, preserving order of first occurrence. */
-function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { title: string; items: T[]; originalIndices: number[] }[] {
-  const groups: Map<string, { items: T[]; originalIndices: number[] }> = new Map();
-  releases.forEach((r, idx) => {
-    const existing = groups.get(r.title);
-    if (existing) {
-      existing.items.push(r);
-      existing.originalIndices.push(idx);
-    } else {
-      groups.set(r.title, { items: [r], originalIndices: [idx] });
-    }
-  });
-  return Array.from(groups.entries()).map(([title, { items, originalIndices }]) => ({ title, items, originalIndices }));
-}
-
-function statusLabel(status: string, t: TFunction): string {
-  const map: Record<string, TranslationKey> = {
-    queued:            "downloads.status.queued",
-    downloading:       "downloads.status.downloading",
-    completed:         "downloads.status.completed",
-    importing:         "downloads.status.importing",
-    imported:          "downloads.status.imported",
-    partial:           "downloads.status.partial",
-    no_files_imported: "downloads.status.noFilesImported",
-    error:             "downloads.status.error",
-  };
-  return t(map[status] ?? status);
-}
-
-function statusClass(status: string): string {
-  switch (status) {
-    case "queued":      return "bg-muted/50 text-muted-foreground";
-    case "downloading": return "bg-primary/10 text-primary";
-    case "completed":   return "bg-warning/10 text-warning";
-    case "importing":   return "bg-primary/10 text-primary";
-    case "imported":    return "bg-success/10 text-success";
-    case "partial":     return "bg-warning/10 text-warning";
-    case "no_files_imported": return "bg-destructive/10 text-destructive";
-    case "error":       return "bg-destructive/10 text-destructive";
-    default:            return "bg-muted/30 text-muted-foreground";
-  }
-}
 
 interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
@@ -83,210 +50,26 @@ interface DownloadsPageProps {
 }
 
 const PAGE_SIZE = 10;
-type StatusFilter = "all" | "active" | "imported" | "error";
-
-type DownloadItem =
-  | { kind: "torrent"; data: TorrentDownloadDto }
-  | { kind: "telegram"; data: TelegramDownloadItemDto }
-  | { kind: "ddl"; data: DdlProviderDownloadDto };
-
-type DownloadsStreamPayload = {
-  torrent: TorrentDownloadDto[];
-  telegram: TelegramDownloadItemDto[];
-  ddl: DdlProviderDownloadDto[];
-};
-
-/** Statuses shared by the Telegram monitor and the DDL providers. */
-function secondaryMatchesFilter(status: string, filter: string): boolean {
-  if (filter === "active") return status === "queued" || status === "downloading";
-  if (filter === "imported") return status === "imported";
-  if (filter === "error") return status === "failed";
-  return false;
-}
-
-type UnifiedAvailableSource =
-  | {
-      kind: "prowlarr";
-      entryId: string;
-      releaseIndex: number;
-      release: AvailableReleaseDto;
-      detectedAt: string;
-    }
-  | {
-      kind: "ddl";
-      entryId: string;
-      releaseIndex: number;
-      release: AvailableReleaseDto;
-      detectedAt: string;
-    }
-  | {
-      kind: "telegram";
-      book: TelegramAvailableBookDto;
-    };
-
-type UnifiedAvailableGroup = {
-  key: string;
-  series_id: string | null;
-  series_name: string;
-  library_id: string;
-  library_name: string;
-  missing_count: number;
-  owned_volumes: number[];
-  updated_at: string;
-  sources: UnifiedAvailableSource[];
-};
-
-const ACTIVE_STATUSES = new Set(["queued", "downloading", "completed", "importing"]);
-
-function mergeDownloads(
-  torrents: TorrentDownloadDto[],
-  tg: TelegramDownloadItemDto[],
-  ddl: DdlProviderDownloadDto[],
-): DownloadItem[] {
-  const items: DownloadItem[] = [
-    ...torrents.map(d => ({ kind: "torrent" as const, data: d })),
-    ...tg.map(d => ({ kind: "telegram" as const, data: d })),
-    ...ddl.map(d => ({ kind: "ddl" as const, data: d })),
-  ];
-  return items.sort((a, b) => {
-    const aActive = ACTIVE_STATUSES.has(a.data.status);
-    const bActive = ACTIVE_STATUSES.has(b.data.status);
-    if (aActive !== bActive) return aActive ? -1 : 1;
-    if (aActive) {
-      // Active: oldest created_at first — stable, no swapping during progress updates
-      return new Date(a.data.created_at).getTime() - new Date(b.data.created_at).getTime();
-    } else {
-      // Inactive: most recently updated first — stable since updated_at doesn't change after import
-      return new Date(b.data.updated_at).getTime() - new Date(a.data.updated_at).getTime();
-    }
-  });
-}
-
-function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
-  if (filter === "all") return true;
-  if (item.kind === "torrent") {
-    if (filter === "active") return STATUS_ACTIVE.has(item.data.status);
-    return item.data.status === filter;
-  }
-  return secondaryMatchesFilter(item.data.status, filter);
-}
-
-function newestDate(a: string, b: string): string {
-  return a.localeCompare(b) >= 0 ? a : b;
-}
-
-function unifiedGroupKey(libraryId: string, seriesId: string | null, seriesName: string): string {
-  return `${libraryId}|${seriesId ?? seriesName.toLocaleLowerCase()}`;
-}
-
-function getSourceVolumes(source: UnifiedAvailableSource): number[] {
-  if (source.kind === "telegram") {
-    return source.book.volume_number == null ? [] : [source.book.volume_number];
-  }
-  return source.release.matched_missing_volumes;
-}
-
-function buildUnifiedAvailableGroups(
-  latestFound: LatestFoundPerLibraryDto[],
-  telegramAvailable: TelegramAvailableGroupDto[],
-): UnifiedAvailableGroup[] {
-  const groups = new Map<string, UnifiedAvailableGroup>();
-
-  const ensureGroup = (
-    libraryId: string,
-    libraryName: string,
-    seriesId: string | null,
-    seriesName: string,
-    missingCount: number,
-    ownedVolumes: number[],
-    updatedAt: string,
-  ) => {
-    const key = unifiedGroupKey(libraryId, seriesId, seriesName);
-    const existing = groups.get(key);
-    if (existing) {
-      existing.missing_count = Math.max(existing.missing_count, missingCount);
-      existing.updated_at = newestDate(existing.updated_at, updatedAt);
-      existing.owned_volumes = Array.from(new Set([...existing.owned_volumes, ...ownedVolumes]));
-      return existing;
-    }
-
-    const group: UnifiedAvailableGroup = {
-      key,
-      series_id: seriesId,
-      series_name: seriesName,
-      library_id: libraryId,
-      library_name: libraryName,
-      missing_count: missingCount,
-      owned_volumes: ownedVolumes,
-      updated_at: updatedAt,
-      sources: [],
-    };
-    groups.set(key, group);
-    return group;
-  };
-
-  latestFound.forEach(lib => {
-    lib.results.forEach(result => {
-      const releases = result.available_releases ?? [];
-      if (releases.length === 0) return;
-      const group = ensureGroup(
-        lib.library_id,
-        lib.library_name,
-        result.series_id,
-        result.series_name,
-        result.missing_count,
-        [],
-        result.updated_at,
-      );
-      releases.forEach((release, releaseIndex) => {
-        const detectedAt = release.detected_at ?? result.updated_at;
-        const kind = release.provider ? "ddl" : "prowlarr";
-        group.sources.push({ kind, entryId: result.id, releaseIndex, release, detectedAt });
-        group.updated_at = newestDate(group.updated_at, detectedAt);
-      });
-    });
-  });
-
-  telegramAvailable.forEach(tgGroup => {
-    const owned = new Set(tgGroup.owned_volumes);
-    const books = tgGroup.books.filter(book => !(book.volume_number != null && owned.has(book.volume_number)));
-    if (books.length === 0) return;
-    if (tgGroup.series_missing_count === 0 && tgGroup.owned_volumes.length > 0) return;
-
-    const newestBookDate = books.reduce((latest, book) => newestDate(latest, book.created_at), books[0]?.created_at ?? "");
-    const group = ensureGroup(
-      tgGroup.library_id,
-      tgGroup.library_name,
-      tgGroup.series_id,
-      tgGroup.series_name,
-      tgGroup.series_missing_count,
-      tgGroup.owned_volumes,
-      newestBookDate,
-    );
-
-    const existingTelegramIds = new Set(
-      group.sources
-        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "telegram" }> => source.kind === "telegram")
-        .map(source => source.book.id),
-    );
-    books.forEach(book => {
-      if (!existingTelegramIds.has(book.id)) {
-        group.sources.push({ kind: "telegram", book });
-      }
-    });
-  });
-
-  return Array.from(groups.values()).filter(group => group.sources.length > 0);
-}
 
 export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialDownloadClient = null, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
-  const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
-  const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
-  const [ddlProviderDownloads, setDdlProviderDownloads] = useState<DdlProviderDownloadDto[]>(initialDdlProviderDownloads);
+  // Progress fields are pushed by the shared SSE stream. Keep the full refresh
+  // for manual actions and the slower-changing availability sections only.
+  const {
+    torrent: downloads,
+    telegram: telegramDownloads,
+    ddl: ddlProviderDownloads,
+    setTorrent: setDownloads,
+    setTelegram: setTelegramDownloads,
+    setDdl: setDdlProviderDownloads,
+  } = useDownloadsStream({
+    torrent: initialDownloads,
+    telegram: initialTelegramDownloads,
+    ddl: initialDdlProviderDownloads,
+  });
   const [latestFound, setLatestFound] = useState<LatestFoundPerLibraryDto[]>(initialLatestFound);
   const [telegramAvailable, setTelegramAvailable] = useState<TelegramAvailableGroupDto[]>(initialTelegramAvailable);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<DownloadFilter>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -308,34 +91,23 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     } finally {
       if (showSpinner) setIsRefreshing(false);
     }
-  }, []);
+  }, [setDownloads, setTelegramDownloads, setDdlProviderDownloads]);
 
   const merged = mergeDownloads(downloads, telegramDownloads, ddlProviderDownloads);
 
-  // Progress fields are pushed by the shared SSE stream. Keep the full refresh
-  // for manual actions and the slower-changing availability sections only.
-  useEventSource<DownloadsStreamPayload>({
-    url: "/api/downloads/stream",
-    onMessage: ({ torrent, telegram, ddl }) => {
-      setDownloads(torrent);
-      setTelegramDownloads(telegram);
-      setDdlProviderDownloads(ddl);
-    },
-  });
-
-  const statusFilters: Array<{ id: StatusFilter; label: string }> = [
+  const statusFilters: Array<{ id: DownloadFilter; label: string }> = [
     { id: "all", label: t("common.all") },
     { id: "active", label: t("downloads.filterActive") },
     { id: "imported", label: t("downloads.status.imported") },
     { id: "error", label: t("downloads.status.error") },
   ];
 
-  const visible = merged.filter(item => itemMatchesFilter(item, statusFilter));
+  const visible = merged.filter(item => matchesDownloadFilter(item, statusFilter));
   const totalPages = Math.ceil(visible.length / PAGE_SIZE);
   const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Reset to page 1 when filters change
-  const handleStatusFilterChange = (id: StatusFilter) => { setStatusFilter(id); setPage(1); };
+  const handleStatusFilterChange = (id: DownloadFilter) => { setStatusFilter(id); setPage(1); };
 
   return (
     <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} initialClient={initialDownloadClient} onDownloadStarted={() => refresh(false)}>
@@ -369,7 +141,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
             {f.label}
             {f.id !== "all" && (
               <span className="ml-1 sm:ml-1.5 text-3xs sm:text-xs opacity-60">
-                {merged.filter(item => itemMatchesFilter(item, f.id)).length}
+                {merged.filter(item => matchesDownloadFilter(item, f.id)).length}
               </span>
             )}
           </button>
@@ -387,10 +159,10 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
         <>
           <div className="space-y-1.5">
             {paged.map(item => item.kind === "torrent"
-              ? <DownloadRow key={`t-${item.data.id}`} dl={item.data} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
+              ? <DownloadRow key={item.key} dl={item.data} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
               : item.kind === "telegram"
-              ? <TelegramDownloadRow key={`tg-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
-              : <DdlProviderDownloadRow key={`p-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
+              ? <TelegramDownloadRow key={item.key} item={item.data} onRefresh={() => refresh(false)} />
+              : <DdlProviderDownloadRow key={item.key} item={item.data} onRefresh={() => refresh(false)} />
             )}
           </div>
           {totalPages > 1 && (
@@ -495,8 +267,8 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
           {/* Desktop: single row */}
           <div className="hidden sm:flex items-center gap-2">
             <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
-            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
-              {statusLabel(dl.status, t)}
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${downloadStatusClass(dl.status)}`}>
+              {downloadStatusLabel(dl.status, t)}
             </span>
             <DownloadClientBadge client={dl.client} />
             {dl.expected_volumes.length > 0 && (
@@ -517,8 +289,8 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
           <div className="sm:hidden">
             <div className="flex items-center gap-1.5">
               <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
-              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
-                {statusLabel(dl.status, t)}
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${downloadStatusClass(dl.status)}`}>
+                {downloadStatusLabel(dl.status, t)}
               </span>
               <DownloadClientBadge client={dl.client} />
             </div>
@@ -703,8 +475,8 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
               ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
               : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
             }
-            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(tgStatus)}`}>
-              {statusLabel(tgStatus, t)}
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${downloadStatusClass(tgStatus)}`}>
+              {downloadStatusLabel(tgStatus, t)}
             </span>
             {volLabel && <span className="text-2xs text-muted-foreground">{volLabel}</span>}
             <span className="text-2xs text-muted-foreground truncate">@{item.channel_username}</span>
@@ -716,8 +488,8 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
                 ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
                 : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
               }
-              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(tgStatus)}`}>
-                {statusLabel(tgStatus, t)}
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${downloadStatusClass(tgStatus)}`}>
+                {downloadStatusLabel(tgStatus, t)}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
@@ -894,8 +666,8 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
               ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
               : <span className="text-sm font-medium text-foreground truncate">{title}</span>
             }
-            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(ddlStatus)}`}>
-              {statusLabel(ddlStatus, t)}
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${downloadStatusClass(ddlStatus)}`}>
+              {downloadStatusLabel(ddlStatus, t)}
             </span>
             {volLabel && <span className="text-2xs text-muted-foreground">{volLabel}</span>}
             <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
@@ -911,8 +683,8 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
                 ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
                 : <span className="text-sm font-medium text-foreground truncate">{title}</span>
               }
-              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(ddlStatus)}`}>
-                {statusLabel(ddlStatus, t)}
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${downloadStatusClass(ddlStatus)}`}>
+                {downloadStatusLabel(ddlStatus, t)}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
@@ -1014,14 +786,6 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
   );
 }
 
-type AvailableSortKey = "seeders" | "missing" | "name" | "recent";
-type AvailableSourceFilter = "all" | "prowlarr" | "ddl" | "telegram";
-
-function groupMatchesSourceFilter(group: UnifiedAvailableGroup, sourceFilter: AvailableSourceFilter): boolean {
-  if (sourceFilter === "all") return true;
-  return group.sources.some(source => source.kind === sourceFilter);
-}
-
 export function AvailableDownloadsSection({
   latestFound,
   telegramAvailable,
@@ -1044,34 +808,12 @@ export function AvailableDownloadsSection({
   const [deletingTelegramIds, setDeletingTelegramIds] = useState<Set<string>>(new Set());
   const [downloadingDdlKeys, setDownloadingDdlKeys] = useState<Set<string>>(new Set());
 
-  const allResults = buildUnifiedAvailableGroups(latestFound, telegramAvailable);
-
-  const bestSeeders = (r: UnifiedAvailableGroup) =>
-    r.sources.reduce((max, source) => {
-      if (source.kind !== "prowlarr") return max;
-      return Math.max(max, source.release.seeders ?? 0);
-    }, 0);
-
-  const newestDetectedAt = (r: UnifiedAvailableGroup) => r.updated_at;
-
-  const filtered = allResults.filter(r =>
-    (filterLib === "all" || r.library_id === filterLib) &&
-    groupMatchesSourceFilter(r, sourceFilter)
+  const allResults = buildAvailableGroups(latestFound, telegramAvailable);
+  const sorted = sortAvailableGroups(
+    filterAvailableGroups(allResults, { libraryId: filterLib, source: sourceFilter }),
+    sort,
   );
-
-  const sorted = [...filtered].sort((a, b) => {
-    switch (sort) {
-      case "seeders": return bestSeeders(b) - bestSeeders(a);
-      case "missing": return b.missing_count - a.missing_count;
-      case "name": return a.series_name.localeCompare(b.series_name);
-      case "recent": return newestDetectedAt(b).localeCompare(newestDetectedAt(a));
-      default: return 0;
-    }
-  });
-
-  const libraries = Array.from(
-    new Map(allResults.map(r => [r.library_id, r.library_name])).entries()
-  ).map(([id, name]) => ({ id, name }));
+  const libraries = availableLibraries(allResults);
 
   async function handleDeleteRelease(seriesId: string, releaseIdx: number, blacklist = false) {
     const key = `${seriesId}-${releaseIdx}`;
@@ -1088,10 +830,10 @@ export function AvailableDownloadsSection({
     }
   }
 
-  async function handleDeleteProwlarrEntries(group: UnifiedAvailableGroup) {
+  async function handleDeleteProwlarrEntries(group: AvailableGroup) {
     const ids = Array.from(new Set(
       group.sources
-        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "prowlarr" } | { kind: "ddl" }> =>
+        .filter((source): source is Extract<AvailableSource, { kind: "prowlarr" } | { kind: "ddl" }> =>
           source.kind === "prowlarr" || source.kind === "ddl"
         )
         .map(source => source.entryId),
@@ -1105,7 +847,7 @@ export function AvailableDownloadsSection({
     }
   }
 
-  async function handleDdlDownload(group: UnifiedAvailableGroup, source: Extract<UnifiedAvailableSource, { kind: "ddl" }>) {
+  async function handleDdlDownload(group: AvailableGroup, source: Extract<AvailableSource, { kind: "ddl" }>) {
     const provider = source.release.provider;
     const externalId = source.release.external_id;
     if (!provider || !externalId) return;
@@ -1285,16 +1027,14 @@ export function AvailableDownloadsSection({
       <div className="border border-border rounded-xl overflow-hidden">
         {sorted.map((r) => {
           const isExpanded = expandedId === r.key;
-          const visibleSources = sourceFilter === "all"
-            ? r.sources
-            : r.sources.filter(source => source.kind === sourceFilter);
-          const topSeeders = bestSeeders({ ...r, sources: visibleSources });
-          const prowlarrCount = visibleSources.filter(source => source.kind === "prowlarr").length;
-          const ddlCount = visibleSources.filter(source => source.kind === "ddl").length;
-          const telegramCount = visibleSources.filter(source => source.kind === "telegram").length;
-          const failedReleaseCount = visibleSources.filter(source =>
-            source.kind === "telegram" ? source.book.status === "failed" : source.release.has_failed
-          ).length;
+          const visibleSources = visibleAvailableSources(r, sourceFilter);
+          const {
+            prowlarr: prowlarrCount,
+            ddl: ddlCount,
+            telegram: telegramCount,
+            failed: failedReleaseCount,
+            seeders: topSeeders,
+          } = summarizeAvailableSources(visibleSources);
 
           return (
             <div key={r.key} className={`${isExpanded ? "bg-muted/20" : ""}`}>
@@ -1339,7 +1079,7 @@ export function AvailableDownloadsSection({
                     </span>
                   )}
                   {(() => {
-                    const newest = newestDetectedAt(r);
+                    const newest = r.updated_at;
                     return newest ? (
                       <span className="text-3xs text-muted-foreground shrink-0 tabular-nums">{formatDateTime(newest, "fr")}</span>
                     ) : null;
@@ -1366,8 +1106,8 @@ export function AvailableDownloadsSection({
               {isExpanded && visibleSources.length > 0 && (
                 <div className="border-b border-border/40">
                   {[...visibleSources].sort((a, b) => {
-                    const aVol = Math.min(...getSourceVolumes(a), 9999);
-                    const bVol = Math.min(...getSourceVolumes(b), 9999);
+                    const aVol = Math.min(...availableSourceVolumes(a), 9999);
+                    const bVol = Math.min(...availableSourceVolumes(b), 9999);
                     if (aVol !== bVol) return aVol - bVol;
                     return a.kind.localeCompare(b.kind);
                   }).map((source) => source.kind !== "telegram" ? (
