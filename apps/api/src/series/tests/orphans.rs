@@ -223,7 +223,7 @@ async fn flags_series_with_an_active_torrent_download(pool: PgPool) {
     let other_library = create_library(&pool, "orphans-active-other").await;
 
     // Accented series name vs unaccented torrent name: matching is
-    // LOWER(unaccent(...)) on both sides.
+    // `norm_text(...)` on both sides.
     let importing = create_series(&pool, library, "Astérix").await;
     create_torrent_download(&pool, library, "asterix", "importing").await;
 

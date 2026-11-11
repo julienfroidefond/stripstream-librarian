@@ -109,7 +109,7 @@ pub async fn list_orphan_series(
             EXISTS (
                 SELECT 1 FROM torrent_downloads td
                 WHERE td.library_id = s.library_id
-                  AND LOWER(unaccent(td.series_name)) = LOWER(unaccent(s.name))
+                  AND norm_text(td.series_name) = norm_text(s.name)
                   AND td.status IN ('downloading', 'completed', 'importing')
             ) AS has_active_download
         FROM series s
@@ -124,7 +124,7 @@ pub async fn list_orphan_series(
             LIMIT 1
         ) ml ON TRUE
         WHERE {ORPHAN_FILTER}
-        ORDER BY s.created_at ASC, LOWER(unaccent(s.name)) ASC, s.id ASC
+        ORDER BY s.created_at ASC, norm_text(s.name) ASC, s.id ASC
         LIMIT $1 OFFSET $2
         "#
     );

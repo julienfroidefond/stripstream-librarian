@@ -1064,3 +1064,99 @@ async fn imported_volumes_prune_availability_once(pool: sqlx::PgPool) {
         serde_json::json!([{"title": "R1", "matched_missing_volumes": [2]}])
     );
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn imported_volumes_match_accented_series_name(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Lib', '/libraries/lib')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Astérix')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO available_downloads \
+         (library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, 2, $3, NOW())",
+    )
+    .bind(library_id)
+    .bind(series_id)
+    .bind(serde_json::json!([
+        {"title": "R1", "matched_missing_volumes": [1]},
+        {"title": "R2", "matched_missing_volumes": [2]}
+    ]))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let imported = vec![ImportedFile {
+        volume: 1,
+        source: "a.cbz".to_string(),
+        destination: "a.cbz".to_string(),
+        already_existed: false,
+    }];
+    crate::downloads::torrent_import::prune_imported_volumes(
+        &pool, library_id, "Asterix", &imported,
+    )
+    .await;
+
+    let missing_count: i32 =
+        sqlx::query_scalar("SELECT missing_count FROM available_downloads WHERE series_id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        missing_count, 1,
+        "an unaccented torrent name must resolve to the accented series"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_torrent_downloads_resolves_accented_series_name(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Lib', '/libraries/lib')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Astérix')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status) \
+         VALUES ($1, $2, 'Asterix', '{1}', 'downloading')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let state = crate::state::test_state(pool.clone());
+    let response =
+        crate::downloads::torrent_import::list_torrent_downloads(axum::extract::State(state))
+            .await
+            .unwrap();
+
+    assert_eq!(response.0.len(), 1);
+    assert_eq!(
+        response.0[0].series_id,
+        Some(series_id.to_string()),
+        "the torrent row must resolve to Astérix"
+    );
+}

@@ -23,7 +23,7 @@ fn legacy_release_without_qualification_requires_review() {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn failed_download_count_query(pool: sqlx::PgPool) {
+async fn failed_download_count_matches_accented_torrent_names(pool: sqlx::PgPool) {
     // Setup: library + series
     let library_id = Uuid::new_v4();
     sqlx::query(
@@ -35,7 +35,7 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     .unwrap();
 
     let series_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Naruto')")
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Astérix')")
         .bind(series_id)
         .bind(library_id)
         .execute(&pool)
@@ -55,10 +55,11 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    // Insert torrent_downloads with status='error' matching the series name (case-insensitive)
+    // Insert torrent_downloads with status='error', using unaccented spellings:
+    // the canonical series key must still resolve them to "Astérix".
     sqlx::query(
         "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
-         VALUES ($1, $2, 'naruto', '{1,2}', 'error', 'stalled')",
+         VALUES ($1, $2, 'Asterix', '{1,2}', 'error', 'stalled')",
     )
     .bind(Uuid::new_v4())
     .bind(library_id)
@@ -68,7 +69,7 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
 
     sqlx::query(
         "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
-         VALUES ($1, $2, 'Naruto', '{3}', 'error', 'timeout')",
+         VALUES ($1, $2, 'ASTÉRIX', '{3}', 'error', 'timeout')",
     )
     .bind(Uuid::new_v4())
     .bind(library_id)
@@ -79,7 +80,7 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     // Also insert a non-error torrent to verify it's NOT counted
     sqlx::query(
         "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status) \
-         VALUES ($1, $2, 'Naruto', '{4}', 'imported')",
+         VALUES ($1, $2, 'asterix', '{4}', 'imported')",
     )
     .bind(Uuid::new_v4())
     .bind(library_id)
@@ -87,37 +88,19 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    // Execute: run the same query used in get_latest_found
-    let rows = sqlx::query(
-        "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
-                l.name as library_name, \
-                COALESCE(td_err.failed_count, 0) AS failed_download_count \
-         FROM available_downloads ad \
-         JOIN libraries l ON l.id = ad.library_id \
-         JOIN series s ON s.id = ad.series_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(DISTINCT td.id) AS failed_count \
-             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
-             WHERE td.library_id = ad.library_id \
-               AND LOWER(td.series_name) = LOWER(s.name) \
-               AND td.status = 'error' \
-         ) td_err ON TRUE \
-         ORDER BY l.name, s.name",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    // Execute the same helper used by get_latest_found
+    let failed = failed_downloads_by_series(&pool, &[library_id])
+        .await
+        .unwrap();
 
-    // Assert
-    assert_eq!(rows.len(), 1, "should return one available_download row");
-    let row = &rows[0];
-    let failed_count: i64 = row.get("failed_download_count");
+    let entry = failed
+        .get(&(library_id, series_id))
+        .expect("accented torrent names should resolve to the series");
     assert_eq!(
-        failed_count, 2,
+        entry.count, 2,
         "should count only the 2 error torrent_downloads, not the imported one"
     );
-    let series_name: String = row.get("series_name");
-    assert_eq!(series_name, "Naruto");
+    assert_eq!(entry.volumes, vec![1, 2, 3]);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -171,30 +154,15 @@ async fn failed_download_count_counts_downloads_not_volumes(pool: sqlx::PgPool) 
     .await
     .unwrap();
 
-    let rows = sqlx::query(
-        "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
-                l.name as library_name, \
-                COALESCE(td_err.failed_count, 0) AS failed_download_count \
-         FROM available_downloads ad \
-         JOIN libraries l ON l.id = ad.library_id \
-         JOIN series s ON s.id = ad.series_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(DISTINCT td.id) AS failed_count \
-             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
-             WHERE td.library_id = ad.library_id \
-               AND LOWER(td.series_name) = LOWER(s.name) \
-               AND td.status = 'error' \
-         ) td_err ON TRUE \
-         ORDER BY l.name, s.name",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    let failed = failed_downloads_by_series(&pool, &[library_id])
+        .await
+        .unwrap();
 
-    assert_eq!(rows.len(), 1);
-    let failed_count: i64 = rows[0].get("failed_download_count");
+    let entry = failed
+        .get(&(library_id, series_id))
+        .expect("torrent names should resolve to the series");
     assert_eq!(
-        failed_count, 2,
+        entry.count, 2,
         "2 error torrents covering 3 volumes are counted as 2 downloads"
     );
 }
@@ -240,27 +208,15 @@ async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
     .bind(Uuid::new_v4()).bind(library_id)
     .execute(&pool).await.unwrap();
 
-    // Run the actual query from get_latest_found
-    let rows = sqlx::query(
-        "SELECT ad.available_releases, \
-                COALESCE(td_err.failed_volumes, ARRAY[]::integer[]) AS failed_volumes \
-         FROM available_downloads ad \
-         JOIN series s ON s.id = ad.series_id \
-         LEFT JOIN LATERAL ( \
-             SELECT array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL) AS failed_volumes \
-             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
-             WHERE td.library_id = ad.library_id \
-               AND LOWER(td.series_name) = LOWER(s.name) \
-               AND td.status = 'error' \
-         ) td_err ON TRUE \
-         WHERE ad.series_id = $1",
-    )
-    .bind(series_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    // Run the same helper used by get_latest_found
+    let failed = failed_downloads_by_series(&pool, &[library_id])
+        .await
+        .unwrap();
+    let failed_volumes = &failed
+        .get(&(library_id, series_id))
+        .expect("failed torrent should resolve to the series")
+        .volumes;
 
-    let failed_volumes: Vec<i32> = rows.get("failed_volumes");
     assert!(failed_volumes.contains(&2));
     assert!(failed_volumes.contains(&3));
     assert!(
@@ -269,7 +225,13 @@ async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
     );
 
     // Simulate the Rust-side enrichment
-    let releases_json: serde_json::Value = rows.get("available_releases");
+    let releases_json: serde_json::Value = sqlx::query_scalar(
+        "SELECT available_releases FROM available_downloads WHERE series_id = $1",
+    )
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let mut releases: Vec<AvailableReleaseDto> = serde_json::from_value(releases_json).unwrap();
     for r in &mut releases {
         r.has_failed = r

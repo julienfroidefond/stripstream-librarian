@@ -367,3 +367,23 @@ async fn filter_already_owned_keeps_unowned_suggestions(pool: sqlx::PgPool) {
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].external_id, "sc-new");
 }
+
+// 10. Name matching goes through the canonical series identity key: an
+//     unaccented provider title must still match the accented local series.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn filter_already_owned_matches_accented_names(pool: sqlx::PgPool) {
+    let library_id = create_test_library(&pool).await;
+    let state = test_state(pool.clone());
+
+    let req = make_request(library_id, "senscritique", "sc-asterix", "Astérix");
+    let _ = add_to_library(State(state), Json(req)).await.unwrap();
+
+    let suggestions = vec![suggestion("senscritique_bd", "sc-new", "Asterix")];
+
+    let filtered = filter_already_owned(&pool, "senscritique_bd", suggestions).await;
+
+    assert!(
+        filtered.is_empty(),
+        "an unaccented suggestion must match the owned 'Astérix' series"
+    );
+}

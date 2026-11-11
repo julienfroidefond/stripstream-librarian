@@ -101,5 +101,9 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
   (`normalize_library`) des releases `available_downloads`. Le `missing_count` ne décrémente que
   des volumes distincts réellement retirés d'au moins une release — jamais du nombre de fichiers
   importés. Ne pas refiltrer le JSON dans les handlers.
+- **Identité de série** : `stripstream_core::series_identity` possède la clé normalisée
+  (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
+  Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
+  écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
 - **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
   `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

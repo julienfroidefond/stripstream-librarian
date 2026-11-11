@@ -5,6 +5,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use stripstream_core::http::USER_AGENT;
+use stripstream_core::series_identity;
 use stripstream_core::settings::load_setting;
 use uuid::Uuid;
 
@@ -1056,14 +1057,11 @@ async fn filter_already_owned(
     .await
     .unwrap_or_default();
 
-    // 2. Filter by series name (case-insensitive match)
-    let titles: Vec<String> = suggestions.iter().map(|s| s.title.to_lowercase()).collect();
-    let owned_by_name: Vec<String> =
-        sqlx::query_scalar("SELECT LOWER(name) FROM series WHERE LOWER(name) = ANY($1)")
-            .bind(&titles)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
+    // 2. Filter by series name through the canonical series identity key
+    let titles: Vec<String> = suggestions.iter().map(|s| s.title.clone()).collect();
+    let owned_by_name = series_identity::existing_names(pool, &titles)
+        .await
+        .unwrap_or_default();
 
     // 3. Filter by hidden items
     let hidden_ids: Vec<String> =
@@ -1077,7 +1075,7 @@ async fn filter_already_owned(
         .into_iter()
         .filter(|s| {
             !owned_by_link.contains(&s.external_id)
-                && !owned_by_name.contains(&s.title.to_lowercase())
+                && !owned_by_name.contains(&s.title)
                 && !hidden_ids.contains(&s.external_id)
         })
         .collect()

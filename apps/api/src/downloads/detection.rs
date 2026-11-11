@@ -5,12 +5,14 @@ use axum::{
 use parsers::match_release_title;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use stripstream_core::availability;
 use stripstream_core::http::build_http_client_with_agent;
+use stripstream_core::series_identity;
 
 use super::{blacklist, missing, prowlarr};
 use crate::jobs::helpers::{
@@ -468,33 +470,33 @@ pub async fn get_latest_found(
 ) -> Result<Json<Vec<LatestFoundPerLibraryDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
-                l.name as library_name, \
-                COALESCE(td_err.failed_count, 0) AS failed_download_count, \
-                COALESCE(td_err.failed_volumes, ARRAY[]::integer[]) AS failed_volumes \
+                l.name as library_name \
          FROM available_downloads ad \
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(DISTINCT td.id) AS failed_count, \
-                    array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL) AS failed_volumes \
-             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
-             WHERE td.library_id = ad.library_id \
-               AND LOWER(td.series_name) = LOWER(s.name) \
-               AND td.status = 'error' \
-         ) td_err ON TRUE \
          ORDER BY l.name, s.name",
     )
     .fetch_all(&state.pool)
     .await?;
+
+    let library_ids: Vec<Uuid> = rows
+        .iter()
+        .map(|row| row.get::<Uuid, _>("library_id"))
+        .collect();
+    let failed_downloads = failed_downloads_by_series(&state.pool, &library_ids).await?;
 
     let mut libs: std::collections::BTreeMap<Uuid, LatestFoundPerLibraryDto> =
         std::collections::BTreeMap::new();
 
     for row in &rows {
         let library_id: Uuid = row.get("library_id");
+        let series_id: Uuid = row.get("series_id");
         let updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
-        let failed_volumes: Vec<i32> = row.get("failed_volumes");
+        let failed = failed_downloads.get(&(library_id, series_id));
+        let failed_volumes = failed
+            .map(|failed| failed.volumes.as_slice())
+            .unwrap_or_default();
         let available_releases = releases_json
             .and_then(|v| serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok())
             .map(|releases| {
@@ -523,16 +525,85 @@ pub async fn get_latest_found(
 
         entry.results.push(AvailableDownloadDto {
             id: row.get("id"),
-            series_id: row.get("series_id"),
+            series_id,
             series_name: row.get("series_name"),
             missing_count: row.get("missing_count"),
             available_releases,
             updated_at: updated_at.to_rfc3339(),
-            failed_download_count: row.get("failed_download_count"),
+            failed_download_count: failed.map(|failed| failed.count).unwrap_or(0),
         });
     }
 
     Ok(Json(libs.into_values().collect()))
+}
+
+#[derive(Debug, Default)]
+struct FailedDownloads {
+    count: i64,
+    volumes: Vec<i32>,
+}
+
+/// Count failed torrent downloads per series, resolving the raw torrent series
+/// name through the canonical series identity key instead of a hand-written
+/// `LOWER` join.
+async fn failed_downloads_by_series(
+    pool: &PgPool,
+    library_ids: &[Uuid],
+) -> sqlx::Result<HashMap<(Uuid, Uuid), FailedDownloads>> {
+    if library_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query(
+        "SELECT td.library_id, td.series_name, \
+                COUNT(DISTINCT td.id) AS failed_count, \
+                COALESCE(array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL), ARRAY[]::integer[]) AS failed_volumes \
+         FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
+         WHERE td.library_id = ANY($1) AND td.status = 'error' \
+         GROUP BY td.library_id, td.series_name",
+    )
+    .bind(library_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut names_by_library: HashMap<Uuid, Vec<String>> = HashMap::new();
+    for row in &rows {
+        names_by_library
+            .entry(row.get("library_id"))
+            .or_default()
+            .push(row.get("series_name"));
+    }
+
+    let mut series_by_name: HashMap<(Uuid, String), Uuid> = HashMap::new();
+    for (library_id, raw_names) in &names_by_library {
+        let identities = series_identity::find_many(pool, *library_id, raw_names).await?;
+        series_by_name.extend(
+            identities
+                .into_iter()
+                .map(|(raw_name, identity)| ((*library_id, raw_name), identity.id)),
+        );
+    }
+
+    let mut failed: HashMap<(Uuid, Uuid), FailedDownloads> = HashMap::new();
+    for row in rows {
+        let library_id: Uuid = row.get("library_id");
+        let raw_name: String = row.get("series_name");
+        let Some(series_id) = series_by_name.get(&(library_id, raw_name)) else {
+            continue;
+        };
+        let entry = failed.entry((library_id, *series_id)).or_default();
+        entry.count += row.get::<i64, _>("failed_count");
+        entry
+            .volumes
+            .extend(row.get::<Vec<i32>, _>("failed_volumes"));
+    }
+
+    for entry in failed.values_mut() {
+        entry.volumes.sort_unstable();
+        entry.volumes.dedup();
+    }
+
+    Ok(failed)
 }
 
 /// Delete an available download entry, or a single release within it.
