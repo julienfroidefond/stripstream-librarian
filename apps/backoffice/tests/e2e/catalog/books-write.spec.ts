@@ -90,34 +90,40 @@ test.describe("livres — actions", () => {
       const panel = page.getByTestId("modal-panel");
       await expect(panel).toBeVisible();
 
-      const titleField = panel.getByPlaceholder("Book title").locator("xpath=..");
-      await titleField.getByTitle("Click to lock this field").click();
+      // Le titre n'est pas verrouillable (la synchronisation ne l'écrit
+      // jamais) : on utilise le résumé, enrichi par les providers.
+      const summaryField = panel
+        .getByPlaceholder("Summary / book description")
+        .locator("xpath=..");
+      await summaryField.getByTitle("Click to lock this field").click();
       await expect(
-        titleField.getByTitle("Locked field (protected from syncs)")
+        summaryField.getByTitle("Locked field (protected from syncs)")
       ).toBeVisible();
       await expect(panel.getByText("Locked fields will not be overwritten")).toBeVisible();
 
       await panel.getByRole("button", { name: "Save", exact: true }).click();
       await expect(panel).toBeHidden();
       await expect
-        .poll(async () => (await getBook(book.id)).locked_fields?.title === true)
+        .poll(async () => (await getBook(book.id)).locked_fields?.summary === true)
         .toBe(true);
 
       // Le verrouillage est relu depuis l'API après un rechargement complet.
       await page.reload();
       await page.getByRole("button", { name: /Edit metadata/ }).click();
       await expect(panel).toBeVisible();
-      const reloadedTitleField = panel.getByPlaceholder("Book title").locator("xpath=..");
+      const reloadedSummaryField = panel
+        .getByPlaceholder("Summary / book description")
+        .locator("xpath=..");
       await expect(
-        reloadedTitleField.getByTitle("Locked field (protected from syncs)")
+        reloadedSummaryField.getByTitle("Locked field (protected from syncs)")
       ).toBeVisible();
 
-      await reloadedTitleField.getByTitle("Locked field (protected from syncs)").click();
-      await expect(reloadedTitleField.getByTitle("Click to lock this field")).toBeVisible();
+      await reloadedSummaryField.getByTitle("Locked field (protected from syncs)").click();
+      await expect(reloadedSummaryField.getByTitle("Click to lock this field")).toBeVisible();
       await panel.getByRole("button", { name: "Save", exact: true }).click();
       await expect(panel).toBeHidden();
       await expect
-        .poll(async () => (await getBook(book.id)).locked_fields?.title === true)
+        .poll(async () => (await getBook(book.id)).locked_fields?.summary === true)
         .toBe(false);
     } finally {
       await removeDisposableBook(book);
