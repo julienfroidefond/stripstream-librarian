@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.132 — 2026-11-11
+
+### Refactoring
+
+- **core** — centralize volume coverage rules ([#267](https://github.com/julienfroidefond/stripstream-librarian/pull/267))
+
 ## v3.32.131 — 2026-11-11
 
 ### Refactoring
