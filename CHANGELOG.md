@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.135 — 2026-11-11
+
+### Refactoring
+
+- **backoffice** — centralize acquisition readiness ([#270](https://github.com/julienfroidefond/stripstream-librarian/pull/270))
+
 ## v3.32.134 — 2026-11-11
 
 ### Refactoring
