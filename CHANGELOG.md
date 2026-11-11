@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.131 — 2026-11-11
+
+### Refactoring
+
+- **indexer** — make book analysis state explicit ([#266](https://github.com/julienfroidefond/stripstream-librarian/pull/266))
+
 ## v3.32.130 — 2026-11-11
 
 ### Refactoring
