@@ -1757,6 +1757,7 @@ const fr = {
   "diagnostics.totalSize": "Taille",
   "diagnostics.missingThumbnails": "Miniatures manquantes",
   "diagnostics.pendingAnalysis": "Livres non analysés",
+  "diagnostics.failedAnalysis": "Analyses en échec",
   "diagnostics.thumbnailDirectory": "Répertoire",
   "diagnostics.jobs": "Tâches d'indexation",
   "diagnostics.jobsHint": "File d'attente et échecs récents.",

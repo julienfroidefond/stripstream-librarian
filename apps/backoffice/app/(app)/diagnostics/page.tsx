@@ -326,6 +326,7 @@ export default async function DiagnosticsPage() {
             <InfoRow label={t("diagnostics.totalSize")} value={formatBytes(report.thumbnails.total_size_bytes, locale)} />
             <InfoRow label={t("diagnostics.missingThumbnails")} value={formatNumber(report.thumbnails.missing, locale)} />
             <InfoRow label={t("diagnostics.pendingAnalysis")} value={formatNumber(report.thumbnails.pending_analysis, locale)} />
+            <InfoRow label={t("diagnostics.failedAnalysis")} value={formatNumber(report.thumbnails.failed_analysis, locale)} />
             <InfoRow label={t("diagnostics.thumbnailDirectory")} value={<span className="font-mono text-xs">{report.thumbnails.directory}</span>} />
           </CardContent>
         </Card>
@@ -481,6 +482,7 @@ export default async function DiagnosticsPage() {
                     <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.books")}</th>
                     <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.pendingAnalysis")}</th>
                     <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.missingThumbnails")}</th>
+                    <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.failedAnalysis")}</th>
                     <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.totalSize")}</th>
                     <th className="py-2 pr-4 font-medium">{t("diagnostics.scan")}</th>
                     <th className="py-2 pr-4 font-medium">{t("diagnostics.metadata")}</th>
@@ -501,6 +503,7 @@ export default async function DiagnosticsPage() {
                       <td className="py-2 pr-4 text-right">{formatNumber(library.book_count, locale)}</td>
                       <td className="py-2 pr-4 text-right">{formatNumber(library.pending_analysis, locale)}</td>
                       <td className="py-2 pr-4 text-right">{formatNumber(library.missing_thumbnails, locale)}</td>
+                      <td className="py-2 pr-4 text-right">{formatNumber(library.failed_analysis, locale)}</td>
                       <td className="py-2 pr-4 text-right">{formatBytes(library.size_bytes, locale)}</td>
                       <td className="py-2 pr-4">
                         <LastNext

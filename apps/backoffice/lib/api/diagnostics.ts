@@ -63,6 +63,7 @@ export type DiagnosticsThumbnails = {
   directory: string;
   missing: number;
   pending_analysis: number;
+  failed_analysis: number;
 };
 
 export type DiagnosticsFailedJob = {
@@ -113,6 +114,7 @@ export type DiagnosticsLibrary = {
   book_count: number;
   pending_analysis: number;
   missing_thumbnails: number;
+  failed_analysis: number;
   size_bytes: number;
   size_pretty: string;
   last_scan_at: string | null;

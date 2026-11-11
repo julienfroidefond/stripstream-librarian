@@ -5,6 +5,7 @@ use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
+use stripstream_core::analysis::AnalysisStatus;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -386,6 +387,7 @@ pub async fn scan_library_discovery(
                                 volume_type: parsed.volume_type.as_str().to_string(),
                                 page_count: None,
                                 clear_thumbnail: true,
+                                analysis_status: AnalysisStatus::Discovered,
                             });
 
                             files_to_update.push(FileUpdate {
@@ -656,6 +658,7 @@ pub async fn scan_library_discovery(
                 // Reset page_count so analyzer re-processes this book
                 page_count: None,
                 clear_thumbnail: true,
+                analysis_status: AnalysisStatus::Discovered,
             });
 
             files_to_update.push(FileUpdate {
@@ -739,6 +742,7 @@ pub async fn scan_library_discovery(
             volume_type: parsed.volume_type.as_str().to_string(),
             page_count: None,
             thumbnail_path: None,
+            analysis_status: AnalysisStatus::Discovered,
         });
 
         files_to_insert.push(FileInsert {

@@ -23,11 +23,15 @@ pub(super) async fn thumbnail_diagnostics(state: &AppState) -> ThumbnailDiagnost
     .await
     .unwrap_or((0, 0));
 
-    let (missing, pending_analysis) = sqlx::query(
+    let (missing, pending_analysis, failed_analysis) = sqlx::query(
         r#"
         SELECT
-            COUNT(*) FILTER (WHERE thumbnail_path IS NULL) AS missing,
-            COUNT(*) FILTER (WHERE page_count IS NULL) AS pending_analysis
+            COUNT(*) FILTER (WHERE analysis_status = 'cover_pending') AS missing,
+            COUNT(*) FILTER (
+                WHERE analysis_status IN ('discovered', 'analyzing')
+                  AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id)
+            ) AS pending_analysis,
+            COUNT(*) FILTER (WHERE analysis_status = 'failed') AS failed_analysis
         FROM books
         "#,
     )
@@ -38,9 +42,10 @@ pub(super) async fn thumbnail_diagnostics(state: &AppState) -> ThumbnailDiagnost
         (
             row.get::<i64, _>("missing"),
             row.get::<i64, _>("pending_analysis"),
+            row.get::<i64, _>("failed_analysis"),
         )
     })
-    .unwrap_or((0, 0));
+    .unwrap_or((0, 0, 0));
 
     ThumbnailDiagnostics {
         total_size_bytes,
@@ -49,6 +54,7 @@ pub(super) async fn thumbnail_diagnostics(state: &AppState) -> ThumbnailDiagnost
         directory,
         missing,
         pending_analysis,
+        failed_analysis,
     }
 }
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
+use stripstream_core::analysis::AnalysisStatus;
 use uuid::Uuid;
 
 // Batched update data structures
@@ -14,6 +15,7 @@ pub struct BookUpdate {
     pub volume_type: String,
     pub page_count: Option<i32>,
     pub clear_thumbnail: bool,
+    pub analysis_status: AnalysisStatus,
 }
 
 pub struct FileUpdate {
@@ -35,6 +37,7 @@ pub struct BookInsert {
     pub volume_type: String,
     pub page_count: Option<i32>,
     pub thumbnail_path: Option<String>,
+    pub analysis_status: AnalysisStatus,
 }
 
 pub struct FileInsert {
@@ -103,6 +106,10 @@ pub async fn flush_events(pool: &PgPool, events: &mut Vec<EventInsert>) -> Resul
 }
 
 /// Set `books.page_count` for many books in one statement.
+///
+/// The resulting analysis state follows from the thumbnail already stored:
+/// page count + cover is `complete`, page count without cover is
+/// `cover_pending`.
 pub async fn flush_page_counts(pool: &PgPool, updates: &mut Vec<(Uuid, i32)>) -> Result<()> {
     if updates.is_empty() {
         return Ok(());
@@ -113,7 +120,13 @@ pub async fn flush_page_counts(pool: &PgPool, updates: &mut Vec<(Uuid, i32)>) ->
 
     sqlx::query(
         r#"
-        UPDATE books SET page_count = data.page_count, updated_at = NOW()
+        UPDATE books SET
+            page_count = data.page_count,
+            analysis_status = CASE
+                WHEN books.thumbnail_path IS NULL THEN 'cover_pending'
+                ELSE 'complete'
+            END,
+            updated_at = NOW()
         FROM (
             SELECT * FROM UNNEST($1::uuid[], $2::int[]) AS t(book_id, page_count)
         ) AS data
@@ -141,7 +154,11 @@ pub async fn flush_thumbnails(pool: &PgPool, updates: &mut Vec<(Uuid, i32, Strin
 
     sqlx::query(
         r#"
-        UPDATE books SET page_count = data.page_count, thumbnail_path = data.thumbnail_path, updated_at = NOW()
+        UPDATE books SET
+            page_count = data.page_count,
+            thumbnail_path = data.thumbnail_path,
+            analysis_status = 'complete',
+            updated_at = NOW()
         FROM (
             SELECT * FROM UNNEST($1::uuid[], $2::int[], $3::text[]) AS t(book_id, page_count, thumbnail_path)
         ) AS data
@@ -155,6 +172,66 @@ pub async fn flush_thumbnails(pool: &PgPool, updates: &mut Vec<(Uuid, i32, Strin
     .await?;
 
     updates.clear();
+    Ok(())
+}
+
+/// Record an explicit analysis outcome for many books in one statement.
+///
+/// Used for terminal failures and for releasing a claim when a task was skipped
+/// (cancellation, unknown format) without changing the page count.
+pub async fn flush_analysis_status(
+    pool: &PgPool,
+    updates: &mut Vec<(Uuid, AnalysisStatus)>,
+) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let book_ids: Vec<Uuid> = updates.iter().map(|(id, _)| *id).collect();
+    let statuses: Vec<String> = updates
+        .iter()
+        .map(|(_, status)| status.as_str().to_string())
+        .collect();
+
+    sqlx::query(
+        r#"
+        UPDATE books SET analysis_status = data.analysis_status, updated_at = NOW()
+        FROM (
+            SELECT * FROM UNNEST($1::uuid[], $2::text[]) AS t(book_id, analysis_status)
+        ) AS data
+        WHERE books.id = data.book_id
+        "#,
+    )
+    .bind(&book_ids)
+    .bind(&statuses)
+    .execute(pool)
+    .await?;
+
+    updates.clear();
+    Ok(())
+}
+
+/// Claim books for a running analysis job.
+///
+/// `analyzing` is claimed again so rows left behind by a crashed or cancelled
+/// job are retried. `complete` and `cover_pending` are never overwritten: they
+/// may have advanced concurrently (API thumbnail render).
+pub async fn claim_analysis_books(pool: &PgPool, book_ids: &[Uuid]) -> Result<()> {
+    if book_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE books SET analysis_status = 'analyzing', updated_at = NOW()
+        WHERE id = ANY($1)
+          AND analysis_status IN ('discovered', 'analyzing', 'failed')
+        "#,
+    )
+    .bind(book_ids)
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -219,6 +296,10 @@ pub async fn flush_all_batches(
             books_update.iter().map(|b| b.volume_type.clone()).collect();
         let page_counts: Vec<Option<i32>> = books_update.iter().map(|b| b.page_count).collect();
         let clear_thumbnails: Vec<bool> = books_update.iter().map(|b| b.clear_thumbnail).collect();
+        let analysis_statuses: Vec<String> = books_update
+            .iter()
+            .map(|b| b.analysis_status.as_str().to_string())
+            .collect();
 
         sqlx::query(
             r#"
@@ -231,10 +312,11 @@ pub async fn flush_all_batches(
                 volume_type = data.volume_type,
                 page_count = data.page_count,
                 thumbnail_path = CASE WHEN data.clear_thumbnail THEN NULL ELSE books.thumbnail_path END,
+                analysis_status = data.analysis_status,
                 updated_at = NOW()
             FROM (
-                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[], $9::bool[])
-                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count, clear_thumbnail)
+                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[], $9::bool[], $10::text[])
+                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count, clear_thumbnail, analysis_status)
             ) AS data
             WHERE books.id = data.book_id
             "#
@@ -248,6 +330,7 @@ pub async fn flush_all_batches(
         .bind(&volume_types)
         .bind(&page_counts)
         .bind(&clear_thumbnails)
+        .bind(&analysis_statuses)
         .execute(&mut *tx)
         .await?;
 
@@ -307,12 +390,16 @@ pub async fn flush_all_batches(
             .iter()
             .map(|b| b.thumbnail_path.clone())
             .collect();
+        let analysis_statuses: Vec<String> = books_insert
+            .iter()
+            .map(|b| b.analysis_status.as_str().to_string())
+            .collect();
 
         sqlx::query(
             r#"
-            INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[], $10::text[])
-            AS t(id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path)
+            INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
+            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[], $10::text[], $11::text[])
+            AS t(id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
             "#
         )
         .bind(&book_ids)
@@ -325,6 +412,7 @@ pub async fn flush_all_batches(
         .bind(&page_counts)
         .bind(&volume_types)
         .bind(&thumbnail_paths)
+        .bind(&analysis_statuses)
         .execute(&mut *tx)
         .await?;
 
@@ -598,17 +686,21 @@ mod tests {
         flush_page_counts(&pool, &mut updates).await.unwrap();
         assert!(updates.is_empty());
 
-        let counts: Vec<(Uuid, Option<i32>)> =
-            sqlx::query_as("SELECT id, page_count FROM books WHERE id = ANY($1) ORDER BY id")
-                .bind(&[book_a, book_b][..])
-                .fetch_all(&pool)
-                .await
-                .unwrap();
+        let counts: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
+            "SELECT id, page_count, analysis_status FROM books WHERE id = ANY($1) ORDER BY id",
+        )
+        .bind(&[book_a, book_b][..])
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
         assert_eq!(counts.len(), 2);
-        let map: std::collections::HashMap<Uuid, Option<i32>> = counts.into_iter().collect();
-        assert_eq!(map[&book_a], Some(42));
-        assert_eq!(map[&book_b], Some(7));
+        let map: std::collections::HashMap<Uuid, (Option<i32>, String)> = counts
+            .into_iter()
+            .map(|(id, pc, status)| (id, (pc, status)))
+            .collect();
+        assert_eq!(map[&book_a], (Some(42), "cover_pending".to_string()));
+        assert_eq!(map[&book_b], (Some(7), "cover_pending".to_string()));
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
@@ -631,22 +723,82 @@ mod tests {
         flush_thumbnails(&pool, &mut updates).await.unwrap();
         assert!(updates.is_empty());
 
-        let rows: Vec<(Uuid, Option<i32>, Option<String>)> = sqlx::query_as(
-            "SELECT id, page_count, thumbnail_path FROM books WHERE id = ANY($1) ORDER BY id",
+        let rows: Vec<(Uuid, Option<i32>, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, page_count, thumbnail_path, analysis_status FROM books WHERE id = ANY($1) ORDER BY id",
         )
         .bind(&[book_a, book_b][..])
         .fetch_all(&pool)
         .await
         .unwrap();
 
-        let map: std::collections::HashMap<Uuid, (Option<i32>, Option<String>)> = rows
+        let map: std::collections::HashMap<Uuid, (Option<i32>, Option<String>, String)> = rows
             .into_iter()
-            .map(|(id, pc, tp)| (id, (pc, tp)))
+            .map(|(id, pc, tp, status)| (id, (pc, tp, status)))
             .collect();
         assert_eq!(map[&book_a].0, Some(10));
         assert_eq!(map[&book_a].1.as_deref(), Some("/data/thumbnails/a.webp"));
+        assert_eq!(map[&book_a].2, "complete");
         assert_eq!(map[&book_b].0, Some(20));
         assert_eq!(map[&book_b].1.as_deref(), Some("/data/thumbnails/b.webp"));
+        assert_eq!(map[&book_b].2, "complete");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn flush_thumbnails_marks_books_complete(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let book_id = create_test_book(&pool, library_id).await;
+
+        let mut page_counts = vec![(book_id, 12)];
+        flush_page_counts(&pool, &mut page_counts).await.unwrap();
+        assert_eq!(book_status(&pool, book_id).await, "cover_pending");
+
+        let mut thumbnails = vec![(book_id, 12, "/data/thumbnails/book.webp".to_string())];
+        flush_thumbnails(&pool, &mut thumbnails).await.unwrap();
+        assert_eq!(book_status(&pool, book_id).await, "complete");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn analysis_status_flush_and_claim_follow_the_state_machine(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let discovered = create_test_book(&pool, library_id).await;
+        let failed = create_test_book(&pool, library_id).await;
+        let complete = create_test_book(&pool, library_id).await;
+
+        sqlx::query("UPDATE books SET analysis_status = 'failed' WHERE id = $1")
+            .bind(failed)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE books SET analysis_status = 'complete', page_count = 10 WHERE id = $1")
+            .bind(complete)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        claim_analysis_books(&pool, &[discovered, failed, complete])
+            .await
+            .unwrap();
+
+        assert_eq!(book_status(&pool, discovered).await, "analyzing");
+        assert_eq!(book_status(&pool, failed).await, "analyzing");
+        assert_eq!(book_status(&pool, complete).await, "complete");
+
+        let mut updates = vec![
+            (discovered, AnalysisStatus::Failed),
+            (failed, AnalysisStatus::Discovered),
+        ];
+        flush_analysis_status(&pool, &mut updates).await.unwrap();
+        assert!(updates.is_empty());
+        assert_eq!(book_status(&pool, discovered).await, "failed");
+        assert_eq!(book_status(&pool, failed).await, "discovered");
+    }
+
+    async fn book_status(pool: &PgPool, book_id: Uuid) -> String {
+        sqlx::query_scalar("SELECT analysis_status FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

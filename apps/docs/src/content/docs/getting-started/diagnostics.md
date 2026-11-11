@@ -65,8 +65,12 @@ statistiques affichées.
 
 ## Miniatures
 
-Nombre de fichiers stockés, taille totale, **miniatures manquantes** et **livres non analysés**
-(`page_count` encore inconnu, c'est-à-dire pas encore passés en phase d'analyse par l'indexeur).
+Nombre de fichiers stockés, taille totale, **miniatures manquantes**, **livres non analysés** et
+**analyses en échec**. Les trois compteurs se répartissent l'état d'analyse des livres
+(`books.analysis_status`) : non analysés = `discovered` / `analyzing` avec un fichier présent,
+miniatures manquantes = `cover_pending` (nombre de pages connu), échecs = `failed` (dernière analyse
+sans nombre de pages, retentée au prochain scan). Les livres sans fichier (tomes manquants) ne sont
+pas comptés comme non analysés.
 
 ## Tâches d'indexation
 
@@ -109,9 +113,9 @@ Rien n'est exécuté au chargement de la page : la sonde **contacte des services
 ## Bibliothèques
 
 Un tableau par bibliothèque : statut activé/désactivé, nombre de livres, livres non analysés,
-miniatures manquantes, taille sur disque, et pour le **scan**, le **rafraîchissement des
-métadonnées** et la **détection des téléchargements**, la date du dernier passage et celle du
-prochain.
+miniatures manquantes, analyses en échec, taille sur disque, et pour le **scan**, le
+**rafraîchissement des métadonnées** et la **détection des téléchargements**, la date du dernier
+passage et celle du prochain.
 
 ## Rafraîchissement, copie et erreurs
 

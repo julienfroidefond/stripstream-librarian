@@ -78,10 +78,14 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Diagnostic / heartbeats** : l'API et l'indexeur écrivent `service_heartbeats` toutes les 30 s
   (`stripstream_core::heartbeat::spawn`, seuil hors-ligne 90 s). Déployer les deux services ensemble :
   sinon la carte Services signale un badge *Versions différentes*.
-- **LIBRARIES_ROOT_PATH** : les `abs_path` en DB commencent par `/libraries/`. Appeler `remap_libraries_path()` avant tout accès fichier.
+- **LIBRARIES_ROOT_PATH** : les `abs_path` en DB commencent par `/libraries/`. Passer par
+  `AppState.library_root.resolve(&db_path)` puis `to_local()` avant tout accès fichier ; ne jamais
+  concaténer `/libraries` à la main.
 - **Rate limit lecture** : middleware `read_rate_limit` sur les routes read, fenêtre de 1s **par client** (clé = token `Authorization`), limite `rate_limit_per_second` (défaut 120). Dépassement → `429` JSON `{"error":"rate limit exceeded"}` + `Retry-After: 1`.
 - **Métriques** : `/metrics` expose `requests_total`, `page_cache_hits`, `page_cache_misses` (atomics dans `AppState.metrics`).
-- **Thumbnails** : l'API ne génère rien — elle crée uniquement les jobs en DB ; la génération est faite par l'indexer (phase 2).
+- **Thumbnails** : la génération en masse est faite par l'indexer (phase 2), mais `GET
+  /books/{id}/thumbnail` peut rendre et persister une miniature à la demande. Cette persistance ne
+  promeut que `cover_pending` → `complete` ; elle n'écrase jamais `analyzing` ou `failed`.
 - **Swagger** : accessible sur `/swagger-ui`, spec JSON sur `/openapi.json`.
 - **Torrent import, mode replace** : quand `replace_existing = true`, ne PAS filtrer par
   `expected_volumes` — importer tous les fichiers du torrent.

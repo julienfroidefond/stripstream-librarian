@@ -92,6 +92,9 @@ struct BookSeed<'a> {
     author: Option<&'a str>,
     publish_date: Option<&'a str>,
     language: Option<&'a str>,
+    /// Override the analysis state; defaults to `complete` with a thumbnail and
+    /// `cover_pending` without one.
+    analysis_status: Option<&'a str>,
 }
 
 impl Default for BookSeed<'_> {
@@ -107,18 +110,26 @@ impl Default for BookSeed<'_> {
             author: Some("Author"),
             publish_date: Some("2020"),
             language: Some("fr"),
+            analysis_status: None,
         }
     }
 }
 
 async fn insert_book(pool: &PgPool, library_id: Uuid, seed: BookSeed<'_>) -> Uuid {
     let authors: Vec<String> = seed.authors.iter().map(|a| a.to_string()).collect();
+    let analysis_status = seed
+        .analysis_status
+        .unwrap_or(if seed.thumbnail_path.is_some() {
+            "complete"
+        } else {
+            "cover_pending"
+        });
     sqlx::query_scalar(
         "INSERT INTO books \
              (id, library_id, kind, title, series_id, volume, volume_type, \
-              summary, isbn, thumbnail_path, authors, author, publish_date, language) \
+              summary, isbn, thumbnail_path, authors, author, publish_date, language, analysis_status) \
          VALUES (gen_random_uuid(), $1, 'comic', $2, $3, $4, 'regular', \
-                 $5, $6, $7, $8, $9, $10, $11) \
+                 $5, $6, $7, $8, $9, $10, $11, $12) \
          RETURNING id",
     )
     .bind(library_id)
@@ -132,6 +143,7 @@ async fn insert_book(pool: &PgPool, library_id: Uuid, seed: BookSeed<'_>) -> Uui
     .bind(seed.author)
     .bind(seed.publish_date)
     .bind(seed.language)
+    .bind(analysis_status)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -287,6 +299,7 @@ async fn gap_summary_counts_every_dimension(pool: PgPool) {
             author: None,
             publish_date: None,
             language: None,
+            analysis_status: Some("cover_pending"),
         },
     )
     .await;
@@ -661,6 +674,50 @@ async fn books_gap_filters_isolate_each_dimension(pool: PgPool) {
     );
     assert_eq!(book_ids(&state, library, "not-a-gap").await.len(), 8);
     assert_eq!(book_ids(&state, library, "missing_volumes").await.len(), 8);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn no_cover_only_returns_books_waiting_for_a_thumbnail(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+
+    let cover_pending = insert_book(
+        &pool,
+        library,
+        BookSeed {
+            title: "Cover pending",
+            thumbnail_path: None,
+            ..Default::default()
+        },
+    )
+    .await;
+    let _failed = insert_book(
+        &pool,
+        library,
+        BookSeed {
+            title: "Failed",
+            thumbnail_path: None,
+            analysis_status: Some("failed"),
+            ..Default::default()
+        },
+    )
+    .await;
+    let _discovered = insert_book(
+        &pool,
+        library,
+        BookSeed {
+            title: "Discovered",
+            thumbnail_path: None,
+            analysis_status: Some("discovered"),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert_eq!(
+        sorted(book_ids(&state, library, "no_cover").await),
+        sorted(vec![cover_pending])
+    );
 }
 
 // ---------------------------------------------------------------------------
