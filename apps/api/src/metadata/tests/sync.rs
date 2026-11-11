@@ -206,6 +206,38 @@ async fn apply_series_seeds_genres_when_local_is_empty(pool: sqlx::PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn apply_series_reports_no_old_value_for_inserted_series(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "sync_new_series_report").await;
+    let links = vec![link(
+        "google_books",
+        true,
+        serde_json::json!({"description": "New description", "authors": ["A"]}),
+    )];
+
+    let report = field_policy::apply_series(&pool, lib_id, "New Report Series", &links)
+        .await
+        .unwrap();
+
+    let description = report
+        .fields_updated
+        .iter()
+        .find(|change| change.field == "description")
+        .expect("description should be reported");
+    assert_eq!(description.old_value, None);
+
+    let authors = report
+        .fields_updated
+        .iter()
+        .find(|change| change.field == "authors")
+        .expect("authors should be reported");
+    assert_eq!(
+        authors.old_value, None,
+        "a missing series has no previous array value"
+    );
+    assert_eq!(authors.new_value, Some(serde_json::json!(["A"])));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn apply_series_never_overwrites_local_genres(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "sync_genres_kept").await;
     let series_id = create_series(&pool, lib_id, "Genres Kept").await;
@@ -277,10 +309,24 @@ async fn clear_series_metadata_clears_unlocked_fields(pool: sqlx::PgPool) {
     .execute(&pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE series SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE id = $1")
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     field_policy::clear_series_metadata(&pool, series_id)
         .await
         .unwrap();
+
+    let updated_at_bumped: bool = sqlx::query_scalar(
+        "SELECT updated_at > '2000-01-02T00:00:00Z'::timestamptz FROM series WHERE id = $1",
+    )
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(updated_at_bumped, "clearing metadata bumps updated_at");
 
     let description: Option<String> = series_field(&pool, series_id, "description").await;
     let authors: Vec<String> = series_field(&pool, series_id, "authors").await;
@@ -507,6 +553,8 @@ async fn migration_0139_normalizes_legacy_lock_values(pool: sqlx::PgPool) {
     let series_id = create_series(&pool, lib_id, "Legacy Locks").await;
     let invalid_series_id = create_series(&pool, lib_id, "Invalid Locks").await;
     let book_id = seed_book(&pool, lib_id, series_id).await;
+    let archived_series_id = Uuid::new_v4();
+    let invalid_archived_series_id = Uuid::new_v4();
 
     sqlx::query("UPDATE books SET locked_fields = $1 WHERE id = $2")
         .bind(serde_json::json!({
@@ -536,6 +584,31 @@ async fn migration_0139_normalizes_legacy_lock_values(pool: sqlx::PgPool) {
         .execute(&pool)
         .await
         .unwrap();
+    sqlx::query(
+        "INSERT INTO archived_series (id, library_id, name, locked_fields) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(archived_series_id)
+    .bind(lib_id)
+    .bind("Legacy Archived Locks")
+    .bind(serde_json::json!({
+        "description": "true",
+        "authors": 1,
+        "status": "false",
+        "genres": "maybe",
+    }))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO archived_series (id, library_id, name, locked_fields) \
+         VALUES ($1, $2, $3, '[]'::jsonb)",
+    )
+    .bind(invalid_archived_series_id)
+    .bind(lib_id)
+    .bind("Invalid Archived Locks")
+    .execute(&pool)
+    .await
+    .unwrap();
 
     sqlx::raw_sql(MIGRATION).execute(&pool).await.unwrap();
 
@@ -575,6 +648,30 @@ async fn migration_0139_normalizes_legacy_lock_values(pool: sqlx::PgPool) {
         serde_json::json!({"summary": true, "isbn": true}),
         "book locks follow the same strict boolean normalization"
     );
+
+    let archived_locked: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM archived_series WHERE id = $1")
+            .bind(archived_series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        archived_locked,
+        serde_json::json!({
+            "description": true,
+            "authors": true,
+            "status": false,
+        }),
+        "archived series locks are normalized before a possible restore"
+    );
+
+    let invalid_archived: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM archived_series WHERE id = $1")
+            .bind(invalid_archived_series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(invalid_archived, serde_json::json!({}));
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +689,8 @@ async fn migration_0140_prunes_stale_lock_keys(pool: sqlx::PgPool) {
     let series_id = create_series(&pool, lib_id, "Pruned Locks").await;
     let invalid_series_id = create_series(&pool, lib_id, "Invalid Pruned Locks").await;
     let book_id = seed_book(&pool, lib_id, series_id).await;
+    let archived_series_id = Uuid::new_v4();
+    let invalid_archived_series_id = Uuid::new_v4();
 
     sqlx::query("UPDATE series SET locked_fields = $1 WHERE id = $2")
         .bind(serde_json::json!({
@@ -612,6 +711,34 @@ async fn migration_0140_prunes_stale_lock_keys(pool: sqlx::PgPool) {
         .execute(&pool)
         .await
         .unwrap();
+
+    sqlx::query(
+        "INSERT INTO archived_series (id, library_id, name, locked_fields) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(archived_series_id)
+    .bind(lib_id)
+    .bind("Pruned Archived Locks")
+    .bind(serde_json::json!({
+        "description": true,
+        "authors": false,
+        "publishers": true,
+        "genres": true,
+        "title": true,
+        "status": "true",
+    }))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO archived_series (id, library_id, name, locked_fields) \
+         VALUES ($1, $2, $3, '[\"description\"]'::jsonb)",
+    )
+    .bind(invalid_archived_series_id)
+    .bind(lib_id)
+    .bind("Invalid Pruned Archived Locks")
+    .execute(&pool)
+    .await
+    .unwrap();
 
     sqlx::query("UPDATE books SET locked_fields = $1 WHERE id = $2")
         .bind(serde_json::json!({
@@ -660,6 +787,26 @@ async fn migration_0140_prunes_stale_lock_keys(pool: sqlx::PgPool) {
         serde_json::json!({"summary": true, "isbn": true}),
         "only the book fields the policy can read survive"
     );
+
+    let archived_locked: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM archived_series WHERE id = $1")
+            .bind(archived_series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        archived_locked,
+        serde_json::json!({"description": true, "publishers": true}),
+        "archived series locks are pruned before a possible restore"
+    );
+
+    let invalid_archived: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM archived_series WHERE id = $1")
+            .bind(invalid_archived_series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(invalid_archived, serde_json::json!({}));
 }
 
 /// Regression #112: a link stored with a discovery source id must be synced

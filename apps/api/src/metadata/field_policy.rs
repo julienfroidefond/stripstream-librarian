@@ -468,7 +468,9 @@ fn series_clear_sql() -> String {
         .collect::<Vec<_>>()
         .join(",\n            ");
 
-    format!("UPDATE series SET\n            {sets}\n         WHERE id = $1")
+    format!(
+        "UPDATE series SET\n            {sets},\n            updated_at = NOW()\n         WHERE id = $1"
+    )
 }
 
 fn book_update_sql() -> String {
@@ -594,19 +596,23 @@ fn build_report(
             continue;
         }
 
-        let old_value = existing
-            .map(|row| read_field(row, descriptor))
-            .unwrap_or_else(|| empty_value(descriptor.kind));
+        let old_value = existing.map(|row| read_field(row, descriptor));
+        // A series inserted by this sync has no previous value: keep the
+        // report shape consistent for arrays too (no `[]` old value).
+        let old_json = old_value.as_ref().and_then(FieldValue::to_json);
 
         // Genres are a seed, not a synced value: an existing local taxonomy
         // always wins and is never reported as skipped.
-        if descriptor.kind == FieldKind::SeedTextArray && !old_value.is_empty() {
+        if descriptor.kind == FieldKind::SeedTextArray
+            && old_value.as_ref().is_some_and(|value| !value.is_empty())
+        {
             continue;
         }
 
+        let old_value = old_value.unwrap_or_else(|| empty_value(descriptor.kind));
         let change = FieldChange {
             field: descriptor.key.to_string(),
-            old_value: old_value.to_json(),
+            old_value: old_json,
             new_value: new_value.to_json(),
         };
 

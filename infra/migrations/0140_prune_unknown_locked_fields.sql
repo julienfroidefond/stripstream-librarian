@@ -68,3 +68,37 @@ WHERE b.id = pruned.id
 UPDATE books
 SET locked_fields = '{}'::jsonb
 WHERE jsonb_typeof(locked_fields) <> 'object';
+
+WITH pruned AS (
+    SELECT a.id,
+           COALESCE(
+               (
+                   SELECT jsonb_object_agg(key, value)
+                   FROM jsonb_each(a.locked_fields)
+                   WHERE key IN (
+                       'description',
+                       'authors',
+                       'publishers',
+                       'start_year',
+                       'total_volumes',
+                       'status',
+                       'cover_url'
+                   )
+                     AND value = 'true'::jsonb
+               ),
+               '{}'::jsonb
+           ) AS locked_fields
+    FROM archived_series a
+    WHERE jsonb_typeof(a.locked_fields) = 'object'
+)
+UPDATE archived_series a
+SET locked_fields = pruned.locked_fields
+FROM pruned
+WHERE a.id = pruned.id
+  AND a.locked_fields IS DISTINCT FROM pruned.locked_fields;
+
+-- Restoring an archived series copies its locks back into `series`: prune
+-- stale keys here too so they cannot reappear after the migration.
+UPDATE archived_series
+SET locked_fields = '{}'::jsonb
+WHERE jsonb_typeof(locked_fields) <> 'object';

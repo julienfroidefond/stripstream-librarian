@@ -76,3 +76,40 @@ WHERE b.id = normalized.id
 UPDATE books
 SET locked_fields = '{}'::jsonb
 WHERE jsonb_typeof(locked_fields) <> 'object';
+
+WITH normalized AS (
+    SELECT a.id,
+           COALESCE(
+               (
+                   SELECT jsonb_object_agg(
+                       key,
+                       CASE jsonb_typeof(value)
+                           WHEN 'boolean' THEN value
+                           WHEN 'string' THEN to_jsonb(lower(value #>> '{}') = 'true')
+                           WHEN 'number' THEN to_jsonb((value #>> '{}')::numeric <> 0)
+                       END
+                   )
+                   FROM jsonb_each(a.locked_fields)
+                   WHERE jsonb_typeof(value) = 'boolean'
+                      OR (
+                          jsonb_typeof(value) = 'string'
+                          AND lower(value #>> '{}') IN ('true', 'false')
+                      )
+                      OR jsonb_typeof(value) = 'number'
+               ),
+               '{}'::jsonb
+           ) AS locked_fields
+    FROM archived_series a
+    WHERE jsonb_typeof(a.locked_fields) = 'object'
+)
+UPDATE archived_series a
+SET locked_fields = normalized.locked_fields
+FROM normalized
+WHERE a.id = normalized.id
+  AND a.locked_fields IS DISTINCT FROM normalized.locked_fields;
+
+-- A restored archived series copies its locks back into `series`, so stale
+-- values must be normalized here as well.
+UPDATE archived_series
+SET locked_fields = '{}'::jsonb
+WHERE jsonb_typeof(locked_fields) <> 'object';
