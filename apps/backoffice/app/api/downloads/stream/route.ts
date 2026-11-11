@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { pollingStreams } from "@/lib/api-stream";
-
-const TORRENT_ACTIVE_STATUSES = new Set(["downloading", "completed", "importing"]);
+import { hasActiveDownloads } from "@/lib/downloads/stream";
 
 /**
  * Every download source over a single SSE connection.
@@ -20,9 +19,6 @@ export async function GET(request: NextRequest) {
       { key: "telegram", path: "/telegram-monitor/downloads" },
       { key: "ddl", path: "/ddl-provider-downloads" },
     ],
-    hasActive: ({ torrent, telegram, ddl }) =>
-      torrent.some((download) => TORRENT_ACTIVE_STATUSES.has(download.status)) ||
-      telegram.some((download) => download.status === "downloading") ||
-      ddl.some((download) => download.status === "queued" || download.status === "downloading"),
+    hasActive: hasActiveDownloads,
   });
 }
