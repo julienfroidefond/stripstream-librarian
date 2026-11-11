@@ -67,7 +67,7 @@ Pour chaque tome de la série, Stripstream met à jour : résumé, ISBN, date de
 
 ### Champs verrouillables
 
-Sur une **série** : description, auteurs, éditeurs, année de début, nombre total de tomes, statut, couverture. Les **genres** ne sont pas verrouillables : les genres locaux ne sont jamais écrasés, le provider ne fait que les initialiser quand la série n'en a aucun.
+Sur une **série** : description, auteurs, éditeurs, année de début, nombre total de tomes et statut. La couverture (`cover_url`) est également verrouillable, mais uniquement via l'API (`PATCH /series/{id}`) : le formulaire d'édition n'expose pas encore de cadenas pour ce champ. Les **genres** ne sont pas verrouillables : les genres locaux ne sont jamais écrasés, le provider ne fait que les initialiser quand la série n'en a aucun.
 
 Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs. Les champs gérés localement (titre, série, numéro de volume) ne sont pas verrouillables, car la synchronisation ne les modifie jamais.
 
@@ -75,6 +75,8 @@ Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs. Les cha
 Tous les champs verrouillés sont systématiquement ignorés par la synchronisation, quelle que soit la source. Le verrouillage est votre protection contre les mises à jour automatiques non souhaitées.
 
 Les verrous sont des booléens stricts (`{"description": true}`) et seules les clés connues du catalogue sont acceptées. À l'écriture, l'API ignore silencieusement les clés inconnues, les valeurs non booléennes et les valeurs `false` ; les lignes héritées sont normalisées puis purgées par migration.
+
+Un `PATCH` qui omet `locked_fields` réinitialise tous les verrous : envoyez l'objet complet pour les conserver.
 :::
 
 ### Quand le dernier lien est supprimé

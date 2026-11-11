@@ -71,7 +71,7 @@ Sur la page détail d'une série, vous pouvez consulter et modifier :
 
 ## Verrouillage de champs
 
-Les champs alimentés par les providers peuvent être verrouillés individuellement pour empêcher une synchronisation de métadonnées d'écraser vos modifications manuelles : description, auteurs, éditeurs, année de début, nombre total de tomes, statut et couverture. Activez le **verrou** via l'icône cadenas à côté du champ concerné.
+Les champs alimentés par les providers peuvent être verrouillés individuellement pour empêcher une synchronisation de métadonnées d'écraser vos modifications manuelles : description, auteurs, éditeurs, année de début, nombre total de tomes et statut. La couverture (`cover_url`) est verrouillable via l'API, mais n'a pas encore de cadenas dans le formulaire. Activez le **verrou** via l'icône cadenas à côté du champ concerné.
 
 Les **genres** ne sont pas verrouillables : les genres locaux ne sont jamais écrasés par un rafraîchissement, le provider ne fait que les initialiser quand la série n'en a encore aucun.
 

@@ -49,6 +49,8 @@ Accessibles avec un token de scope `admin` :
 - Diagnostic de santé : `GET /diagnostics` (versions, base de données, caches, miniatures, tâches, bibliothèques)
 - Vue transversale de lecture et d'activité : `GET /admin/reading-overview`, `GET /admin/series/{series_id}/activity`
 
+Les verrous de métadonnées (`locked_fields`) sont des booléens stricts, limités aux clés du catalogue. Un `PATCH` qui omet `locked_fields` réinitialise les verrous : envoyez l'objet complet pour les conserver.
+
 ## Authentification
 
 Passez le token dans le header `Authorization` :
