@@ -29,7 +29,10 @@ async fn async_main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
 
-    let state = AppState { pool };
+    let state = AppState {
+        pool,
+        library_root: config.library_root,
+    };
 
     // Liveness row read by the diagnostics page (`service_heartbeats`).
     stripstream_core::heartbeat::spawn(

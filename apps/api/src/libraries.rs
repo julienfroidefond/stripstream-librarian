@@ -140,7 +140,7 @@ pub async fn create_library(
         return Err(ApiError::bad_request("name is required"));
     }
 
-    let canonical = canonicalize_library_root(&input.root_path)?;
+    let canonical = canonicalize_library_root(&state.library_root, &input.root_path)?;
     let id = Uuid::new_v4();
     let root_path = canonical.to_string_lossy().to_string();
 
@@ -222,7 +222,10 @@ pub async fn delete_library(
     Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
 
-fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
+fn canonicalize_library_root(
+    library_root: &stripstream_core::paths::LibraryRoot,
+    root_path: &str,
+) -> Result<PathBuf, ApiError> {
     // Reject parent-directory traversal explicitly: an absolute path containing
     // `..` can still point outside the mounted libraries volume.
     if root_path.contains("..") {
@@ -231,10 +234,11 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
         ));
     }
 
-    let physical_root = std::env::var("LIBRARIES_ROOT_PATH")
-        .ok()
-        .map(|root| remap_picker_path(root_path, Path::new(&root)))
-        .unwrap_or_else(|| root_path.to_string());
+    let physical_root = library_root
+        .resolve(root_path)
+        .map_err(|_| ApiError::bad_request("root_path must be absolute"))?
+        .to_local()
+        .to_string();
     let path = Path::new(&physical_root);
     if !path.is_absolute() {
         return Err(ApiError::bad_request("root_path must be absolute"));
@@ -253,20 +257,6 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
     }
 
     Ok(path.to_path_buf())
-}
-
-/// Convert the virtual folder paths returned by `/folders` to the local path
-/// used by the API when running outside the container.
-fn remap_picker_path(root_path: &str, libraries_root: &Path) -> String {
-    if root_path == "/libraries" {
-        return libraries_root.to_string_lossy().into_owned();
-    }
-
-    if let Some(relative) = root_path.strip_prefix("/libraries/") {
-        return libraries_root.join(relative).to_string_lossy().into_owned();
-    }
-
-    root_path.to_string()
 }
 
 use crate::index_jobs::{IndexJobResponse, RebuildRequest};

@@ -3,7 +3,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use parsers::{detect_format, extract_volumes, fold_accents, parse_metadata_fast, VolumeType};
-use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
+use stripstream_core::paths::LibraryRoot;
 
 use crate::books::rename::{
     load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
@@ -13,6 +13,7 @@ use super::torrent_import::{ImportResult, ImportedFile, SkippedFile};
 
 pub(super) async fn do_import(
     pool: &PgPool,
+    library_root: &LibraryRoot,
     library_id: Uuid,
     series_name: &str,
     expected_volumes: &[i32],
@@ -44,12 +45,12 @@ pub(super) async fn do_import(
         .fetch_one(pool)
         .await?;
     let root_path: String = lib_row.get("root_path");
-    let physical_root = remap_libraries_path(&root_path);
+    let physical_root = library_root.resolve(&root_path)?.to_local().to_string();
 
     let (target_dir, reference) = if let Some(r) = any_row {
         let abs_path: String = r.get("abs_path");
         let volume: i32 = r.get("volume");
-        let physical = remap_libraries_path(&abs_path);
+        let physical = library_root.resolve(&abs_path)?.to_local().to_string();
         let parent = std::path::Path::new(&physical)
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
@@ -284,7 +285,9 @@ pub(super) async fn do_import(
             [vol] if is_incoming_regular(source_path, std::path::Path::new(&physical_root)) => {
                 existing_by_volume
                     .get(vol)
-                    .map(|paths| resolve_volume_conflict(source_path, paths, replace_existing))
+                    .map(|paths| {
+                        resolve_volume_conflict(library_root, source_path, paths, replace_existing)
+                    })
                     .unwrap_or(VolumeConflict::None)
             }
             _ => VolumeConflict::None,
@@ -316,7 +319,7 @@ pub(super) async fn do_import(
             imported.push(ImportedFile {
                 volume: matched.iter().min().copied().unwrap_or(0),
                 source: source_path.clone(),
-                destination: unmap_libraries_path(&dest),
+                destination: library_root.resolve(&dest)?.to_db().to_string(),
                 already_existed: true,
             });
             continue;
@@ -335,7 +338,7 @@ pub(super) async fn do_import(
         imported.push(ImportedFile {
             volume: matched.iter().min().copied().unwrap_or(0),
             source: source_path.clone(),
-            destination: unmap_libraries_path(&dest),
+            destination: library_root.resolve(&dest)?.to_db().to_string(),
             already_existed: false,
         });
     }
@@ -459,13 +462,20 @@ fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
 /// The most recent file wins; `existing_abs_paths` are DB paths, remapped before stat-ing.
 /// `force_replace` (explicit replace-all import) makes the incoming file win unconditionally.
 pub(super) fn resolve_volume_conflict(
+    library_root: &LibraryRoot,
     incoming: &str,
     existing_abs_paths: &[String],
     force_replace: bool,
 ) -> VolumeConflict {
     let existing: Vec<String> = existing_abs_paths
         .iter()
-        .map(|p| remap_libraries_path(p))
+        .filter_map(|path| match library_root.resolve(path) {
+            Ok(path) => Some(path.to_local().to_string()),
+            Err(error) => {
+                warn!("[IMPORT] Ignoring unmappable library path {path}: {error}");
+                None
+            }
+        })
         .collect();
 
     if existing.is_empty() {

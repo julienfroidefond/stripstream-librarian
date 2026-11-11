@@ -251,10 +251,6 @@ pub async fn cancel_job(
     Ok(Json(map_row(row)))
 }
 
-fn get_libraries_root() -> String {
-    std::env::var("LIBRARIES_ROOT_PATH").unwrap_or_else(|_| "/libraries".to_string())
-}
-
 /// List available folders in /libraries for library creation
 /// Supports browsing subdirectories via optional path parameter
 #[utoipa::path(
@@ -272,11 +268,11 @@ fn get_libraries_root() -> String {
     security(("Bearer" = []))
 )]
 pub async fn list_folders(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<FolderItem>>, ApiError> {
-    let libraries_root = get_libraries_root();
-    let base_path = std::path::Path::new(&libraries_root);
+    let libraries_root = state.library_root.local_root().to_path_buf();
+    let base_path = libraries_root.as_path();
 
     // Determine which path to browse
     let target_path = if let Some(sub_path) = params.get("path") {

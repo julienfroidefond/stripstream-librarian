@@ -13,7 +13,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use parsers::{detect_format, parse_metadata_fast};
-use stripstream_core::paths::remap_libraries_path;
+use stripstream_core::paths::LibraryRoot;
 
 use crate::books::rename::{
     load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
@@ -24,6 +24,7 @@ use crate::downloads::import_pipeline::find_existing_series_dir;
 /// matching existing book files first, then existing directories, then fallback to new.
 pub async fn resolve_target_dir(
     pool: &sqlx::PgPool,
+    library_root: &LibraryRoot,
     library_id: Uuid,
     series_name: &str,
 ) -> anyhow::Result<String> {
@@ -43,7 +44,7 @@ pub async fn resolve_target_dir(
 
     if let Some(r) = any_row {
         let abs_path: String = r.get("abs_path");
-        let physical = remap_libraries_path(&abs_path);
+        let physical = library_root.resolve(&abs_path)?.to_local().to_string();
         let parent = std::path::Path::new(&physical)
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
@@ -58,7 +59,7 @@ pub async fn resolve_target_dir(
         .fetch_one(pool)
         .await?;
     let root_path: String = lib_row.get("root_path");
-    let physical_root = remap_libraries_path(&root_path);
+    let physical_root = library_root.resolve(&root_path)?.to_local().to_string();
 
     // The series name comes from user input (a DDL download request) and is used
     // as a directory component below, so it must not escape the library root.
@@ -198,12 +199,13 @@ pub struct DownloadDestination {
 /// failed or cancelled re-import never destroys the previous good file.
 pub async fn prepare_destination(
     pool: &sqlx::PgPool,
+    library_root: &LibraryRoot,
     library_id: Uuid,
     series_name: &str,
     filename: &str,
     volume_override: Option<i32>,
 ) -> anyhow::Result<DownloadDestination> {
-    let target_dir = resolve_target_dir(pool, library_id, series_name).await?;
+    let target_dir = resolve_target_dir(pool, library_root, library_id, series_name).await?;
     tokio::fs::create_dir_all(&target_dir).await?;
 
     let safe_name = build_target_filename(pool, library_id, series_name, filename, volume_override)
@@ -318,9 +320,14 @@ mod tests {
         let library_id = seed_library(&pool, "{series_name}").await;
 
         assert!(
-            resolve_target_dir(&pool, library_id, "../../etc")
-                .await
-                .is_err(),
+            resolve_target_dir(
+                &pool,
+                &LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT),
+                library_id,
+                "../../etc",
+            )
+            .await
+            .is_err(),
             "a series name must not escape the library root"
         );
     }
@@ -347,14 +354,29 @@ mod tests {
         .await
         .unwrap();
 
-        let first = prepare_destination(&pool, library_id, "Astérix", "Astérix - T01.cbz", None)
-            .await
-            .unwrap();
+        let library_root = LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT);
+        let first = prepare_destination(
+            &pool,
+            &library_root,
+            library_id,
+            "Astérix",
+            "Astérix - T01.cbz",
+            None,
+        )
+        .await
+        .unwrap();
         tokio::fs::write(&first.dest_path, b"GOOD").await.unwrap();
 
-        let second = prepare_destination(&pool, library_id, "Astérix", "Astérix - T01.cbz", None)
-            .await
-            .unwrap();
+        let second = prepare_destination(
+            &pool,
+            &library_root,
+            library_id,
+            "Astérix",
+            "Astérix - T01.cbz",
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(second.dest_path, first.dest_path);
         assert_eq!(

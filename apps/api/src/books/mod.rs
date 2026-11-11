@@ -468,9 +468,6 @@ pub async fn get_book(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-pub(crate) use stripstream_core::paths::remap_libraries_path;
-pub(crate) use stripstream_core::paths::unmap_libraries_path;
-
 // ─── Convert CBR → CBZ ───────────────────────────────────────────────────────
 
 /// Enqueue a CBR → CBZ conversion job for a single book
@@ -527,7 +524,11 @@ pub async fn convert_book(
     let abs_path = abs_path.ok_or_else(|| ApiError::not_found("book file path not found"))?;
 
     // Check for existing CBZ with same stem
-    let physical_path = remap_libraries_path(&abs_path);
+    let physical_path = state
+        .library_root
+        .resolve(&abs_path)?
+        .to_local()
+        .to_string();
     let cbr_path = std::path::Path::new(&physical_path);
     if let (Some(parent), Some(stem)) = (cbr_path.parent(), cbr_path.file_stem()) {
         let cbz_path = parent.join(format!("{}.cbz", stem.to_string_lossy()));
@@ -536,7 +537,10 @@ pub async fn convert_book(
                 status: axum::http::StatusCode::CONFLICT,
                 message: format!(
                     "CBZ file already exists: {}",
-                    unmap_libraries_path(&cbz_path.to_string_lossy())
+                    state
+                        .library_root
+                        .resolve(&cbz_path.to_string_lossy())?
+                        .to_db()
                 ),
             });
         }
@@ -1011,7 +1015,7 @@ pub async fn delete_book(
 
     // Delete the physical file
     if let Some(ref path) = abs_path {
-        let physical = remap_libraries_path(path);
+        let physical = state.library_root.resolve(path)?.to_local().to_string();
         match std::fs::remove_file(&physical) {
             Ok(()) => tracing::info!("[BOOKS] Deleted file: {}", physical),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

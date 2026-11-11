@@ -660,7 +660,9 @@ async fn thumbnail_diagnostics_counts_files_in_the_configured_directory(pool: Pg
 async fn disk_diagnostics_flags_a_missing_mount_as_unavailable() {
     let missing = format!("/stripstream-no-such-mount-{}", Uuid::new_v4());
 
-    let disks = super::storage::disk_diagnostics(&missing, &missing).await;
+    let root =
+        stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT);
+    let disks = super::storage::disk_diagnostics(&missing, &missing, &root).await;
 
     assert_eq!(disks.len(), 3);
     let ids: Vec<&str> = disks.iter().map(|d| d.id.as_str()).collect();

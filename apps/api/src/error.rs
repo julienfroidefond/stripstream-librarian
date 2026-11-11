@@ -112,6 +112,13 @@ impl From<sqlx::Error> for ApiError {
     }
 }
 
+impl From<stripstream_core::paths::LibraryPathError> for ApiError {
+    fn from(err: stripstream_core::paths::LibraryPathError) -> Self {
+        tracing::error!("invalid library path: {err}");
+        Self::internal("invalid library path")
+    }
+}
+
 impl From<std::io::Error> for ApiError {
     fn from(err: std::io::Error) -> Self {
         tracing::error!("IO error: {err}");

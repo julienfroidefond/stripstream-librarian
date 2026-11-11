@@ -154,7 +154,11 @@ pub(crate) async fn create_series_with_metadata(
             .fetch_one(pool)
             .await
     {
-        let physical_root = stripstream_core::paths::remap_libraries_path(&root_path);
+        let physical_root = state
+            .library_root
+            .resolve(&root_path)?
+            .to_local()
+            .to_string();
         let series_dir = std::path::Path::new(&physical_root).join(&params.name);
         if !series_dir.exists() {
             if let Err(e) = std::fs::create_dir_all(&series_dir) {

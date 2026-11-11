@@ -422,6 +422,7 @@ pub async fn download_book(
     // Backoffice saves `limits`, so a change applies to the next download
     // without restarting the API.
     let settings = *state.download_settings.read().await;
+    let library_root = state.library_root.clone();
 
     state
         .telegram_downloads
@@ -433,6 +434,7 @@ pub async fn download_book(
                 Box::pin(async move {
                     do_download(
                         pool,
+                        library_root,
                         settings,
                         api_id_i32,
                         api_hash,
@@ -460,6 +462,7 @@ pub async fn download_book(
 #[allow(clippy::too_many_arguments)]
 pub async fn do_download(
     pool: sqlx::PgPool,
+    library_root: stripstream_core::paths::LibraryRoot,
     settings: DownloadSettings,
     api_id: i32,
     api_hash: String,
@@ -520,8 +523,15 @@ pub async fn do_download(
         .ok_or_else(|| anyhow::anyhow!("Document {filename} is not downloadable"))?;
 
     // Resolve the target directory + filename; `.tmp` is cleared on failure.
-    let destination =
-        prepare_destination(&pool, library_id, &series_name, &filename, volume_number).await?;
+    let destination = prepare_destination(
+        &pool,
+        &library_root,
+        library_id,
+        &series_name,
+        &filename,
+        volume_number,
+    )
+    .await?;
     let dest_path = destination.dest_path;
     let tmp_path = destination.tmp_path;
 

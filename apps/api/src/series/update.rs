@@ -339,7 +339,7 @@ pub async fn delete_series(
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let mut conn = state.pool.acquire().await?;
-    delete_series_core(&mut conn, library_id, series_id, true).await?;
+    delete_series_core(&mut conn, &state.library_root, library_id, series_id, true).await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }
@@ -357,12 +357,11 @@ pub async fn delete_series(
 /// would be a guess.
 pub(crate) async fn delete_series_core(
     conn: &mut sqlx::PgConnection,
+    library_root: &stripstream_core::paths::LibraryRoot,
     library_id: Uuid,
     series_id: Uuid,
     delete_files: bool,
 ) -> Result<(), ApiError> {
-    use stripstream_core::paths::remap_libraries_path;
-
     // Verify the series exists
     let series_row = sqlx::query("SELECT name FROM series WHERE id = $1 AND library_id = $2")
         .bind(series_id)
@@ -400,18 +399,34 @@ pub(crate) async fn delete_series_core(
             let thumbnail_path: Option<String> = row.get("thumbnail_path");
 
             if let Some(ref path) = abs_path {
-                let physical = remap_libraries_path(path);
-                if series_dir.is_none() {
-                    if let Some(parent) = std::path::Path::new(&physical).parent() {
-                        series_dir = Some(parent.to_string_lossy().into_owned());
+                match library_root.resolve(path) {
+                    Ok(resolved) => {
+                        let physical = resolved.to_local().to_string();
+                        if series_dir.is_none() {
+                            if let Some(parent) = std::path::Path::new(&physical).parent() {
+                                series_dir = Some(parent.to_string_lossy().into_owned());
+                            }
+                        }
+                        match std::fs::remove_file(&physical) {
+                            Ok(()) => {}
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(e) => {
+                                deletion_failed = true;
+                                tracing::warn!(
+                                    "[SERIES] Failed to delete file {}: {}",
+                                    physical,
+                                    e
+                                );
+                            }
+                        }
                     }
-                }
-                match std::fs::remove_file(&physical) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => {
+                    Err(err) => {
                         deletion_failed = true;
-                        tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
+                        tracing::warn!(
+                            "[SERIES] Skipping file with invalid library path {}: {}",
+                            path,
+                            err
+                        );
                     }
                 }
             }

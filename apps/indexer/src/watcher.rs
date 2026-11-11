@@ -7,7 +7,6 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::utils;
 use crate::AppState;
 
 /// Check if any indexing job is currently active.
@@ -50,6 +49,7 @@ fn snapshot_library(root_path: &str) -> LibrarySnapshot {
 /// a rebuild so the scanner can index or remove them.
 async fn is_already_reconciled(
     pool: &sqlx::PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     old_snapshot: &LibrarySnapshot,
     new_snapshot: &LibrarySnapshot,
 ) -> bool {
@@ -58,11 +58,19 @@ async fn is_already_reconciled(
         return false;
     }
 
-    let removed_db_paths: Vec<String> = old_snapshot
+    let mut removed_db_paths = Vec::new();
+    for path in old_snapshot
         .iter()
         .filter(|path| !new_snapshot.contains(*path))
-        .map(|path| utils::unmap_libraries_path(path))
-        .collect();
+    {
+        match library_root.resolve(path) {
+            Ok(path) => removed_db_paths.push(path.to_db().to_string()),
+            Err(error) => {
+                warn!("[WATCHER] Cannot map removed path {path} back to the database: {error}");
+                return false;
+            }
+        }
+    }
 
     if removed_db_paths.is_empty() {
         return true;
@@ -115,11 +123,16 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
 
         let current_libraries: HashMap<Uuid, String> = rows
             .into_iter()
-            .map(|row| {
+            .filter_map(|row| {
                 let id: Uuid = row.get("id");
                 let root_path: String = row.get("root_path");
-                let local_path = utils::remap_libraries_path(&root_path);
-                (id, local_path)
+                match state.library_root.resolve(&root_path) {
+                    Ok(path) => Some((id, path.to_local().to_string())),
+                    Err(error) => {
+                        error!("[WATCHER] Invalid root_path for library {id}: {error}");
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -189,7 +202,13 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
 
                 let already_reconciled = match snapshots.get(library_id) {
                     Some(old_snapshot) => {
-                        is_already_reconciled(&pool, old_snapshot, &new_snapshot).await
+                        is_already_reconciled(
+                            &pool,
+                            &state.library_root,
+                            old_snapshot,
+                            &new_snapshot,
+                        )
+                        .await
                     }
                     None => false,
                 };
@@ -281,6 +300,10 @@ mod tests {
         paths.iter().map(|p| p.to_string()).collect()
     }
 
+    fn library_root() -> stripstream_core::paths::LibraryRoot {
+        stripstream_core::paths::LibraryRoot::new("/libraries")
+    }
+
     /// A deletion already applied through the API (DB row gone) needs no rebuild.
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn api_deletion_is_already_reconciled(pool: sqlx::PgPool) {
@@ -297,7 +320,7 @@ mod tests {
         let old = snapshot(&["/libraries/watch_api/a.cbz"]);
         let new = snapshot(&[]);
         assert!(
-            is_already_reconciled(&pool, &old, &new).await,
+            is_already_reconciled(&pool, &library_root(), &old, &new).await,
             "API deletion is already reflected in the DB"
         );
     }
@@ -311,7 +334,7 @@ mod tests {
         let old = snapshot(&["/libraries/watch_ext/a.cbz"]);
         let new = snapshot(&[]);
         assert!(
-            !is_already_reconciled(&pool, &old, &new).await,
+            !is_already_reconciled(&pool, &library_root(), &old, &new).await,
             "external deletion must trigger a rebuild"
         );
     }
@@ -330,7 +353,7 @@ mod tests {
         let old = snapshot(&["/libraries/watch_add/a.cbz"]);
         let new = snapshot(&["/libraries/watch_add/b.cbz"]);
         assert!(
-            !is_already_reconciled(&pool, &old, &new).await,
+            !is_already_reconciled(&pool, &library_root(), &old, &new).await,
             "a newly added file must trigger a rebuild"
         );
     }

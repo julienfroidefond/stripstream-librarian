@@ -200,10 +200,14 @@ async fn preserve_secrets(
 /// Only the runtime keys whose values directly control resource allocation,
 /// filesystem access or request admission are validated; unknown keys are left
 /// untouched so the Backoffice can store arbitrary configuration.
-fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
+fn validate_setting(
+    key: &str,
+    value: &Value,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> Result<(), ApiError> {
     match key {
         "limits" => validate_limits(value),
-        "cache" => validate_cache(value),
+        "cache" => validate_cache(value, library_root),
         _ => Ok(()),
     }
 }
@@ -277,7 +281,10 @@ fn validate_limits(value: &Value) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_cache(value: &Value) -> Result<(), ApiError> {
+fn validate_cache(
+    value: &Value,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> Result<(), ApiError> {
     if let Some(max_mb) = value.get("memory_max_size_mb") {
         let max_mb = max_mb
             .as_u64()
@@ -292,7 +299,7 @@ fn validate_cache(value: &Value) -> Result<(), ApiError> {
         let dir = dir
             .as_str()
             .ok_or_else(|| ApiError::bad_request("cache.directory must be a string"))?;
-        if !is_safe_cache_directory(dir) {
+        if !is_safe_cache_directory(dir, library_root) {
             return Err(ApiError::bad_request(
                 "cache.directory must be an absolute path outside protected directories",
             ));
@@ -303,7 +310,10 @@ fn validate_cache(value: &Value) -> Result<(), ApiError> {
 
 /// Reject cache directories that would make `clear_cache` destructive if pointed
 /// at a system or data root (`remove_dir_all` runs on this path).
-fn is_safe_cache_directory(path: &str) -> bool {
+fn is_safe_cache_directory(
+    path: &str,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> bool {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return false;
@@ -320,7 +330,7 @@ fn is_safe_cache_directory(path: &str) -> bool {
     }
 
     let protected = [
-        std::env::var("LIBRARIES_ROOT_PATH").unwrap_or_else(|_| "/libraries".to_string()),
+        library_root.local_root().to_string_lossy().into_owned(),
         std::env::var("THUMBNAIL_DIRECTORY").unwrap_or_else(|_| "/data/thumbnails".to_string()),
     ];
 
@@ -356,7 +366,7 @@ pub async fn update_setting(
     let mut value = body.value;
     // Empty/redacted secrets keep the stored value (the form never receives it).
     preserve_secrets(&state.pool, &key, &mut value).await?;
-    validate_setting(&key, &value)?;
+    validate_setting(&key, &value, &state.library_root)?;
 
     let row = sqlx::query(
         r#"
@@ -422,7 +432,7 @@ pub async fn clear_cache(
     state.page_cache.lock().await.clear();
     let cache_dir = state.settings.read().await.cache_directory.clone();
 
-    if !is_safe_cache_directory(&cache_dir) {
+    if !is_safe_cache_directory(&cache_dir, &state.library_root) {
         return Err(ApiError::bad_request(format!(
             "refusing to clear unsafe cache directory '{cache_dir}'"
         )));

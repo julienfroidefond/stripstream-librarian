@@ -31,6 +31,20 @@ fn expect_err<T>(result: Result<T, ApiError>) -> ApiError {
     }
 }
 
+/// Validation uses the container-shaped root unless a test needs another one.
+fn test_library_root() -> stripstream_core::paths::LibraryRoot {
+    stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT)
+}
+
+/// Local wrappers keep the many validation tests focused on their input.
+fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
+    super::validate_setting(key, value, &test_library_root())
+}
+
+fn is_safe_cache_directory(path: &str) -> bool {
+    super::is_safe_cache_directory(path, &test_library_root())
+}
+
 fn key_path(key: &str) -> AxumPath<String> {
     AxumPath(key.to_string())
 }
