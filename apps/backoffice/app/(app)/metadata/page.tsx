@@ -59,23 +59,13 @@ export default async function MetadataPage({
 
   const [series, books] = await Promise.all([
     tab === "series"
-      ? fetchAllSeries(
+      ? fetchAllSeries({
           libraryId,
-          searchQuery || undefined,
-          undefined,
+          search: searchQuery || undefined,
+          gap,
           page,
           limit,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          gap,
-        ).catch(() => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }))
+        }).catch(() => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }))
       : Promise.resolve(null),
     tab === "books"
       ? fetchBooks(

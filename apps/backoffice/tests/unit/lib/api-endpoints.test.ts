@@ -238,17 +238,30 @@ describe("books", () => {
 });
 
 describe("series", () => {
-  it("builds the series query from the boolean flags", async () => {
-    await fetchAllSeries(undefined, "Berserk", undefined, 1, 50, undefined, undefined, true, undefined, undefined, true, true, "volume", "true");
+  it("builds the series query from named catalog filters", async () => {
+    await fetchAllSeries({
+      search: "Berserk",
+      hasMissing: true,
+      shelf: "wishlist",
+      volumeType: "regular",
+      rating: "rated",
+      page: 1,
+      limit: 50,
+    });
 
     expect(lastCall().url).toBe(
-      "http://api:7080/series?q=Berserk&has_missing=true&no_books=true&has_books=true&volume_type=volume&rated_only=true&page=1&limit=50"
+      "http://api:7080/series?q=Berserk&has_missing=true&no_books=true&volume_type=regular&rated_only=true&page=1&limit=50"
     );
     expect(lastCall().init.next).toEqual({ revalidate: 15, tags: ["series"] });
   });
 
+  it("maps the in-library shelf filter to has_books", async () => {
+    await fetchAllSeries({ shelf: "in_library", page: 1, limit: 24 });
+    expect(lastCall().url).toBe("http://api:7080/series?has_books=true&page=1&limit=24");
+  });
+
   it("adds the metadata gap filter", async () => {
-    await fetchAllSeries("lib-1", undefined, undefined, 1, 24, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "no_description");
+    await fetchAllSeries({ libraryId: "lib-1", gap: "no_description", page: 1, limit: 24 });
     expect(lastCall().url).toBe("http://api:7080/series?library_id=lib-1&gap=no_description&page=1&limit=24");
   });
 

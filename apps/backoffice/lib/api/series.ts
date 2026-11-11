@@ -74,41 +74,60 @@ export type SeriesPageDto = {
   limit: number;
 };
 
-export async function fetchAllSeries(
-  libraryId?: string,
-  q?: string,
-  readingStatus?: string,
-  page: number = 1,
-  limit: number = 50,
-  sort?: string,
-  seriesStatus?: string,
-  hasMissing?: boolean,
-  metadataProvider?: string,
-  author?: string,
-  noBooks?: boolean,
-  hasBooks?: boolean,
-  volumeType?: string,
-  ratedOnly?: string,
-  gap?: string,
-): Promise<SeriesPageDto> {
-  const params = new URLSearchParams();
-  if (libraryId) params.set("library_id", libraryId);
-  if (q) params.set("q", q);
-  if (readingStatus) params.set("reading_status", readingStatus);
-  if (sort) params.set("sort", sort);
-  if (seriesStatus) params.set("series_status", seriesStatus);
-  if (hasMissing) params.set("has_missing", "true");
-  if (metadataProvider) params.set("metadata_provider", metadataProvider);
-  if (author) params.set("author", author);
-  if (noBooks) params.set("no_books", "true");
-  if (hasBooks) params.set("has_books", "true");
-  if (volumeType) params.set("volume_type", volumeType);
-  if (ratedOnly) params.set("rated_only", ratedOnly);
-  if (gap) params.set("gap", gap);
-  params.set("page", page.toString());
-  params.set("limit", limit.toString());
+export type CatalogShelf = "wishlist" | "in_library";
+export type CatalogRating = "rated" | "unrated";
+export type CatalogVolumeType = "regular" | "hs" | "oneshot" | "integral";
 
-  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`, {
+export function isCatalogVolumeType(value: string | undefined): value is CatalogVolumeType {
+  return value === "regular" || value === "hs" || value === "oneshot" || value === "integral";
+}
+
+/** Named filters, scope and paging for the series catalog (`GET /series`). */
+export type CatalogQuery = {
+  /** Library UUID; maps to `library_id`. */
+  libraryId?: string;
+  /** Free-text search; maps to `q`. */
+  search?: string;
+  readingStatus?: string;
+  sort?: string;
+  seriesStatus?: string;
+  hasMissing?: boolean;
+  metadataProvider?: string;
+  author?: string;
+  /** Empty-series filter; maps to `no_books` or `has_books`. */
+  shelf?: CatalogShelf;
+  volumeType?: CatalogVolumeType;
+  /** Reader rating filter; maps to `rated_only`. */
+  rating?: CatalogRating;
+  gap?: string;
+  page?: number;
+  limit?: number;
+};
+
+export function catalogQueryParams(query: CatalogQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.libraryId) params.set("library_id", query.libraryId);
+  if (query.search) params.set("q", query.search);
+  if (query.readingStatus) params.set("reading_status", query.readingStatus);
+  if (query.sort) params.set("sort", query.sort);
+  if (query.seriesStatus) params.set("series_status", query.seriesStatus);
+  if (query.hasMissing) params.set("has_missing", "true");
+  if (query.metadataProvider) params.set("metadata_provider", query.metadataProvider);
+  if (query.author) params.set("author", query.author);
+  if (query.shelf === "wishlist") params.set("no_books", "true");
+  if (query.shelf === "in_library") params.set("has_books", "true");
+  if (query.volumeType) params.set("volume_type", query.volumeType);
+  if (query.rating === "rated") params.set("rated_only", "true");
+  if (query.rating === "unrated") params.set("rated_only", "unrated");
+  if (query.gap) params.set("gap", query.gap);
+  params.set("page", (query.page ?? 1).toString());
+  params.set("limit", (query.limit ?? 50).toString());
+
+  return params;
+}
+
+export async function fetchAllSeries(query: CatalogQuery = {}): Promise<SeriesPageDto> {
+  return apiFetch<SeriesPageDto>(`/series?${catalogQueryParams(query).toString()}`, {
     next: { revalidate: 15, tags: ["series"] },
   });
 }

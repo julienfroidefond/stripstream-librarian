@@ -1,4 +1,5 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchMetadataProviders, LibraryDto, SeriesDto, SeriesPageDto } from "@/lib/api";
+import type { CatalogQuery } from "@/lib/api";
 import { cookies } from "next/headers";
 import { OffsetPagination } from "@/app/components/ui";
 import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
@@ -27,17 +28,22 @@ export default async function LibrarySeriesPage({
   const cookieStore = await cookies();
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
-  const readingStatus = paramString(sp, "status");
-  const sort = paramString(sp, "sort");
-  const seriesStatus = paramString(sp, "series_status");
-  const hasMissing = paramBool(sp, "has_missing");
-  const metadataProvider = paramString(sp, "metadata_provider");
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 24);
+  const catalogQuery: CatalogQuery = {
+    libraryId: id,
+    readingStatus: hasActiveUser ? paramString(sp, "status") : undefined,
+    sort: paramString(sp, "sort"),
+    seriesStatus: paramString(sp, "series_status"),
+    hasMissing: paramBool(sp, "has_missing"),
+    metadataProvider: paramString(sp, "metadata_provider"),
+    page,
+    limit,
+  };
 
   const [library, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),
-    fetchAllSeries(id, undefined, hasActiveUser ? readingStatus : undefined, page, limit, sort, seriesStatus, hasMissing, metadataProvider).catch(
+    fetchAllSeries(catalogQuery).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
@@ -89,7 +95,13 @@ export default async function LibrarySeriesPage({
     ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
   ];
 
-  const hasFilters = (hasActiveUser && readingStatus) || sort || seriesStatus || hasMissing || metadataProvider;
+  const hasFilters = Boolean(
+    catalogQuery.readingStatus ||
+    catalogQuery.sort ||
+    catalogQuery.seriesStatus ||
+    catalogQuery.hasMissing ||
+    catalogQuery.metadataProvider
+  );
 
   return (
     <div className="space-y-6">
@@ -107,11 +119,11 @@ export default async function LibrarySeriesPage({
       <LiveSearchForm
         basePath={`/libraries/${id}/series`}
         initialValues={{
-          status: readingStatus || "",
-          series_status: seriesStatus || "",
-          has_missing: hasMissing ? "true" : "",
-          metadata_provider: metadataProvider || "",
-          sort: sort || "",
+          status: catalogQuery.readingStatus || "",
+          series_status: catalogQuery.seriesStatus || "",
+          has_missing: catalogQuery.hasMissing ? "true" : "",
+          metadata_provider: catalogQuery.metadataProvider || "",
+          sort: catalogQuery.sort || "",
         }}
         fields={[
           ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
@@ -134,9 +146,9 @@ export default async function LibrarySeriesPage({
       {series.length > 0 ? (
         <>
           {viewMode === "list" ? (
-            <SeriesList series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
+            <SeriesList series={series} sort={catalogQuery.sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
           ) : (
-            <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
+            <SeriesGrid series={series} sort={catalogQuery.sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
           )}
 
           <OffsetPagination
