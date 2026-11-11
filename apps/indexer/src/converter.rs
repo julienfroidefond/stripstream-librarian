@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use stripstream_jobs::{finish_success, insert_entity_event, set_current_file};
 
-use crate::{utils, AppState};
+use crate::AppState;
 
 /// Execute a `cbr_to_cbz` job for the given `book_id`.
 ///
@@ -81,7 +81,11 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
         ));
     }
 
-    let physical_path = utils::remap_libraries_path(&abs_path);
+    let physical_path = state
+        .library_root
+        .resolve(&abs_path)?
+        .to_local()
+        .to_string();
     let cbr_path = std::path::Path::new(&physical_path);
 
     let book_name = cbr_path
@@ -100,7 +104,11 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
     info!("[CONVERTER] CBZ created at {}", cbz_path.display());
 
     // Remap physical path back to /libraries/ canonical form
-    let new_abs_path = utils::unmap_libraries_path(&cbz_path.to_string_lossy());
+    let new_abs_path = state
+        .library_root
+        .resolve(&cbz_path.to_string_lossy())?
+        .to_db()
+        .to_string();
 
     // Update book_files: abs_path + format
     sqlx::query(
@@ -209,7 +217,7 @@ mod tests {
         let book = create_book(&pool, lib, "cbr").await;
         let job = create_job(&pool).await;
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         let err = convert_book(&state, job, book).await.unwrap_err();
         assert!(
             err.to_string().contains("no book file found"),
@@ -237,7 +245,7 @@ mod tests {
         add_book_file(&pool, book, "cbz", &file).await;
         let job = create_job(&pool).await;
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         let err = convert_book(&state, job, book).await.unwrap_err();
         assert!(
             err.to_string().contains("is not CBR"),
@@ -268,7 +276,7 @@ mod tests {
         let file_id = add_book_file(&pool, book, "cbr", &file).await;
         let job = create_job(&pool).await;
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         let err = convert_book(&state, job, book).await.unwrap_err();
         assert!(
             err.to_string().contains("unrar"),

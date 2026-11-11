@@ -917,7 +917,11 @@ struct PollOutcome {
 }
 
 /// Poll AllDebrid magnets until their files are ready, then fetch and import.
-pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
+pub async fn run_alldebrid_poller(
+    pool: PgPool,
+    library_root: stripstream_core::paths::LibraryRoot,
+    interval_seconds: u64,
+) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
     let active_wait = Duration::from_secs(5);
     let error_wait = Duration::from_secs(15);
@@ -930,43 +934,46 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
         // Re-read the tuning every cycle so a Backoffice change (concurrency,
         // stall timeout) takes effect on the next poll without an API restart.
         let settings = DownloadSettings::load(&pool).await;
-        let wait = match poll_alldebrid_downloads(&pool, &mut fetch_attempts, &settings).await {
-            Ok(outcome) if outcome.status_errors > 0 => {
-                api_backoff = if api_backoff.is_zero() {
-                    active_wait
-                } else {
-                    (api_backoff * 2).min(MAX_API_BACKOFF)
-                };
-                warn!(
-                    "[ALLDEBRID] {} status call(s) failed, backing off {api_backoff:?}",
-                    outcome.status_errors
-                );
-                api_backoff
-            }
-            Ok(outcome) => {
-                api_backoff = Duration::ZERO;
-                if outcome.active {
-                    active_wait
-                } else {
-                    idle_wait
-                }
-            }
-            Err(e) => {
-                warn!("[ALLDEBRID] {:#}", e);
-                let has_rows = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM torrent_downloads \
-                     WHERE client = 'alldebrid' AND status = 'downloading'",
-                )
-                .fetch_one(&pool)
+        let wait =
+            match poll_alldebrid_downloads(&pool, &library_root, &mut fetch_attempts, &settings)
                 .await
-                .unwrap_or(0);
-                if has_rows > 0 {
-                    error_wait
-                } else {
-                    idle_wait
+            {
+                Ok(outcome) if outcome.status_errors > 0 => {
+                    api_backoff = if api_backoff.is_zero() {
+                        active_wait
+                    } else {
+                        (api_backoff * 2).min(MAX_API_BACKOFF)
+                    };
+                    warn!(
+                        "[ALLDEBRID] {} status call(s) failed, backing off {api_backoff:?}",
+                        outcome.status_errors
+                    );
+                    api_backoff
                 }
-            }
-        };
+                Ok(outcome) => {
+                    api_backoff = Duration::ZERO;
+                    if outcome.active {
+                        active_wait
+                    } else {
+                        idle_wait
+                    }
+                }
+                Err(e) => {
+                    warn!("[ALLDEBRID] {:#}", e);
+                    let has_rows = sqlx::query_scalar::<_, i64>(
+                        "SELECT COUNT(*) FROM torrent_downloads \
+                     WHERE client = 'alldebrid' AND status = 'downloading'",
+                    )
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0);
+                    if has_rows > 0 {
+                        error_wait
+                    } else {
+                        idle_wait
+                    }
+                }
+            };
         tokio::time::sleep(wait).await;
     }
 }
@@ -981,6 +988,7 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
 /// account), so one status call per row remains the only option.
 async fn poll_alldebrid_downloads(
     pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     fetch_attempts: &mut HashMap<Uuid, u32>,
     settings: &DownloadSettings,
 ) -> anyhow::Result<PollOutcome> {
@@ -1021,6 +1029,7 @@ async fn poll_alldebrid_downloads(
         let external_id = row.get::<Option<String>, _>("external_id");
         let created_at = row.get::<DateTime<Utc>, _>("created_at");
         let pool = pool.clone();
+        let library_root = library_root.clone();
         let client = Arc::clone(&client);
         let limit = Arc::clone(&limit);
         let settings = *settings;
@@ -1030,7 +1039,16 @@ async fn poll_alldebrid_downloads(
                 warn!("[ALLDEBRID] Download slot unavailable for {tid}");
                 return (tid, RowOutcome::Skipped);
             };
-            handle_row(pool, client, tid, external_id, created_at, &settings).await
+            handle_row(
+                pool,
+                &library_root,
+                client,
+                tid,
+                external_id,
+                created_at,
+                &settings,
+            )
+            .await
         });
     }
 
@@ -1106,6 +1124,7 @@ enum RowOutcome {
 /// be processed concurrently; the caller applies the returned outcome.
 async fn handle_row(
     pool: PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     client: Arc<AlldebridClient>,
     tid: Uuid,
     external_id: Option<String>,
@@ -1124,7 +1143,16 @@ async fn handle_row(
     match client.magnet_status(&external_id).await {
         Ok(entry) => (
             tid,
-            handle_magnet_status(&pool, client.as_ref(), tid, &external_id, &entry, settings).await,
+            handle_magnet_status(
+                &pool,
+                library_root,
+                client.as_ref(),
+                tid,
+                &external_id,
+                &entry,
+                settings,
+            )
+            .await,
         ),
         Err(e) => {
             warn!(
@@ -1210,6 +1238,7 @@ async fn record_inflight_progress(
 
 async fn handle_magnet_status(
     pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     client: &AlldebridClient,
     tid: Uuid,
     external_id: &str,
@@ -1270,7 +1299,7 @@ async fn handle_magnet_status(
 
     // statusCode == 4: AllDebrid finished; fetch the files and hand over to
     // the shared torrent import pipeline.
-    match download_ready_magnet(pool, client, tid, external_id).await {
+    match download_ready_magnet(pool, library_root, client, tid, external_id).await {
         Ok(()) => RowOutcome::Fetched,
         Err(e) => RowOutcome::FetchFailed(format!("{e:#}")),
     }
@@ -1280,6 +1309,7 @@ async fn handle_magnet_status(
 /// start the import.
 async fn download_ready_magnet(
     pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     client: &AlldebridClient,
     tid: Uuid,
     external_id: &str,
@@ -1316,8 +1346,9 @@ async fn download_ready_magnet(
     info!("[ALLDEBRID] Torrent {tid} files fetched to {staging_db}, starting import");
 
     let pool = pool.clone();
+    let library_root = library_root.clone();
     tokio::spawn(async move {
-        if let Err(e) = process_torrent_import(pool, tid).await {
+        if let Err(e) = process_torrent_import(pool, &library_root, tid).await {
             warn!("[ALLDEBRID] Import {tid} failed: {e:#}");
         }
     });
@@ -1724,9 +1755,15 @@ mod tests {
             if legacy.is_some() {
                 sqlx::query("INSERT INTO app_settings (key, value) VALUES ('torrent_import', '{\"enabled\":false}')").execute(&pool).await.unwrap();
             }
-            let result =
-                poll_alldebrid_downloads(&pool, &mut HashMap::new(), &DownloadSettings::default())
-                    .await;
+            let result = poll_alldebrid_downloads(
+                &pool,
+                &stripstream_core::paths::LibraryRoot::new(
+                    stripstream_core::paths::LIBRARIES_DB_ROOT,
+                ),
+                &mut HashMap::new(),
+                &DownloadSettings::default(),
+            )
+            .await;
             assert!(result.err().unwrap().to_string().contains("API key"));
         }
     }
@@ -1993,6 +2030,7 @@ mod tests {
 
         let outcome = handle_magnet_status(
             &pool,
+            &stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT),
             &client,
             id,
             "7",

@@ -233,9 +233,13 @@ pub async fn process_job(
         let library_paths: Vec<String> = libraries
             .iter()
             .map(|library| {
-                crate::utils::remap_libraries_path(&library.get::<String, _>("root_path"))
+                state
+                    .library_root
+                    .resolve(&library.get::<String, _>("root_path"))
+                    .map(|path| path.to_local().to_string())
+                    .map_err(anyhow::Error::from)
             })
-            .collect();
+            .collect::<anyhow::Result<_>>()?;
         // Count sequentially with limited open fds to avoid ENFILE exhaustion
         library_paths
             .iter()
@@ -278,7 +282,11 @@ pub async fn process_job(
     for library in &libraries {
         let library_id: Uuid = library.get("id");
         let root_path: String = library.get("root_path");
-        let root_path = crate::utils::remap_libraries_path(&root_path);
+        let root_path = state
+            .library_root
+            .resolve(&root_path)?
+            .to_local()
+            .to_string();
         match scanner::scan_library_discovery(
             state,
             job_id,

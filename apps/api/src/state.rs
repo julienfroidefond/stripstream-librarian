@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use lru::LruCache;
 use sqlx::{Pool, Postgres};
+use stripstream_core::paths::LibraryRoot;
 use stripstream_core::settings::load_setting;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
 
@@ -15,6 +16,8 @@ use crate::stats::StatsCache;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: sqlx::PgPool,
+    /// Mount point of the `/libraries` database prefix; built once from config.
+    pub library_root: LibraryRoot,
     /// Process start, used by the diagnostics page to report uptime.
     pub started_at: Instant,
     pub bootstrap_token: Arc<str>,
@@ -178,6 +181,7 @@ pub async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
 pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
     AppState {
         pool,
+        library_root: LibraryRoot::new("/libraries"),
         started_at: Instant::now(),
         bootstrap_token: Arc::from("test-token"),
         page_cache: Arc::new(Mutex::new(PageCache::new(1))),

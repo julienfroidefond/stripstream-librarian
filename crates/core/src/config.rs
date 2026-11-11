@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
 
+use crate::paths::LibraryRoot;
+
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     pub listen_addr: String,
     pub database_url: String,
     pub api_bootstrap_token: String,
     pub db_max_connections: u32,
+    /// Host directory the `/libraries` database prefix is mounted on.
+    pub library_root: LibraryRoot,
 }
 
 impl ApiConfig {
@@ -17,6 +21,7 @@ impl ApiConfig {
             api_bootstrap_token: std::env::var("API_BOOTSTRAP_TOKEN")
                 .context("API_BOOTSTRAP_TOKEN is required")?,
             db_max_connections: env_or("API_DB_MAX_CONNECTIONS", 10),
+            library_root: LibraryRoot::from_env(),
         })
     }
 }
@@ -27,6 +32,8 @@ pub struct IndexerConfig {
     pub database_url: String,
     pub scan_interval_seconds: u64,
     pub thumbnail_config: ThumbnailConfig,
+    /// Host directory the `/libraries` database prefix is mounted on.
+    pub library_root: LibraryRoot,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +88,7 @@ impl IndexerConfig {
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             scan_interval_seconds: env_or("INDEXER_SCAN_INTERVAL_SECONDS", 5),
             thumbnail_config,
+            library_root: LibraryRoot::from_env(),
         })
     }
 }
@@ -197,6 +205,26 @@ mod tests {
             || {
                 let config = ApiConfig::from_env().unwrap();
                 assert_eq!(config.db_max_connections, 25);
+            },
+        );
+    }
+
+    #[test]
+    fn api_config_builds_library_root_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://example/db"),
+                ("API_BOOTSTRAP_TOKEN", "token"),
+                ("LIBRARIES_ROOT_PATH", "/srv/comics"),
+            ],
+            || {
+                let config = ApiConfig::from_env().unwrap();
+                assert_eq!(
+                    config.library_root.local_root(),
+                    std::path::Path::new("/srv/comics")
+                );
             },
         );
     }

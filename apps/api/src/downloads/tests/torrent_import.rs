@@ -1,6 +1,10 @@
 use super::*;
 use std::collections::HashSet;
 
+fn test_library_root() -> stripstream_core::paths::LibraryRoot {
+    stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT)
+}
+
 // ─── deduplicate_by_format ──────────────────────────────────────────────
 
 #[test]
@@ -678,7 +682,7 @@ fn write_file_with_mtime(path: &std::path::Path, mtime: std::time::SystemTime) {
 #[test]
 fn volume_conflict_none_when_no_existing() {
     assert_eq!(
-        resolve_volume_conflict("/dl/new.cbz", &[], false),
+        resolve_volume_conflict(&test_library_root(), "/dl/new.cbz", &[], false),
         VolumeConflict::None
     );
 }
@@ -695,7 +699,12 @@ fn volume_conflict_detects_tracked_dest_same_filename() {
 
     let existing = vec![dest.to_string_lossy().into_owned()];
     assert_eq!(
-        resolve_volume_conflict(source.to_str().unwrap(), &existing, false),
+        resolve_volume_conflict(
+            &test_library_root(),
+            source.to_str().unwrap(),
+            &existing,
+            false
+        ),
         VolumeConflict::ReplaceExisting(existing)
     );
 }
@@ -712,7 +721,12 @@ fn volume_conflict_keeps_tracked_dest_when_newer() {
 
     let existing = vec![dest.to_string_lossy().into_owned()];
     assert_eq!(
-        resolve_volume_conflict(source.to_str().unwrap(), &existing, false),
+        resolve_volume_conflict(
+            &test_library_root(),
+            source.to_str().unwrap(),
+            &existing,
+            false
+        ),
         VolumeConflict::KeepExisting
     );
 }
@@ -727,7 +741,12 @@ fn volume_conflict_replaces_when_incoming_newer() {
     write_file_with_mtime(&new, base + std::time::Duration::from_secs(60));
 
     let existing = vec![old.to_string_lossy().into_owned()];
-    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, false);
+    let conflict = resolve_volume_conflict(
+        &test_library_root(),
+        new.to_str().unwrap(),
+        &existing,
+        false,
+    );
     assert_eq!(conflict, VolumeConflict::ReplaceExisting(existing));
 }
 
@@ -741,7 +760,12 @@ fn volume_conflict_keeps_existing_when_newer() {
     write_file_with_mtime(&new, base);
 
     let existing = vec![old.to_string_lossy().into_owned()];
-    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, false);
+    let conflict = resolve_volume_conflict(
+        &test_library_root(),
+        new.to_str().unwrap(),
+        &existing,
+        false,
+    );
     assert_eq!(conflict, VolumeConflict::KeepExisting);
 }
 
@@ -755,7 +779,8 @@ fn volume_conflict_force_replaces_even_when_existing_newer() {
     write_file_with_mtime(&new, base);
 
     let existing = vec![old.to_string_lossy().into_owned()];
-    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, true);
+    let conflict =
+        resolve_volume_conflict(&test_library_root(), new.to_str().unwrap(), &existing, true);
     assert_eq!(conflict, VolumeConflict::ReplaceExisting(existing));
 }
 
@@ -770,7 +795,12 @@ fn volume_conflict_replaces_when_existing_missing_on_disk() {
         .to_string_lossy()
         .into_owned();
 
-    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &[missing], false);
+    let conflict = resolve_volume_conflict(
+        &test_library_root(),
+        new.to_str().unwrap(),
+        &[missing],
+        false,
+    );
     assert!(matches!(conflict, VolumeConflict::ReplaceExisting(p) if p.len() == 1));
 }
 
@@ -927,6 +957,7 @@ async fn do_import_replaces_volume_and_removes_superseded_file(pool: sqlx::PgPoo
     // When: the torrent import runs
     let result = do_import(
         &pool,
+        &test_library_root(),
         library_id,
         "Amulet",
         &[2],

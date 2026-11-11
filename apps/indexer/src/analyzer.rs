@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     batch::{flush_events, flush_page_counts, flush_parse_errors, flush_thumbnails, EventInsert},
     job::is_job_cancelled,
-    utils, AppState,
+    AppState,
 };
 
 #[derive(Clone)]
@@ -550,17 +550,33 @@ pub async fn analyze_library_books(
                 batch_tasks.len()
             );
 
+            let library_root = state.library_root.clone();
             let batch_outcomes: Vec<ExtractOutcome> = stream::iter(batch_tasks)
                 .map(|task| {
                     let config = config.clone();
                     let cancelled = cancelled_flag.clone();
+                    let library_root = library_root.clone();
 
                     async move {
                         if cancelled.load(Ordering::Relaxed) {
                             return ExtractOutcome::Skipped;
                         }
 
-                        let local_path = utils::remap_libraries_path(&task.abs_path);
+                        let local_path = match library_root.resolve(&task.abs_path) {
+                            Ok(path) => path.to_local().to_string(),
+                            Err(error) => {
+                                warn!(
+                                    "[ANALYZER] Invalid library path '{}' for book {}: {error}",
+                                    task.abs_path, task.book_id
+                                );
+                                return ExtractOutcome::Error {
+                                    book_id: task.book_id,
+                                    local_path: task.abs_path,
+                                    parse_error: error.to_string(),
+                                    message: format!("Invalid library path: {error}"),
+                                };
+                            }
+                        };
                         let path = std::path::Path::new(&local_path);
                         let book_id = task.book_id;
                         let needs_thumbnail = task.needs_thumbnail;
@@ -1435,7 +1451,7 @@ mod tests {
         let job = create_job(&pool).await;
         set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         analyze_library_books(&state, job, Some(lib), false)
             .await
             .expect("analysis must succeed");
@@ -1480,7 +1496,7 @@ mod tests {
         let job = create_job(&pool).await;
         set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         analyze_library_books(&state, job, Some(lib), false)
             .await
             .expect("a corrupt book must not fail the whole job");
@@ -1536,7 +1552,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         regenerate_thumbnails(&state, job, Some(lib))
             .await
             .expect("regeneration must succeed");
@@ -1573,7 +1589,7 @@ mod tests {
         let unrelated = thumb_dir.path().join("README.txt");
         std::fs::write(&unrelated, b"notes").unwrap();
 
-        let state = AppState { pool: pool.clone() };
+        let state = crate::test_state(pool.clone());
         cleanup_orphaned_thumbnails(&state).await.unwrap();
 
         assert!(kept.exists(), "a thumbnail of a live book must be kept");

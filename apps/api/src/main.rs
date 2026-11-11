@@ -92,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         pool,
+        library_root: config.library_root,
         started_at: std::time::Instant::now(),
         bootstrap_token: Arc::from(config.api_bootstrap_token),
         page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(
@@ -741,7 +742,9 @@ async fn main() -> anyhow::Result<()> {
     // Clone pool before state is moved into the router
     let poller_pool = state.pool.clone();
     let torrent_poller_pool = state.pool.clone();
+    let torrent_poller_root = state.library_root.clone();
     let alldebrid_poller_pool = state.pool.clone();
+    let alldebrid_poller_root = state.library_root.clone();
 
     let app = Router::new()
         .route("/", get(handlers::api_home))
@@ -774,12 +777,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Start background poller for qBittorrent torrent completions (every 30s)
     tokio::spawn(async move {
-        downloads::run_torrent_poller(torrent_poller_pool, 30).await;
+        downloads::run_torrent_poller(torrent_poller_pool, torrent_poller_root, 30).await;
     });
 
     // Start background poller for AllDebrid magnet progress/files (every 15s)
     tokio::spawn(async move {
-        downloads::run_alldebrid_poller(alldebrid_poller_pool, 15).await;
+        downloads::run_alldebrid_poller(alldebrid_poller_pool, alldebrid_poller_root, 15).await;
     });
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

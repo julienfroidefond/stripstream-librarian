@@ -6,7 +6,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::batch::EventInsert;
-use crate::utils;
 use crate::AppState;
 
 use super::archive::{archive_books, archive_empty_series, archive_orphan_series};
@@ -210,10 +209,22 @@ pub async fn upsert_directory_mtimes(
         return;
     }
 
-    let dir_paths_db: Vec<String> = new_dir_mtimes
+    let dir_paths_db: Vec<String> = match new_dir_mtimes
         .iter()
-        .map(|(local, _)| utils::unmap_libraries_path(local))
-        .collect();
+        .map(|(local, _)| {
+            state
+                .library_root
+                .resolve(local)
+                .map(|path| path.to_db().to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(paths) => paths,
+        Err(error) => {
+            warn!("[SCAN] Failed to map directory mtimes to database paths: {error}");
+            return;
+        }
+    };
     let mtimes: Vec<DateTime<Utc>> = new_dir_mtimes.iter().map(|(_, m)| *m).collect();
     let library_ids: Vec<Uuid> = vec![library_id; new_dir_mtimes.len()];
 

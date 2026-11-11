@@ -159,8 +159,9 @@ pub async fn notify_torrent_done(
     );
 
     let pool = state.pool.clone();
+    let library_root = state.library_root.clone();
     tokio::spawn(async move {
-        if let Err(e) = process_torrent_import(pool, torrent_id).await {
+        if let Err(e) = process_torrent_import(pool, &library_root, torrent_id).await {
             warn!("Torrent import {} failed: {:#}", torrent_id, e);
         }
     });
@@ -345,8 +346,9 @@ pub async fn retry_torrent_import(
 
     // Re-launch the import in a background task
     let pool = state.pool.clone();
+    let library_root = state.library_root.clone();
     tokio::spawn(async move {
-        if let Err(e) = process_torrent_import(pool, id).await {
+        if let Err(e) = process_torrent_import(pool, &library_root, id).await {
             warn!("Retry import {id} failed: {e:#}");
         }
     });
@@ -392,12 +394,16 @@ pub(super) const QB_COMPLETED_STATES: &[&str] = &[
 /// Failed/stalled states: torrent cannot make progress (no seeds, stalled download).
 const QB_FAILED_STATES: &[&str] = &["stalledDL", "pausedDL", "error", "missingFiles"];
 
-pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
+pub async fn run_torrent_poller(
+    pool: PgPool,
+    library_root: stripstream_core::paths::LibraryRoot,
+    interval_seconds: u64,
+) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
     let active_wait = Duration::from_secs(3);
     let error_wait = Duration::from_secs(10);
     loop {
-        let wait = match poll_qbittorrent_downloads(&pool).await {
+        let wait = match poll_qbittorrent_downloads(&pool, &library_root).await {
             Ok(true) => active_wait,
             Ok(false) => idle_wait,
             Err(e) => {
@@ -422,7 +428,10 @@ pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
 }
 
 /// Returns Ok(true) if there are active downloads, Ok(false) otherwise.
-async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
+async fn poll_qbittorrent_downloads(
+    pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> anyhow::Result<bool> {
     let rows = sqlx::query(
         "SELECT id, qb_hash, created_at FROM torrent_downloads \
          WHERE status = 'downloading' AND client = 'qbittorrent'",
@@ -654,8 +663,10 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
                 info.hash, content_path
             );
             let pool_clone = pool.clone();
+            let library_root = library_root.clone();
             tokio::spawn(async move {
-                if let Err(e) = process_torrent_import(pool_clone, torrent_id).await {
+                if let Err(e) = process_torrent_import(pool_clone, &library_root, torrent_id).await
+                {
                     warn!("Torrent import {} failed: {:#}", torrent_id, e);
                 }
             });
@@ -676,7 +687,11 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
 // ─── Import processing ────────────────────────────────────────────────────────
 
-pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
+pub(super) async fn process_torrent_import(
+    pool: PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    torrent_id: Uuid,
+) -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.client, td.replace_existing, l.name AS library_name \
          FROM torrent_downloads td LEFT JOIN libraries l ON l.id = td.library_id WHERE td.id = $1",
@@ -705,6 +720,7 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
 
     match do_import(
         &pool,
+        library_root,
         library_id,
         &series_name,
         &expected_volumes,
@@ -1021,7 +1037,14 @@ mod content_path_tests {
             if legacy.is_some() {
                 sqlx::query("INSERT INTO app_settings (key, value) VALUES ('torrent_import', '{\"enabled\":false}')").execute(&pool).await.unwrap();
             }
-            let err = poll_qbittorrent_downloads(&pool).await.unwrap_err();
+            let err = poll_qbittorrent_downloads(
+                &pool,
+                &stripstream_core::paths::LibraryRoot::new(
+                    stripstream_core::paths::LIBRARIES_DB_ROOT,
+                ),
+            )
+            .await
+            .unwrap_err();
             assert!(err.to_string().contains("qBittorrent config"));
         }
     }

@@ -23,8 +23,6 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
-use stripstream_core::paths::remap_libraries_path;
-
 fn parse_filter(s: &str) -> image::imageops::FilterType {
     match s {
         "lanczos3" => image::imageops::FilterType::Lanczos3,
@@ -246,7 +244,11 @@ pub async fn get_page(
     };
 
     let abs_path: String = row.get("abs_path");
-    let abs_path = remap_libraries_path(&abs_path);
+    let abs_path = state
+        .library_root
+        .resolve(&abs_path)?
+        .to_local()
+        .to_string();
     let input_format: String = row.get("format");
 
     if !std::path::Path::new(&abs_path).exists() {
@@ -594,7 +596,11 @@ pub async fn render_book_page_1(
 
     let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
     let abs_path: String = row.get("abs_path");
-    let abs_path = remap_libraries_path(&abs_path);
+    let abs_path = state
+        .library_root
+        .resolve(&abs_path)?
+        .to_local()
+        .to_string();
     let input_format: String = row.get("format");
 
     if !std::path::Path::new(&abs_path).exists() {

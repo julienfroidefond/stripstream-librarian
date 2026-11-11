@@ -280,6 +280,7 @@ pub async fn start_ddl_download(
     let filename = req.filename.clone();
     let series_name = req.series_name.clone();
     let volume_number = req.volume_number;
+    let library_root = state.library_root.clone();
 
     state
         .ddl_provider_downloads
@@ -291,6 +292,7 @@ pub async fn start_ddl_download(
                 Box::pin(async move {
                     do_download(
                         &pool,
+                        &library_root,
                         download_id,
                         file_url,
                         filename,
@@ -343,8 +345,10 @@ pub(super) async fn queue_ddl_download(
 
 // The claim/fail SQL for this queue lives in `worker::SqlDownloadQueue`; see
 // `DDL_DOWNLOAD_QUEUE`.
+#[allow(clippy::too_many_arguments)]
 async fn do_download(
     pool: &sqlx::PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
     download_id: Uuid,
     file_url: String,
     filename: String,
@@ -352,8 +356,15 @@ async fn do_download(
     library_id: Uuid,
     volume_number: Option<i32>,
 ) -> anyhow::Result<()> {
-    let destination =
-        prepare_destination(pool, library_id, &series_name, &filename, volume_number).await?;
+    let destination = prepare_destination(
+        pool,
+        library_root,
+        library_id,
+        &series_name,
+        &filename,
+        volume_number,
+    )
+    .await?;
     let dest_path = destination.dest_path;
     let tmp_path = destination.tmp_path;
 

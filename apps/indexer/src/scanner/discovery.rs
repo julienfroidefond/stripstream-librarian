@@ -119,7 +119,11 @@ pub async fn scan_library_discovery(
     if !is_full_rebuild {
         for row in existing_rows {
             let abs_path: String = row.get("abs_path");
-            let remapped_path = utils::remap_libraries_path(&abs_path);
+            let remapped_path = state
+                .library_root
+                .resolve(&abs_path)?
+                .to_local()
+                .to_string();
             existing.insert(
                 remapped_path,
                 ExistingFile {
@@ -159,11 +163,11 @@ pub async fn scan_library_discovery(
         rows.into_iter()
             .map(|row| {
                 let db_path: String = row.get("dir_path");
-                let local_path = utils::remap_libraries_path(&db_path);
+                let local_path = state.library_root.resolve(&db_path)?.to_local().to_string();
                 let mtime: DateTime<Utc> = row.get("mtime");
-                (local_path, mtime)
+                Ok((local_path, mtime))
             })
-            .collect()
+            .collect::<anyhow::Result<_>>()?
     } else {
         HashMap::new()
     };
@@ -317,9 +321,9 @@ pub async fn scan_library_discovery(
 
         if under_skipped {
             // Dir unchanged — just mark file as seen so it's not deleted
-            let abs_path_local = local_path.clone();
-            let abs_path = utils::unmap_libraries_path(&abs_path_local);
-            let lookup_path = utils::remap_libraries_path(&abs_path);
+            let library_path = state.library_root.resolve(&local_path)?;
+            let abs_path = library_path.to_db().to_string();
+            let lookup_path = library_path.to_local().to_string();
             seen.insert(lookup_path.clone(), true);
 
             if let Some(existing_file) = existing.get(&lookup_path) {
@@ -480,7 +484,9 @@ pub async fn scan_library_discovery(
         stats.scanned_files += 1;
 
         let abs_path_local = path.to_string_lossy().to_string();
-        let abs_path = utils::unmap_libraries_path(&abs_path_local);
+        let library_path = state.library_root.resolve(&abs_path_local)?;
+        let abs_path = library_path.to_db().to_string();
+        let lookup_path = library_path.to_local().to_string();
         let file_name = path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -510,7 +516,6 @@ pub async fn scan_library_discovery(
             .map(DateTime::<Utc>::from)
             .unwrap_or_else(|_| Utc::now());
         let fingerprint = utils::compute_fingerprint(&path, metadata.len(), &mtime)?;
-        let lookup_path = utils::remap_libraries_path(&abs_path);
 
         library_processed_count += 1;
         *total_processed_count += 1;

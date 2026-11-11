@@ -104,19 +104,19 @@ fn find_list(lists: &[LibraryResponse], id: Uuid) -> &LibraryResponse {
 }
 
 #[test]
-fn remaps_virtual_folder_paths_to_local_library_root() {
-    let local_root = std::path::Path::new("/workspace/libraries");
+fn maps_virtual_folder_paths_to_local_library_root() {
+    let library_root = stripstream_core::paths::LibraryRoot::new("/workspace/libraries");
 
     assert_eq!(
-        remap_picker_path("/libraries/manga", local_root),
+        library_root.resolve("/libraries/manga").unwrap().to_local(),
         "/workspace/libraries/manga"
     );
     assert_eq!(
-        remap_picker_path("/libraries", local_root),
+        library_root.resolve("/libraries").unwrap().to_local(),
         "/workspace/libraries"
     );
     assert_eq!(
-        remap_picker_path("/Volumes/comics", local_root),
+        library_root.resolve("/Volumes/comics").unwrap().to_local(),
         "/Volumes/comics"
     );
 }

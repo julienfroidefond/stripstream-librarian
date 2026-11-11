@@ -58,9 +58,16 @@ pub(super) async fn thumbnail_diagnostics(state: &AppState) -> ThumbnailDiagnost
 ///
 /// `statvfs` is blocking, so every path is measured in one `spawn_blocking`
 /// task. Missing mounts come back as `available: false`, never as an error.
-pub(super) async fn disk_diagnostics(thumbnail_dir: &str, cache_dir: &str) -> Vec<DiskDiagnostics> {
+pub(super) async fn disk_diagnostics(
+    thumbnail_dir: &str,
+    cache_dir: &str,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> Vec<DiskDiagnostics> {
     let targets = vec![
-        ("libraries".to_string(), libraries_root()),
+        (
+            "libraries".to_string(),
+            library_root.local_root().to_string_lossy().into_owned(),
+        ),
         ("thumbnails".to_string(), thumbnail_dir.to_string()),
         ("image_cache".to_string(), cache_dir.to_string()),
     ];
@@ -83,13 +90,4 @@ pub(super) async fn disk_diagnostics(thumbnail_dir: &str, cache_dir: &str) -> Ve
     })
     .await
     .unwrap_or_default()
-}
-
-/// Host path of the `libraries/` volume, or its container default.
-fn libraries_root() -> String {
-    std::env::var("LIBRARIES_ROOT_PATH")
-        .ok()
-        .map(|value| value.trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "/libraries".to_string())
 }

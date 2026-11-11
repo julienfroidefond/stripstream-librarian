@@ -261,7 +261,12 @@ pub async fn get_diagnostics(
         .await
         .unwrap_or_default();
     let libraries = libraries_diagnostics(&state.pool).await.unwrap_or_default();
-    let disks = storage::disk_diagnostics(&thumbnails.directory, &cache_stats.directory).await;
+    let disks = storage::disk_diagnostics(
+        &thumbnails.directory,
+        &cache_stats.directory,
+        &state.library_root,
+    )
+    .await;
     let runtime = runtime::runtime_diagnostics(&state);
 
     Ok(Json(DiagnosticsResponse {

@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use stripstream_core::fingerprint::compute_fingerprint;
-use stripstream_core::paths::remap_libraries_path;
 use stripstream_core::settings::load_setting;
 
 use crate::error::ApiError;
@@ -508,11 +507,30 @@ pub async fn rename_books(
         }));
     }
 
+    // Resolve every physical path before touching the disk, so an invalid
+    // database path aborts the batch instead of leaving it half-renamed.
+    let physical_paths: Vec<(String, String)> = changed_entries
+        .iter()
+        .map(|entry| {
+            Ok((
+                state
+                    .library_root
+                    .resolve(&entry.old_path)?
+                    .to_local()
+                    .to_string(),
+                state
+                    .library_root
+                    .resolve(&entry.new_path)?
+                    .to_local()
+                    .to_string(),
+            ))
+        })
+        .collect::<Result<_, ApiError>>()?;
+
     // Check for conflicts with existing files on disk (outside the batch)
     let batch_old_paths: Vec<String> = entries.iter().map(|e| e.old_path.clone()).collect();
-    for entry in &changed_entries {
-        let physical_new = remap_libraries_path(&entry.new_path);
-        let physical_new_path = std::path::Path::new(&physical_new);
+    for (entry, (_, physical_new)) in changed_entries.iter().zip(&physical_paths) {
+        let physical_new_path = std::path::Path::new(physical_new);
         if physical_new_path.exists() && !batch_old_paths.contains(&entry.new_path) {
             return Err(ApiError::bad_request(format!(
                 "target file already exists: {}",
@@ -529,10 +547,7 @@ pub async fn rename_books(
     let mut renamed_files: Vec<(String, String)> = Vec::new(); // (physical_old, physical_new) for rollback
     let errors: Vec<RenameError> = Vec::new();
 
-    for entry in &changed_entries {
-        let physical_old = remap_libraries_path(&entry.old_path);
-        let physical_new = remap_libraries_path(&entry.new_path);
-
+    for (entry, (physical_old, physical_new)) in changed_entries.iter().zip(physical_paths) {
         // Rename on filesystem
         let old_clone = physical_old.clone();
         let new_clone = physical_new.clone();

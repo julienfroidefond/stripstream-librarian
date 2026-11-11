@@ -12,8 +12,6 @@ use tokio_util::io::ReaderStream;
 use tracing::instrument;
 use uuid::Uuid;
 
-use stripstream_core::paths::remap_libraries_path;
-
 use crate::{error::ApiError, state::AppState};
 
 fn file_content_type(format: &str) -> &'static str {
@@ -105,7 +103,11 @@ pub async fn get_book_file(
     let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
     let abs_path: String = row.get("abs_path");
     let format: String = row.get("format");
-    let local_path = remap_libraries_path(&abs_path);
+    let local_path = state
+        .library_root
+        .resolve(&abs_path)?
+        .to_local()
+        .to_string();
 
     let file = tokio::fs::File::open(&local_path)
         .await

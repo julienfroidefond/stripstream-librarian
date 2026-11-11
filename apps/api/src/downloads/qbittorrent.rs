@@ -459,6 +459,7 @@ pub async fn add_torrent(
 
                                                     // Content exists — launch import immediately
                                                     let pool2 = state.pool.clone();
+                                                    let library_root = state.library_root.clone();
                                                     let tid = download_id.unwrap();
                                                     let lib_id = library_id;
                                                     let sn = series_name;
@@ -484,7 +485,7 @@ pub async fn add_torrent(
                                                     tracing::info!("[QBITTORRENT] Duplicate torrent already completed, launching import immediately for {tid}");
 
                                                     tokio::spawn(async move {
-                                                        if let Err(e) = super::torrent_import::process_torrent_import(pool2, tid).await {
+                                                        if let Err(e) = super::torrent_import::process_torrent_import(pool2, &library_root, tid).await {
                                                             tracing::warn!("Import {tid} failed: {e:#}");
                                                         }
                                                     });

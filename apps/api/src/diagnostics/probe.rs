@@ -64,7 +64,7 @@ pub struct MissingFilesReport {
 pub async fn diagnostics_probe(State(state): State<AppState>) -> Json<DiagnosticsProbe> {
     let (integrations, missing_files) = tokio::join!(
         integration_probes(&state.pool),
-        missing_files_probe(&state.pool)
+        missing_files_probe(&state.pool, &state.library_root)
     );
 
     Json(DiagnosticsProbe {
@@ -266,7 +266,10 @@ async fn probe_ddl_providers(pool: &sqlx::PgPool) -> Vec<IntegrationDiagnostics>
 
 // ─── Missing files ───────────────────────────────────────────────────────────
 
-async fn missing_files_probe(pool: &sqlx::PgPool) -> MissingFilesReport {
+async fn missing_files_probe(
+    pool: &sqlx::PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+) -> MissingFilesReport {
     let paths =
         sqlx::query_scalar::<_, String>("SELECT abs_path FROM book_files ORDER BY id LIMIT $1")
             .bind(MISSING_FILES_LIMIT)
@@ -275,13 +278,23 @@ async fn missing_files_probe(pool: &sqlx::PgPool) -> MissingFilesReport {
             .unwrap_or_default();
 
     let checked = paths.len() as i64;
+    let library_root = library_root.clone();
 
     tokio::task::spawn_blocking(move || {
         let mut missing = 0;
         let mut samples = Vec::new();
 
         for db_path in &paths {
-            let host_path = stripstream_core::paths::remap_libraries_path(db_path);
+            let host_path = match library_root.resolve(db_path) {
+                Ok(path) => path.to_local().to_string(),
+                Err(_) => {
+                    missing += 1;
+                    if samples.len() < MISSING_FILES_SAMPLES {
+                        samples.push(db_path.clone());
+                    }
+                    continue;
+                }
+            };
             if !std::path::Path::new(&host_path).exists() {
                 missing += 1;
                 if samples.len() < MISSING_FILES_SAMPLES {
