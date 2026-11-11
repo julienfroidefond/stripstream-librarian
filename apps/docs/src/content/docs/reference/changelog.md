@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.133 — 2026-11-11
+
+### Refactoring
+
+- **availability** — centralize release merge and prune ([#268](https://github.com/julienfroidefond/stripstream-librarian/pull/268))
+
 ## v3.32.132 — 2026-11-11
 
 ### Refactoring
