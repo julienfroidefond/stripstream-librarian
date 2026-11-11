@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.127 — 2026-11-11
+
+### Nouveautés
+
+- politique des champs metadata et cycle de vie unifié des tâches
+
 ## v3.32.126 — 2026-11-11
 
 <details>
