@@ -96,5 +96,10 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Détection de torrent en double** : quand un torrent existant est trouvé par hash de magnet,
   vérifier que son `content_path` existe sur disque avant de lancer l'import. Les anciens
   répertoires `sl-*` sont nettoyés après l'import.
+- **Disponibilités** : `stripstream_core::availability` possède la fusion
+  (`merge_releases`), le prune (`prune_series` / `prune_library`) et la normalisation
+  (`normalize_library`) des releases `available_downloads`. Le `missing_count` ne décrémente que
+  des volumes distincts réellement retirés d'au moins une release — jamais du nombre de fichiers
+  importés. Ne pas refiltrer le JSON dans les handlers.
 - **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
   `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

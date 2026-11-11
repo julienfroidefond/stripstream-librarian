@@ -769,39 +769,10 @@ async fn volume_zero_cleanup_removes_zero_from_releases(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    // Run the cleanup SQL (same as detection.rs lines 770-791)
-    sqlx::query(
-        r#"
-        UPDATE available_downloads SET available_releases = (
-            SELECT COALESCE(jsonb_agg(
-                jsonb_set(release, '{matched_missing_volumes}',
-                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                     WHERE v::int > 0)
-                )
-            ) FILTER (WHERE jsonb_array_length(
-                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                 WHERE v::int > 0)
-            ) > 0), '[]'::jsonb)
-            FROM jsonb_array_elements(available_releases) AS release
-        )
-        WHERE library_id = $1
-        "#,
-    )
-    .bind(library_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // Delete entries with empty releases
-    sqlx::query(
-        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
-    )
-    .bind(library_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    // Run the legacy-volume normalization
+    availability::normalize_library(&pool, library_id)
+        .await
+        .unwrap();
 
     // The entry should still exist because volumes 1 and 2 remain
     let row = sqlx::query("SELECT available_releases FROM available_downloads WHERE id = $1")
@@ -867,39 +838,10 @@ async fn volume_zero_cleanup_deletes_entry_with_only_zero(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    // Run the cleanup SQL
-    sqlx::query(
-        r#"
-        UPDATE available_downloads SET available_releases = (
-            SELECT COALESCE(jsonb_agg(
-                jsonb_set(release, '{matched_missing_volumes}',
-                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                     WHERE v::int > 0)
-                )
-            ) FILTER (WHERE jsonb_array_length(
-                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
-                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
-                 WHERE v::int > 0)
-            ) > 0), '[]'::jsonb)
-            FROM jsonb_array_elements(available_releases) AS release
-        )
-        WHERE library_id = $1
-        "#,
-    )
-    .bind(library_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // Delete entries with empty releases
-    sqlx::query(
-        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
-    )
-    .bind(library_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    // Run the legacy-volume normalization
+    availability::normalize_library(&pool, library_id)
+        .await
+        .unwrap();
 
     // The entry should be deleted since all volumes were [0]
     let exists: bool =

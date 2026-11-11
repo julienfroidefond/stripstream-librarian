@@ -15,7 +15,6 @@ pub mod rate;
 pub mod recovery;
 pub mod rss_poll;
 pub mod settings;
-mod store;
 pub mod target;
 pub mod telegram_monitor;
 pub mod torrent_import;

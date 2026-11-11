@@ -10,6 +10,7 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
+use stripstream_core::availability::{self, PresentVolumes};
 use stripstream_core::http::build_http_client;
 use stripstream_core::paths::normalize_lexically;
 
@@ -838,67 +839,9 @@ pub(super) async fn process_torrent_import(
                 });
             }
 
-            // Update available_downloads: remove imported volumes
-            let imported_vols: Vec<i32> = imported.iter().map(|f| f.volume).collect();
-            if !imported_vols.is_empty() {
-                let ad_row = sqlx::query(
-                    "SELECT ad.id, ad.missing_count, ad.available_releases FROM available_downloads ad \
-                     JOIN series s ON s.id = ad.series_id \
-                     WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2)",
-                )
-                .bind(library_id)
-                .bind(&series_name)
-                .fetch_optional(&pool)
-                .await
-                .unwrap_or(None);
-
-                if let Some(ad_row) = ad_row {
-                    let ad_id: Uuid = ad_row.get("id");
-                    let releases_json: Option<serde_json::Value> = ad_row.get("available_releases");
-                    if let Some(serde_json::Value::Array(releases)) = releases_json {
-                        let updated: Vec<serde_json::Value> = releases
-                            .into_iter()
-                            .filter_map(|mut release| {
-                                if let Some(matched) = release.get_mut("matched_missing_volumes") {
-                                    if let Some(arr) = matched.as_array() {
-                                        let filtered: Vec<serde_json::Value> = arr
-                                            .iter()
-                                            .filter(|v| {
-                                                !imported_vols
-                                                    .contains(&(v.as_i64().unwrap_or(-1) as i32))
-                                            })
-                                            .cloned()
-                                            .collect();
-                                        if filtered.is_empty() {
-                                            return None;
-                                        }
-                                        *matched = serde_json::Value::Array(filtered);
-                                    }
-                                }
-                                Some(release)
-                            })
-                            .collect();
-
-                        if updated.is_empty() {
-                            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
-                                .bind(ad_id)
-                                .execute(&pool)
-                                .await;
-                        } else {
-                            let new_missing =
-                                ad_row.get::<i32, _>("missing_count") - imported_vols.len() as i32;
-                            let _ = sqlx::query(
-                                "UPDATE available_downloads SET available_releases = $1, missing_count = GREATEST($2, 0), updated_at = NOW() WHERE id = $3",
-                            )
-                            .bind(serde_json::Value::Array(updated))
-                            .bind(new_missing)
-                            .bind(ad_id)
-                            .execute(&pool)
-                            .await;
-                        }
-                    }
-                }
-            }
+            // Prune imported volumes from the availability releases. The module
+            // derives the counter from the distinct volumes actually removed.
+            prune_imported_volumes(&pool, library_id, &series_name, imported).await;
 
             // Clean up: remove the sl-{id} category directory and all its contents
             let downloads_root = remap_downloads_path("/downloads");
@@ -1001,6 +944,39 @@ pub(super) async fn process_torrent_import(
     }
 
     Ok(())
+}
+
+/// Remove the volumes imported by a torrent from the series' availability
+/// releases. Volumes are deduplicated and the counter only moves for volumes
+/// that were actually present in a release match list.
+pub(super) async fn prune_imported_volumes(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_name: &str,
+    imported: &[ImportedFile],
+) {
+    let imported_volumes: Vec<i32> = imported.iter().map(|file| file.volume).collect();
+    if imported_volumes.is_empty() {
+        return;
+    }
+
+    let series_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)",
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some(series_id) = series_id {
+        let _ = availability::prune_series(
+            pool,
+            series_id,
+            &PresentVolumes::from_volumes(imported_volumes),
+        )
+        .await;
+    }
 }
 
 use super::import_pipeline::{do_import, remap_downloads_path};
