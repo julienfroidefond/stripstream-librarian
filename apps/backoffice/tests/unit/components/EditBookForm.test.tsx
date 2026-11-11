@@ -8,7 +8,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { EditBookForm } from "@/app/components/EditBookForm";
+import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
 import type { BookDto } from "@/lib/api";
+import { METADATA_FIELDS_CATALOG } from "../fixtures/metadataFields";
 
 function makeBook(overrides: Partial<BookDto> = {}): BookDto {
   return {
@@ -53,7 +55,11 @@ afterEach(() => {
 });
 
 function openForm(book = makeBook()) {
-  render(<EditBookForm book={book} />);
+  render(
+    <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+      <EditBookForm book={book} />
+    </MetadataFieldsProvider>,
+  );
   fireEvent.click(screen.getByRole("button", { name: /editBook\.editMetadata/ }));
   return book;
 }
@@ -76,13 +82,15 @@ describe("EditBookForm", () => {
   it("exposes an open callback to children", () => {
     stubFetch();
     render(
-      <EditBookForm book={makeBook()}>
-        {(open) => (
-          <button type="button" onClick={open}>
-            custom open
-          </button>
-        )}
-      </EditBookForm>
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={makeBook()}>
+          {(open) => (
+            <button type="button" onClick={open}>
+              custom open
+            </button>
+          )}
+        </EditBookForm>
+      </MetadataFieldsProvider>
     );
 
     expect(screen.queryByTestId("modal-panel")).toBeNull();

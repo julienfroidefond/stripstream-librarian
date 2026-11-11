@@ -2,13 +2,18 @@ import { test, expect } from "@playwright/test";
 
 import { uniqueName } from "../helpers";
 import {
+  apiRequest,
   approveMetadataLink,
   createMetadataMatch,
   deleteMetadataLink,
   getSeriesMetadata,
   updateSeries,
 } from "../support/api";
-import { createMetadataSeries, removeMetadataSeries } from "../support/metadata";
+import {
+  createMetadataSeries,
+  openMetadataSeries,
+  removeMetadataSeries,
+} from "../support/metadata";
 
 /**
  * Verrouillage par champ pendant une synchronisation de métadonnées.
@@ -131,6 +136,96 @@ test.describe("métadonnées — verrouillage et synchronisation", () => {
       for (const id of linkIds) {
         await deleteMetadataLink(id).catch(() => undefined);
       }
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("normalise les verrous invalides et conserve les verrous du catalogue", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+
+    const series = await createMetadataSeries();
+
+    try {
+      // Le catalogue admin décrit exactement ce que le moteur de sync lit.
+      const catalog = await apiRequest<{
+        series: Array<{ key: string; lockable: boolean; clearable: boolean }>;
+        books: Array<{ key: string; lockable: boolean; clearable: boolean }>;
+      }>("/metadata/fields");
+      const byKey = Object.fromEntries(catalog.series.map((field) => [field.key, field]));
+
+      expect(byKey.description).toEqual({
+        key: "description",
+        lockable: true,
+        clearable: true,
+      });
+      expect(byKey.genres).toEqual({
+        key: "genres",
+        lockable: false,
+        clearable: false,
+      });
+      expect(catalog.books.map((field) => field.key)).toEqual([
+        "summary",
+        "isbn",
+        "publish_date",
+        "language",
+        "authors",
+      ]);
+
+      // Un client peut encore envoyer d'anciens verrous : l'API ne doit
+      // persister que les clés connues, explicitement vraies.
+      await apiRequest(`/series/${series.seriesId}`, {
+        method: "PATCH",
+        body: {
+          new_name: series.name,
+          authors: [],
+          genres: [],
+          locked_fields: {
+            description: true,
+            cover_url: true,
+            genres: true,
+            title: true,
+            series: true,
+            status: "true",
+            publishers: 1,
+          },
+        },
+      });
+
+      await expect
+        .poll(async () => (await getSeriesMetadata(series.seriesId)).locked_fields)
+        .toEqual({ description: true, cover_url: true });
+
+      await openMetadataSeries(page, series);
+      await page.getByRole("button", { name: /Edit series/ }).click();
+      const panel = page.getByTestId("modal-panel");
+      await expect(panel).toBeVisible();
+
+      // Un seul verrou du catalogue est rendu dans le formulaire : cover_url est
+      // verrouillable mais n'a pas de contrôle dédié, genres ne l'est pas.
+      const lockedButtons = panel.getByTitle("Locked field (protected from syncs)");
+      await expect(lockedButtons).toHaveCount(1);
+      await expect(panel.getByTitle("Click to lock this field")).toHaveCount(5);
+
+      // Déverrouille la description depuis l'UI : cover_url, absent du
+      // formulaire mais présent au catalogue, doit survivre à l'enregistrement.
+      await lockedButtons.first().click();
+      const [patchResponse] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === "PATCH" &&
+            new URL(response.url()).pathname === `/api/series/${series.seriesId}`
+        ),
+        panel.getByRole("button", { name: "Save", exact: true }).click(),
+      ]);
+      expect(patchResponse.ok()).toBe(true);
+      await expect(panel).toBeHidden();
+
+      await expect
+        .poll(async () => (await getSeriesMetadata(series.seriesId)).locked_fields)
+        .toEqual({ cover_url: true });
+    } finally {
       await removeMetadataSeries(series);
     }
   });

@@ -11,6 +11,17 @@ export type MetadataProviderDto = {
   requires_api_key: boolean;
 };
 
+export type MetadataFieldDto = {
+  key: string;
+  lockable: boolean;
+  clearable: boolean;
+};
+
+export type MetadataFieldCatalogDto = {
+  series: MetadataFieldDto[];
+  books: MetadataFieldDto[];
+};
+
 export type SeriesCandidateDto = {
   provider: string;
   external_id: string;
@@ -91,6 +102,13 @@ export async function searchMetadata(libraryId: string, seriesName: string, prov
 
 export async function fetchMetadataProviders() {
   return apiFetch<MetadataProviderDto[]>("/metadata/providers");
+}
+
+/** Catalog of sync-managed fields exposed by the admin API. */
+export async function fetchMetadataFields() {
+  return apiFetch<MetadataFieldCatalogDto>("/metadata/fields", {
+    next: { revalidate: 300 },
+  });
 }
 
 export async function createMetadataMatch(data: {

@@ -16,7 +16,8 @@ import { MotionReveal } from "@/app/components/MotionReveal";
 import { RouteTransition } from "@/app/components/RouteTransition";
 import { ScrollProgress } from "@/app/components/motion";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
-import { fetchUsers, fetchDownloadsEnabled } from "@/lib/api";
+import { fetchUsers, fetchDownloadsEnabled, fetchMetadataFields } from "@/lib/api";
+import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
 import { ACTIVE_USER_COOKIE, getActiveUser } from "@/lib/activeUser";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
@@ -68,9 +69,10 @@ const navEntries: NavEntry[] = [
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { t } = await getServerTranslations();
   const { userId: activeUserId } = await getActiveUser();
-  const [users, downloadsEnabled] = await Promise.all([
+  const [users, downloadsEnabled, metadataFields] = await Promise.all([
     fetchUsers().catch(() => []),
     fetchDownloadsEnabled(),
+    fetchMetadataFields().catch(() => null),
   ]);
 
   async function setActiveUserAction(formData: FormData) {
@@ -207,7 +209,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           paddingBottom: "max(4rem, env(safe-area-inset-bottom))",
         }}
       >
-        <RouteTransition>{children}</RouteTransition>
+        <MetadataFieldsProvider catalog={metadataFields}>
+          <RouteTransition>{children}</RouteTransition>
+        </MetadataFieldsProvider>
       </main>
 
       <Toaster />
