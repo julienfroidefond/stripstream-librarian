@@ -74,7 +74,7 @@ Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs. Les cha
 :::important
 Tous les champs verrouillés sont systématiquement ignorés par la synchronisation, quelle que soit la source. Le verrouillage est votre protection contre les mises à jour automatiques non souhaitées.
 
-Les verrous sont des booléens stricts (`{"description": true}`). Les valeurs héritées de type chaîne ou nombre sont normalisées automatiquement.
+Les verrous sont des booléens stricts (`{"description": true}`) et seules les clés connues du catalogue sont acceptées. À l'écriture, l'API ignore silencieusement les clés inconnues, les valeurs non booléennes et les valeurs `false` ; les lignes héritées sont normalisées puis purgées par migration.
 :::
 
 ### Quand le dernier lien est supprimé

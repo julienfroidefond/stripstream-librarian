@@ -577,6 +577,91 @@ async fn migration_0139_normalizes_legacy_lock_values(pool: sqlx::PgPool) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Migration 0140: prune locks the sync engine never reads
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn migration_0140_prunes_stale_lock_keys(pool: sqlx::PgPool) {
+    const MIGRATION: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../infra/migrations/0140_prune_unknown_locked_fields.sql"
+    ));
+
+    let lib_id = create_test_library(&pool, "pruned_locks").await;
+    let series_id = create_series(&pool, lib_id, "Pruned Locks").await;
+    let invalid_series_id = create_series(&pool, lib_id, "Invalid Pruned Locks").await;
+    let book_id = seed_book(&pool, lib_id, series_id).await;
+
+    sqlx::query("UPDATE series SET locked_fields = $1 WHERE id = $2")
+        .bind(serde_json::json!({
+            "description": true,
+            "authors": false,
+            "publishers": true,
+            "genres": true,
+            "title": true,
+            "series": true,
+            "status": "true",
+        }))
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE series SET locked_fields = '[\"description\"]'::jsonb WHERE id = $1")
+        .bind(invalid_series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE books SET locked_fields = $1 WHERE id = $2")
+        .bind(serde_json::json!({
+            "summary": true,
+            "isbn": true,
+            "language": false,
+            "title": true,
+            "series": true,
+            "volume": true,
+        }))
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::raw_sql(MIGRATION).execute(&pool).await.unwrap();
+
+    let series_locked: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        series_locked,
+        serde_json::json!({"description": true, "publishers": true}),
+        "stale keys, false values and non-boolean values are pruned"
+    );
+
+    let invalid: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM series WHERE id = $1")
+            .bind(invalid_series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(invalid, serde_json::json!({}));
+
+    let book_locked: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        book_locked,
+        serde_json::json!({"summary": true, "isbn": true}),
+        "only the book fields the policy can read survive"
+    );
+}
+
 /// Regression #112: a link stored with a discovery source id must be synced
 /// through the provider that backs it, not rejected and not sent to Google
 /// Books.

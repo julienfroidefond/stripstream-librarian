@@ -109,7 +109,7 @@ Les séries qui n'ont plus aucun livre après un scan sont automatiquement suppr
 :::note[Détails techniques]
 **Champs de métadonnées** : `description`, `publishers`, `start_year`, `status` (`ongoing`, `ended`, `completed`, `on_hold`, `hiatus`), `total_volumes`, `authors`, `genres`, `cover_url`.
 
-**Verrouillage** : stocké dans la colonne JSONB `locked_fields` sous forme de booléens stricts (ex: `{"description": true}`). Les valeurs héritées de type chaîne ou nombre sont normalisées par migration.
+**Verrouillage** : stocké dans la colonne JSONB `locked_fields` sous forme de booléens stricts (ex: `{"description": true}`). Les valeurs héritées de type chaîne ou nombre sont normalisées par migration, et les clés inconnues sont supprimées : seuls les champs du [catalogue des champs synchronisables](/metadata/sync/#champs-verrouillables) sont conservés.
 
 **Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `norm_text()` sur les deux champs.
 

@@ -1,9 +1,9 @@
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::{list_books, ListBooksQuery, GET_BOOK_SQL};
+use super::{list_books, update_book, ListBooksQuery, UpdateBookRequest, GET_BOOK_SQL};
 use crate::state::test_state;
 
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
@@ -258,4 +258,54 @@ async fn list_books_exposes_summary_date_and_file_size(pool: sqlx::PgPool) {
     assert_eq!(item.summary.as_deref(), Some("A dark fantasy saga."));
     assert_eq!(item.publish_date.as_deref(), Some("1989"));
     assert_eq!(item.file_size, Some(1024));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_book_sanitizes_locked_fields(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "book_locks").await;
+    let book_id = create_test_book(&pool, lib_id, None, "Berserk vol. 1", "comic").await;
+
+    let Json(details) = update_book(
+        State(state),
+        Path(book_id),
+        Json(UpdateBookRequest {
+            title: "Berserk vol. 1".to_string(),
+            author: None,
+            authors: vec!["Kentaro Miura".to_string()],
+            series: None,
+            volume: None,
+            language: None,
+            summary: Some("A dark fantasy".to_string()),
+            isbn: None,
+            publish_date: None,
+            locked_fields: Some(serde_json::json!({
+                "summary": true,
+                "language": true,
+                "authors": "true",
+                "title": true,
+                "series": true,
+                "volume": true,
+            })),
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        details.locked_fields,
+        Some(serde_json::json!({"summary": true, "language": true})),
+        "stale and non-boolean locks are dropped before the write"
+    );
+
+    let stored: serde_json::Value =
+        sqlx::query_scalar("SELECT locked_fields FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        stored,
+        serde_json::json!({"summary": true, "language": true})
+    );
 }

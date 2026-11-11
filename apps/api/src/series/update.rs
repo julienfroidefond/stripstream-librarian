@@ -123,7 +123,7 @@ pub async fn update_series(
         .map(|g| g.trim().to_string())
         .filter(|g| !g.is_empty())
         .collect();
-    let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
+    let locked_fields = crate::metadata::sanitize_series_locks(body.locked_fields.as_ref());
 
     // 1. Update books: author/language only if opted-in
     let result = sqlx::query(

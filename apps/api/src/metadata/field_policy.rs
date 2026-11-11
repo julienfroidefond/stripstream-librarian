@@ -509,6 +509,33 @@ pub(crate) fn is_field_locked(locked: &Value, field: &str) -> bool {
     locked.get(field).and_then(Value::as_bool).unwrap_or(false)
 }
 
+/// Normalize a client-supplied series `locked_fields` payload: keep only known
+/// lockable keys explicitly set to `true`. Unknown keys (locks left by older UI
+/// versions), non-boolean values and `false` entries are dropped.
+pub(crate) fn sanitize_series_locks(locked: Option<&Value>) -> Value {
+    sanitize_locks(locked, SERIES_FIELDS)
+}
+
+/// Same policy as [`sanitize_series_locks`] for book fields.
+pub(crate) fn sanitize_book_locks(locked: Option<&Value>) -> Value {
+    sanitize_locks(locked, BOOK_FIELDS)
+}
+
+fn sanitize_locks(locked: Option<&Value>, descriptors: &[FieldDescriptor]) -> Value {
+    let mut sanitized = serde_json::Map::new();
+    if let Some(Value::Object(entries)) = locked {
+        for descriptor in descriptors {
+            let Some(lock_key) = descriptor.lock else {
+                continue;
+            };
+            if entries.get(lock_key).and_then(Value::as_bool) == Some(true) {
+                sanitized.insert(lock_key.to_string(), Value::Bool(true));
+            }
+        }
+    }
+    Value::Object(sanitized)
+}
+
 // ---------------------------------------------------------------------------
 // Apply
 // ---------------------------------------------------------------------------
@@ -843,6 +870,60 @@ mod tests {
         assert!(!is_field_locked(&locked, "status"));
         assert!(!is_field_locked(&locked, "cover_url"));
         assert!(!is_field_locked(&locked, "missing"));
+    }
+
+    #[test]
+    fn sanitize_series_locks_keeps_known_true_booleans_only() {
+        let sanitized = sanitize_series_locks(Some(&serde_json::json!({
+            "description": true,
+            "authors": true,
+            "publishers": false,
+            "genres": true,
+            "title": true,
+            "series": true,
+            "status": "true",
+            "cover_url": 1,
+            "unknown": true,
+        })));
+
+        assert_eq!(
+            sanitized,
+            serde_json::json!({"description": true, "authors": true}),
+            "only known lockable keys explicitly set to true survive"
+        );
+    }
+
+    #[test]
+    fn sanitize_book_locks_drops_stale_ui_keys_and_non_boolean_values() {
+        let sanitized = sanitize_book_locks(Some(&serde_json::json!({
+            "summary": true,
+            "language": true,
+            "isbn": "true",
+            "publish_date": 1,
+            "authors": false,
+            "title": true,
+            "series": true,
+            "volume": true,
+        })));
+
+        assert_eq!(
+            sanitized,
+            serde_json::json!({"summary": true, "language": true})
+        );
+    }
+
+    #[test]
+    fn sanitize_locks_treats_missing_or_non_object_payloads_as_empty() {
+        assert_eq!(sanitize_series_locks(None), serde_json::json!({}));
+        assert_eq!(sanitize_book_locks(None), serde_json::json!({}));
+        assert_eq!(
+            sanitize_series_locks(Some(&serde_json::json!(["description"]))),
+            serde_json::json!({})
+        );
+        assert_eq!(
+            sanitize_book_locks(Some(&serde_json::json!("summary"))),
+            serde_json::json!({})
+        );
     }
 
     #[test]

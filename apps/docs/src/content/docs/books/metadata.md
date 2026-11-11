@@ -44,5 +44,5 @@ Chaque champ enrichi par les providers peut être verrouillé pour empêcher une
 
 La colonne `author` (premier auteur, utilisée pour l'affichage et le tri) est dérivée de `authors` et suit le même verrou.
 
-Tous ces champs respectent le verrouillage via `locked_fields` (booléens stricts).
+Tous ces champs respectent le verrouillage via `locked_fields` (booléens stricts). Les clés inconnues ou non booléennes sont ignorées à l'écriture et purgées des lignes existantes par migration.
 :::

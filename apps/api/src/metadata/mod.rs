@@ -2,6 +2,8 @@ pub mod batch;
 mod batch_sync;
 pub mod config;
 mod field_policy;
+
+pub(crate) use field_policy::{sanitize_book_locks, sanitize_series_locks};
 pub mod gaps;
 pub mod handlers;
 pub mod refresh;
