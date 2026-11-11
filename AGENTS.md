@@ -188,6 +188,17 @@ All three sync paths (approve, batch auto-match, refresh) share factored code:
 `push_book_metadata()`, plus diff helpers. All providers must store `description` inside
 `metadata_json` (not only the struct field) so it survives the DB round-trip.
 
+### Volume Coverage (`crates/core/src/coverage.rs`)
+
+`SeriesCoverage` is the single source of truth for tome ownership, completeness and missing
+counts. Numbered `regular`/`integral` volumes (`volume >= 1`) cover their own tome; an
+unnumbered `regular`/`integral` covers one unspecified tome; an unnumbered `integral` completes
+the whole series; `hs`, `oneshot` and volume `0` never count. Database adapters live in
+`apps/api/src/coverage.rs` (`missing_counts_cte_for_library`, `missing_counts_cte_for_series`,
+`load_series_coverages`, `load_owned_volumes_for_series_name`); the indexer uses the same core
+type in `cleanup_available_downloads`. Never re-encode this rule in a handler or a one-off SQL
+query.
+
 ### Metadata Providers
 
 `available_providers()`: `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`,

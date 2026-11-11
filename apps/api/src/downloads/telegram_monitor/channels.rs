@@ -273,31 +273,24 @@ pub async fn do_sync(
     const BOOK_EXTENSIONS: &[&str] = &["cbz", "cbr", "pdf", "epub", "zip"];
 
     // Pre-load filtered series per source before opening Telegram connection.
-    // Only series with an approved metadata link AND at least one missing volume
-    // (same rule as download detection / Prowlarr).
+    // Only series with an approved metadata link and at least one real missing
+    // volume — the same perimeter as download detection, Prowlarr and DDL.
     let mut source_work: Vec<(Uuid, String, Option<Uuid>, Vec<String>)> = Vec::new();
     for (source_id, username, library_id) in sources {
         let series_names: Vec<String> = if let Some(lib_id) = library_id {
-            sqlx::query_scalar::<_, String>(
-                "SELECT DISTINCT s.name \
-                 FROM series s \
-                 JOIN external_metadata_links eml \
-                   ON eml.series_id = s.id AND eml.status = 'approved' AND eml.library_id = $1 \
-                 WHERE s.library_id = $1 \
-                   AND EXISTS ( \
-                       SELECT 1 FROM external_book_metadata ebm \
-                       WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL \
-                   ) \
-                   AND NOT EXISTS ( \
-                       SELECT 1 FROM books b \
-                       WHERE b.series_id = s.id AND b.volume_type = 'integral' \
-                   ) \
-                 ORDER BY s.name",
+            let mut names: Vec<String> = super::super::missing::load_approved_links(
+                &pool,
+                Some(lib_id),
+                super::super::missing::LinkScope::WithMissingVolumes,
             )
-            .bind(lib_id)
-            .fetch_all(&pool)
             .await
             .unwrap_or_default()
+            .into_iter()
+            .map(|link| link.series_name)
+            .collect();
+            names.sort();
+            names.dedup();
+            names
         } else {
             vec![]
         };

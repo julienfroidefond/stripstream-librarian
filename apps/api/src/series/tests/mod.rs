@@ -745,6 +745,42 @@ async fn missing_count_unnumbered_integral_completes_series(pool: sqlx::PgPool) 
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_ignores_volume_zero(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_zero").await;
+    let sid = create_series(&pool, lib_id, "Specials").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    create_book_with_type(&pool, lib_id, sid, "Special", Some(0), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 4, "volume 0 is a provider placeholder, not a tome");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_deduplicates_the_same_volume(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_dup").await;
+    let sid = create_series(&pool, lib_id, "Duplicates").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 1 (integral)", Some(1), "integral").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 4, "the same tome must only be counted once");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn missing_count_normal_without_integral(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "missing_no_int").await;
     let sid = create_series(&pool, lib_id, "No INT").await;

@@ -171,5 +171,9 @@ state.library_root.resolve(&local_path)?.to_db()
   fichiers dont le fingerprint n'a pas changé, le scanner re-compare et réécrit
   `books.volume_type`. Un simple rescan suffit donc à corriger des livres mal classés
   HS/oneshot/integral.
+- **Nettoyage des disponibilités** : `cleanup_available_downloads` construit un
+  `stripstream_core::coverage::SeriesCoverage` par série et suit la règle canonique. Une intégrale
+  non numérotée supprime la ligne `available_downloads` ; une intégrale numérotée ne prune que son
+  propre tome. HS, one-shots et volume `0` ne comptent jamais.
 - **Aucun outil externe** : la conversion CBR→CBZ et l'extraction passent par le crate `unrar` et
   `pdfium-render`, jamais par un binaire système.

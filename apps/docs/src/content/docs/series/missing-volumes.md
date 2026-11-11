@@ -25,6 +25,7 @@ Stripstream compare le nombre de tomes que vous possédez avec le nombre total d
 - Les **tomes réguliers** et les **intégrales numérotées** sont comptés ; les hors-séries et oneshots sont exclus
 - Une **intégrale sans numéro de tome** (ex. `Dragon Ball INT.cbz`) marque la série comme complète : aucun volume manquant n'est affiché
 - Une **intégrale numérotée** (ex. `Dragon Ball INT 2.cbz`) ne couvre que son tome : elle compte comme un volume possédé, les autres restent manquants
+- Le **volume `0`** (placeholder de certains providers pour les hors-séries) n'est jamais compté comme un tome
 - Si le nombre total de tomes n'est pas renseigné (provider qui ne donne pas l'information), aucun manquant n'est calculé
 
 ## Volumes disponibles au téléchargement
@@ -36,13 +37,11 @@ Voir [Téléchargements](/downloads/overview/) pour le workflow complet.
 :::note[Détails techniques]
 Calcul des manquants :
 - `0` si la série contient au moins une intégrale **sans numéro de tome** (`volume_type = 'integral' AND volume IS NULL`) ;
-- sinon `max(total_volumes - volumes_possédés, 0)`, où `volumes_possédés` compte les numéros distincts des livres `regular` et `integral`, plus les livres `regular`/`integral` sans numéro.
+- sinon `max(total_volumes - volumes_possédés, 0)`, où `volumes_possédés` compte les numéros distincts (`volume >= 1`) des livres `regular` et `integral`, plus les livres `regular`/`integral` sans numéro.
 
 `total_volumes` vient du champ éponyme du provider, stocké dans `metadata_json`. Si `total_volumes IS NULL`, le calcul retourne 0.
 
-:::caution[Écart connu]
-La détection de téléchargements applique une règle plus large : elle considère la série comme complète dès qu'elle contient **une intégrale, numérotée ou non** (voir [Tâches de détection](/jobs/telechargements/)). Une série avec une intégrale numérotée peut donc afficher des volumes manquants tout en étant ignorée par la détection.
-:::
+Cette règle est partagée par toutes les surfaces : listes et fiche de série, volumes possédés, gaps de métadonnées, détection de téléchargements, Prowlarr/RSS, Telegram et nettoyage de l'indexeur. Une intégrale numérotée ne rend donc jamais la série complète.
 
 Les couvertures et titres des volumes manquants viennent de la table `external_book_metadata`, peuplée lors de la synchronisation des métadonnées.
 :::

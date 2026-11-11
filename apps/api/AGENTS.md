@@ -8,6 +8,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 |--------|------|
 | `main.rs` | Routes, initialisation `AppState`, Swagger UI (client + admin) |
 | `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (Semaphore), `load_concurrent_renders` |
+| `coverage.rs` | Adaptateurs DB de `stripstream_core::coverage::SeriesCoverage` : CTE canonique des manquants, chargement par lot/unité, volumes possédés par nom de série |
 | `api_middleware.rs` | Middlewares `require_admin` / `require_read`, rate limiting lecture |
 | `error.rs` | `ApiError` avec constructeurs `bad_request`, `not_found`, `internal`, etc. |
 | `handlers.rs` | `/health`, `/ready`, `/version`, `/metrics` |
