@@ -387,6 +387,7 @@ pub async fn get_series_by_id(
     let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
 
     let tome_counts = helpers::series_tome_counts("brp");
+    let missing_counts = crate::coverage::missing_counts_cte_for_series("$1");
     let sql = format!(
         r#"
         WITH series_counts AS (
@@ -399,6 +400,7 @@ pub async fn get_series_by_id(
             WHERE s.id = $1
             GROUP BY s.id, s.name, s.library_id, s.status
         ),
+        {missing_counts},
         first_book AS (
             SELECT b.id, b.series_id, b.updated_at
             FROM books b WHERE b.series_id = $1
@@ -420,17 +422,7 @@ pub async fn get_series_by_id(
         FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
-        LEFT JOIN (
-            SELECT s2.id as series_id,
-                CASE
-                    WHEN COUNT(b2.id) FILTER (WHERE b2.volume_type = 'integral') > 0 THEN 0
-                    ELSE GREATEST(COALESCE(s2.total_volumes, 0) - COUNT(b2.id) FILTER (WHERE b2.volume_type IN ('regular', 'integral')), 0)
-                END as missing_count
-            FROM series s2
-            LEFT JOIN books b2 ON b2.series_id = s2.id
-            WHERE s2.id = $1
-            GROUP BY s2.id
-        ) mc ON mc.series_id = sc.series_id
+        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN (
             SELECT DISTINCT ON (eml.series_id) eml.series_id, eml.provider
             FROM external_metadata_links eml

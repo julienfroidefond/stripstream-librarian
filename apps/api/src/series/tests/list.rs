@@ -500,6 +500,34 @@ async fn ongoing_series_exposes_last_read_at_for_current_user(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_by_id_uses_the_canonical_missing_count(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
+        .bind(series)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with(&pool, library, series, "INT 2", Some(2), "integral").await;
+    create_book_with(&pool, library, series, "HS 3", Some(3), "hs").await;
+    create_book_with(&pool, library, series, "One-shot 4", Some(4), "oneshot").await;
+    create_book_with(&pool, library, series, "Special", Some(0), "regular").await;
+
+    let Json(item) = get_series_by_id(State(state), None, Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        item.missing_count,
+        Some(8),
+        "10 total minus the two counted tomes"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn list_all_series_total_counts_all_matching_rows(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;

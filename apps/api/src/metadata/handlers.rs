@@ -628,55 +628,49 @@ pub async fn get_missing_books(
 
     let series_id: Uuid = link.get("series_id");
 
+    let coverage = crate::coverage::load_series_coverage(&state.pool, series_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("series not found"))?;
+
     // Count external books from provider (exclude volume 0 — T0 = HS in providers)
     let provider_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(DISTINCT volume_number) FROM external_book_metadata WHERE link_id = $1 AND (volume_number IS NULL OR volume_number != 0)")
+        sqlx::query_scalar("SELECT COUNT(DISTINCT volume_number) FROM external_book_metadata WHERE link_id = $1 AND (volume_number IS NULL OR volume_number > 0)")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
 
     // Use series.total_volumes if set (user override), otherwise fall back to provider count
-    let series_total: Option<i32> =
-        sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
-            .bind(series_id)
-            .fetch_one(&state.pool)
-            .await?;
-
-    let total_external = series_total
+    let total_external = coverage
+        .total_volumes()
         .filter(|&v| v > 0)
         .map(|v| v as i64)
         .unwrap_or(provider_count);
 
-    // Count local books (only regular/integral — HS/oneshot are not part of the numbering)
-    let total_local: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type IN ('regular', 'integral')",
-    )
-    .bind(series_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let total_local = coverage.covered_count() as i64;
 
-    // Check if series has any integral book (= series considered complete)
-    let has_integral: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1 AND volume_type = 'integral')",
-    )
-    .bind(series_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    // Get unmatched external books (no book_id link)
-    let missing_rows = if has_integral {
-        vec![] // Integral = series complete, no missing books
+    // Get unmatched external books (no book_id link) that are not already
+    // covered by a local numbered tome.
+    let missing_rows = if coverage.has_unnumbered_integral() {
+        vec![] // An unnumbered integral covers the whole series
     } else {
         sqlx::query(
             r#"
-            SELECT DISTINCT ON (volume_number) title, volume_number, external_book_id, cover_url
-            FROM external_book_metadata
-            WHERE link_id = $1 AND book_id IS NULL
-              AND (volume_number IS NULL OR volume_number != 0)
-            ORDER BY volume_number NULLS LAST, title
+            SELECT DISTINCT ON (ebm.volume_number) ebm.title, ebm.volume_number,
+                   ebm.external_book_id, ebm.cover_url
+            FROM external_book_metadata ebm
+            WHERE ebm.link_id = $1 AND ebm.book_id IS NULL
+              AND (ebm.volume_number IS NULL OR ebm.volume_number > 0)
+              AND NOT EXISTS (
+                  SELECT 1 FROM books b
+                  WHERE b.series_id = $2
+                    AND b.volume_type IN ('regular', 'integral')
+                    AND b.volume = ebm.volume_number
+              )
+            ORDER BY ebm.volume_number NULLS LAST, ebm.title
             "#,
         )
         .bind(id)
+        .bind(series_id)
         .fetch_all(&state.pool)
         .await?
     };
@@ -691,12 +685,13 @@ pub async fn get_missing_books(
         })
         .collect();
 
-    // If series has an integral, consider it complete
-    let (effective_local, missing_count) = if has_integral {
-        (total_external, 0)
+    let effective_local = if coverage.has_unnumbered_integral() {
+        total_external
     } else {
-        (total_local, (total_external - total_local).max(0))
+        total_local
     };
+    let total_external_i32 = i32::try_from(total_external).unwrap_or(i32::MAX);
+    let missing_count = coverage.missing_count_for_total(Some(total_external_i32)) as i64;
 
     Ok(Json(MissingBooksDto {
         total_external,
@@ -829,3 +824,7 @@ pub(crate) async fn get_provider_for_library(
 #[cfg(test)]
 #[path = "tests/handlers.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/missing.rs"]
+mod missing_tests;

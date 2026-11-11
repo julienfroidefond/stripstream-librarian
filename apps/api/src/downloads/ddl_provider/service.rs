@@ -162,27 +162,18 @@ pub(super) fn build_result(
     }
 }
 
-/// Regular volumes already present in the library for a series.
+/// Numbered volumes already present in the library for a series.
+///
+/// Uses the canonical coverage rule: numbered `regular` and `integral` books
+/// count, while HS, one-shots and volume 0 do not.
 pub(super) async fn owned_volumes(
     pool: &sqlx::PgPool,
     library_id: Uuid,
     series_name: &str,
 ) -> Result<HashSet<i32>, ApiError> {
-    let rows = sqlx::query(
-        "SELECT DISTINCT b.volume FROM books b \
-         JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 AND norm_text(s.name) = norm_text($2) \
-           AND b.volume_type = 'regular' AND b.volume IS NOT NULL",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .filter_map(|r| r.get::<Option<i32>, _>("volume"))
-        .collect())
+    let volumes =
+        crate::coverage::load_owned_volumes_for_series_name(pool, library_id, series_name).await?;
+    Ok(volumes.into_iter().collect())
 }
 
 /// Flag results that already have a `ddl_provider_downloads` row.

@@ -54,7 +54,8 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 **Détection classique** (`download_detection`) :
 - Exécuté par l'API (job poller), non-exclusif
 - Récupère les volumes manquants depuis `external_book_metadata` où `book_id IS NULL`
-- Ignore les séries qui possèdent une intégrale (`volume_type = 'integral'`), considérées comme complètes
+- Ignore les séries qui possèdent une intégrale **sans numéro de tome**, considérées comme complètes ; une intégrale numérotée ne couvre que son propre tome
+- Ne compte que les tomes `regular`/`integral` numérotés (`volume >= 1`) ; les hors-séries, one-shots et le volume `0` ne participent pas
 - Filtre la blacklist `release_blacklist` avant matching
 - Les rapprochements ambigus de titre ou de tome restent affichés, mais nécessitent une confirmation avant l'envoi au client de téléchargement
 - Fusion dans `available_downloads` : `detected_at` préservé pour les releases déjà connues

@@ -4,6 +4,7 @@ mod api_middleware;
 mod authors;
 mod books;
 mod cache;
+mod coverage;
 mod diagnostics;
 mod downloads;
 mod error;

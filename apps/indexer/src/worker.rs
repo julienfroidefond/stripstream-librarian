@@ -4,6 +4,7 @@ use std::time::Duration;
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
+use stripstream_core::coverage::SeriesCoverage;
 use stripstream_jobs::JobCategory;
 
 use crate::{job, scheduler, watcher, AppState};
@@ -394,33 +395,33 @@ async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
         }
     };
 
-    // Preload present volumes for every series referenced by these rows in one query.
+    // Preload coverage facts for every series referenced by these rows in one
+    // query. `SeriesCoverage` owns the volume-type and integral rules.
     let series_ids: Vec<Uuid> = rows.iter().map(|r| r.get("series_id")).collect();
-    let present_by_series: std::collections::HashMap<Uuid, std::collections::HashSet<i32>> =
-        match sqlx::query(
-            "SELECT series_id, volume FROM books \
-             WHERE series_id = ANY($1) AND volume IS NOT NULL \
-             AND volume_type IN ('regular', 'integral', 'oneshot')",
-        )
-        .bind(&series_ids)
-        .fetch_all(pool)
-        .await
-        {
-            Ok(vol_rows) => {
-                let mut map: std::collections::HashMap<Uuid, std::collections::HashSet<i32>> =
-                    std::collections::HashMap::new();
-                for vr in vol_rows {
-                    let sid: Uuid = vr.get("series_id");
-                    let vol: i32 = vr.get("volume");
-                    map.entry(sid).or_default().insert(vol);
-                }
-                map
+    let coverage_by_series: HashMap<Uuid, SeriesCoverage> = match sqlx::query(
+        "SELECT series_id, volume_type, volume FROM books WHERE series_id = ANY($1)",
+    )
+    .bind(&series_ids)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(book_rows) => {
+            let mut map: HashMap<Uuid, SeriesCoverage> = HashMap::new();
+            for book_row in book_rows {
+                let sid: Uuid = book_row.get("series_id");
+                let volume_type: String = book_row.get("volume_type");
+                let volume: Option<i32> = book_row.get("volume");
+                map.entry(sid)
+                    .or_insert_with(|| SeriesCoverage::new(None))
+                    .add(&volume_type, volume);
             }
-            Err(e) => {
-                error!("[CLEANUP] Failed to fetch present volumes: {e}");
-                return;
-            }
-        };
+            map
+        }
+        Err(e) => {
+            error!("[CLEANUP] Failed to fetch series coverage: {e}");
+            return;
+        }
+    };
 
     for row in rows {
         let ad_id: Uuid = row.get("id");
@@ -428,10 +429,25 @@ async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
         let old_missing: i32 = row.get("missing_count");
 
-        let Some(present_volumes) = present_by_series.get(&series_id) else {
+        let Some(coverage) = coverage_by_series.get(&series_id) else {
             continue;
         };
 
+        // An unnumbered integral covers the whole series: every stored release
+        // is now obsolete.
+        if coverage.has_unnumbered_integral() {
+            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+                .bind(ad_id)
+                .execute(pool)
+                .await;
+            info!(
+                "[CLEANUP] Deleted available_downloads {ad_id} (unnumbered integral covers the series)"
+            );
+            continue;
+        }
+
+        let present_volumes: std::collections::HashSet<i32> =
+            coverage.owned_volumes().into_iter().collect();
         if present_volumes.is_empty() {
             continue;
         }
@@ -495,5 +511,145 @@ async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
                 pruned_vols.len()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn seed_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(name)
+            .bind(format!("/libraries/{name}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn seed_series(pool: &sqlx::PgPool, library_id: Uuid, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(library_id)
+            .bind(name)
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn seed_book(
+        pool: &sqlx::PgPool,
+        library_id: Uuid,
+        series_id: Uuid,
+        volume_type: &str,
+        volume: Option<i32>,
+    ) {
+        sqlx::query(
+            "INSERT INTO books (id, library_id, series_id, title, kind, format, volume, volume_type) \
+             VALUES ($1, $2, $3, $4, 'comic', 'cbz', $5, $6)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .bind(series_id)
+        .bind(format!("{volume_type}-{volume:?}"))
+        .bind(volume)
+        .bind(volume_type)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn seed_download(
+        pool: &sqlx::PgPool,
+        library_id: Uuid,
+        series_id: Uuid,
+        missing_count: i32,
+    ) {
+        sqlx::query(
+            "INSERT INTO available_downloads \
+             (library_id, series_id, missing_count, available_releases) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(library_id)
+        .bind(series_id)
+        .bind(missing_count)
+        .bind(serde_json::json!([
+            {"title": "T01", "matched_missing_volumes": [1, 2]}
+        ]))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn stored_releases(
+        pool: &sqlx::PgPool,
+        series_id: Uuid,
+    ) -> Option<(i32, serde_json::Value)> {
+        sqlx::query_as(
+            "SELECT missing_count, available_releases FROM available_downloads WHERE series_id = $1",
+        )
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_prunes_a_numbered_integral_only_when_its_volume_is_present(
+        pool: sqlx::PgPool,
+    ) {
+        let library = seed_library(&pool, "lib").await;
+        let series = seed_series(&pool, library, "Series").await;
+        seed_book(&pool, library, series, "integral", Some(2)).await;
+        seed_download(&pool, library, series, 2).await;
+
+        cleanup_available_downloads(&pool, library).await;
+
+        let (missing_count, releases) = stored_releases(&pool, series).await.unwrap();
+        assert_eq!(missing_count, 1);
+        assert_eq!(
+            releases[0]["matched_missing_volumes"],
+            serde_json::json!([1]),
+            "volume 2 is covered by the numbered integral"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_does_not_count_oneshot_volumes_as_present(pool: sqlx::PgPool) {
+        let library = seed_library(&pool, "lib").await;
+        let series = seed_series(&pool, library, "Series").await;
+        seed_book(&pool, library, series, "oneshot", Some(2)).await;
+        seed_download(&pool, library, series, 2).await;
+
+        cleanup_available_downloads(&pool, library).await;
+
+        let (missing_count, releases) = stored_releases(&pool, series).await.unwrap();
+        assert_eq!(missing_count, 2, "one-shots never cover a tome");
+        assert_eq!(
+            releases[0]["matched_missing_volumes"],
+            serde_json::json!([1, 2])
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_deletes_the_download_when_an_unnumbered_integral_is_present(
+        pool: sqlx::PgPool,
+    ) {
+        let library = seed_library(&pool, "lib").await;
+        let series = seed_series(&pool, library, "Series").await;
+        seed_book(&pool, library, series, "integral", None).await;
+        seed_download(&pool, library, series, 2).await;
+
+        cleanup_available_downloads(&pool, library).await;
+
+        assert!(
+            stored_releases(&pool, series).await.is_none(),
+            "an unnumbered integral completes the whole series"
+        );
     }
 }

@@ -21,7 +21,7 @@ La synchronisation complète ne recherche **pas** toutes les séries de la bibli
 1. **Métadonnées validées** — Stripstream doit connaître la liste officielle des volumes.
 2. **Volumes manquants** — au moins un volume connu doit être absent de votre bibliothèque.
 
-Les séries qui possèdent une intégrale sont considérées complètes et exclues de cette recherche active.
+Les séries qui possèdent une intégrale **sans numéro de tome** sont considérées complètes et exclues de cette recherche active. Une intégrale numérotée ne couvre que son propre tome.
 
 C'est la même condition que la détection Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
 
@@ -109,7 +109,7 @@ Voir [Téléchargements — Telegram](/downloads/telegram).
 
 **Contrainte DB** : le type `telegram_sync_incremental` est autorisé par la migration `0099_add_telegram_sync_incremental_job_type.sql`.
 
-**Règle d'éligibilité complète** : `telegram_sync` requiert un `external_metadata_links` avec `status = 'approved'` et au moins un `external_book_metadata` avec `book_id IS NULL`. Les séries avec `volume_type = 'integral'` sont exclues.
+**Règle d'éligibilité complète** : `telegram_sync` requiert un `external_metadata_links` avec `status = 'approved'` et au moins un `external_book_metadata` avec `book_id IS NULL` dont le tome positif n'est pas déjà couvert par un livre `regular`/`integral` local. Les séries avec une intégrale **sans numéro de tome** sont exclues ; une intégrale numérotée ne couvre que son propre tome.
 
 **Pipeline `telegram_sync`** :
 ```

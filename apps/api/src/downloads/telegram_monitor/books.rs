@@ -251,17 +251,17 @@ pub async fn list_available_by_series(
             series_id.as_ref()?; // skip unmatched groups
             let owned_volumes = sid_uuid
                 .and_then(|sid| availability_by_series.get(&sid))
-                .map(|availability| availability.owned_volumes.clone())
+                .map(|availability| availability.owned_volumes())
                 .unwrap_or_default();
             let series_missing_count = sid_uuid
                 .and_then(|sid| availability_by_series.get(&sid))
-                .map(|availability| availability.missing_count)
+                .map(|availability| availability.missing_count())
                 .unwrap_or(0);
-            let has_integral = sid_uuid
+            let has_unnumbered_integral = sid_uuid
                 .and_then(|sid| availability_by_series.get(&sid))
-                .map(|availability| availability.has_integral)
+                .map(|availability| availability.has_unnumbered_integral())
                 .unwrap_or(false);
-            if has_integral {
+            if has_unnumbered_integral {
                 return None;
             }
             let books = groups.remove(&(series_name.clone(), lib_id))?;

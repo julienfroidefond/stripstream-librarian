@@ -22,7 +22,7 @@ Stripstream cherche des releases dans Prowlarr pour les séries qui remplissent 
 1. **Métadonnées validées** — un lien metadata approuvé avec la liste officielle des volumes.
 2. **Volumes manquants** — au moins un tome référencé absent de votre bibliothèque.
 
-Une série sans metadata, complète, ou couverte par une intégrale est ignorée.
+Une série sans metadata, complète, ou couverte par une intégrale **sans numéro de tome** est ignorée. Une intégrale numérotée ne couvre que son propre tome.
 
 **Déclenchement** :
 - **Automatique** : configurez une fréquence dans les paramètres de chaque bibliothèque → section *Détection de téléchargements*
@@ -74,7 +74,7 @@ Après l'import, un scan + refresh des métadonnées est déclenché automatique
 :::note[Détails techniques]
 La recherche (manuelle comme détection) interroge `GET /api/v1/search` avec les catégories configurées. Si la réponse est vide, elle réessaie sans `categories` — cas d'un Prowlarr fraîchement redémarré dont les capacités d'indexeurs ne sont pas encore chargées — puis filtre localement les releases sur les catégories configurées. La recherche manuelle refait une dernière tentative après 2 secondes ; la détection s'arrête après le repli immédiat.
 
-La détection repose sur un lien metadata approuvé et des volumes externes non associés à un livre local. Une série couverte par `volume_type = 'integral'` est considérée complète.
+La détection repose sur un lien metadata approuvé et des volumes externes positifs non couverts par un livre local `regular`/`integral`. Une série couverte par une intégrale **sans numéro de tome** (`volume_type = 'integral' AND volume IS NULL`) est considérée complète ; une intégrale numérotée ne couvre que son propre tome. Les hors-séries, one-shots et le volume `0` ne participent pas.
 
 Le padding de `{volume_padded}` utilise `series.total_volumes` si disponible, sinon les volumes détectés dans le téléchargement.
 

@@ -99,6 +99,26 @@ async fn excludes_null_regular_volumes(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn excludes_volume_zero(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_test_library(&pool, "volumes_zero").await;
+    let series = create_series(&pool, library, "Series").await;
+
+    create_book_with_type(&pool, library, series, "Special", Some(0), "regular").await;
+    create_book_with_type(&pool, library, series, "Vol 1", Some(1), "regular").await;
+
+    let axum::Json(dto) = get_series_owned_volumes(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        dto.owned_volumes,
+        vec![1],
+        "volume 0 is a provider placeholder, not a tome"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn deduplicates_and_sorts_volumes(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_test_library(&pool, "volumes_sort").await;

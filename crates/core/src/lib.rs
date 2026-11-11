@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod config;
+pub mod coverage;
 pub mod disk;
 pub mod fingerprint;
 pub mod heartbeat;

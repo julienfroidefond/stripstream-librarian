@@ -249,26 +249,5 @@ pub(crate) async fn create_series_with_metadata(
 /// Build the `missing_counts` CTE SQL fragment.
 /// `library_id_param`: e.g. "$1" to filter by library, or None for all libraries.
 pub(crate) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String {
-    let where_clause = match library_id_param {
-        Some(p) => format!("WHERE s.library_id = {p}"),
-        None => String::new(),
-    };
-    format!(
-        r#"missing_counts AS (
-            SELECT s.id as series_id,
-                CASE
-                    WHEN COUNT(b.id) FILTER (WHERE b.volume_type = 'integral' AND b.volume IS NULL) > 0 THEN 0
-                    ELSE GREATEST(
-                        COALESCE(s.total_volumes, 0)
-                        - COUNT(DISTINCT b.volume) FILTER (WHERE b.volume_type IN ('regular', 'integral') AND b.volume IS NOT NULL)
-                        - COUNT(b.id) FILTER (WHERE b.volume_type IN ('regular', 'integral') AND b.volume IS NULL),
-                        0
-                    )
-                END as missing_count
-            FROM series s
-            LEFT JOIN books b ON b.series_id = s.id
-            {where_clause}
-            GROUP BY s.id
-        )"#
-    )
+    crate::coverage::missing_counts_cte_for_library(library_id_param)
 }

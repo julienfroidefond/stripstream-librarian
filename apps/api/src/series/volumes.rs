@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use serde::Serialize;
-use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -44,27 +43,12 @@ pub async fn get_series_owned_volumes(
     State(state): State<AppState>,
     Path(series_id): Path<Uuid>,
 ) -> Result<Json<SeriesVolumesDto>, ApiError> {
-    let row = sqlx::query(
-        "SELECT COALESCE(ARRAY_AGG(DISTINCT b.volume ORDER BY b.volume) \
-                FILTER (WHERE b.volume_type IN ('regular','integral') AND b.volume IS NOT NULL), \
-                ARRAY[]::int[]) AS owned_volumes, \
-                COUNT(b.id) FILTER (WHERE b.volume_type = 'integral' AND b.volume IS NULL) > 0 \
-                AS has_unnumbered_integral \
-         FROM series s \
-         LEFT JOIN books b ON b.series_id = s.id \
-         WHERE s.id = $1 \
-         GROUP BY s.id",
-    )
-    .bind(series_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", series_id)))?;
-
-    let owned_volumes: Vec<i32> = row.get("owned_volumes");
-    let has_unnumbered_integral: bool = row.get("has_unnumbered_integral");
+    let coverage = crate::coverage::load_series_coverage(&state.pool, series_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", series_id)))?;
 
     Ok(Json(SeriesVolumesDto {
-        owned_volumes,
-        has_unnumbered_integral,
+        owned_volumes: coverage.owned_volumes(),
+        has_unnumbered_integral: coverage.has_unnumbered_integral(),
     }))
 }
