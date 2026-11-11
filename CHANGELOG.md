@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.134 — 2026-11-11
+
+### Refactoring
+
+- **series** — centralize series name lookups (#269) ([#269](https://github.com/julienfroidefond/stripstream-librarian/pull/269))
+
 ## v3.32.133 — 2026-11-11
 
 ### Refactoring
