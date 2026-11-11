@@ -1,12 +1,14 @@
 pub mod batch;
 mod batch_sync;
 pub mod config;
+mod field_policy;
 pub mod gaps;
 pub mod handlers;
 pub mod refresh;
 pub(crate) mod refresh_sync;
 pub(crate) mod shared_sync;
 mod sync;
+mod types;
 
 // Re-export handlers (used by main.rs routes and openapi.rs paths)
 pub use handlers::{

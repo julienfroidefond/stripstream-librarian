@@ -23,13 +23,11 @@ Chaque livre dans Stripstream dispose des informations suivantes :
 - Langue
 - Auteurs
 
-**Gérées manuellement** :
-- Auteurs (édition directe)
-- Tous les champs ci-dessus peuvent être modifiés et verrouillés
+Tous ces champs peuvent être modifiés manuellement. Seuls les champs enrichis par les providers (résumé, ISBN, date de publication, langue, auteurs) peuvent être verrouillés : un verrou sur le titre, la série ou le numéro de volume n'a aucun effet, car la synchronisation ne modifie jamais ces champs.
 
 ## Verrouillage de champs
 
-Chaque champ peut être verrouillé pour empêcher une synchronisation de métadonnées de l'écraser. Un champ verrouillé n'est jamais modifié automatiquement, quelle que soit la source.
+Chaque champ enrichi par les providers peut être verrouillé pour empêcher une synchronisation de métadonnées de l'écraser : résumé, ISBN, date de publication, langue et auteurs. Un champ verrouillé n'est jamais modifié automatiquement, quelle que soit la source.
 
 :::note[Détails techniques]
 **Champs extraits automatiquement** : `title`, `series` (répertoire parent), `volume` (parsing du nom), `volume_type` (regular/hs/integral/oneshot), `page_count` (phase 2), `kind` (ebook, comic, bd).
@@ -44,5 +42,7 @@ Chaque champ peut être verrouillé pour empêcher une synchronisation de métad
 | `language` | Remplace si non-vide |
 | `authors` | Remplace si le nouveau tableau est non-vide |
 
-Tous ces champs respectent le verrouillage via `locked_fields`.
+La colonne `author` (premier auteur, utilisée pour l'affichage et le tri) est dérivée de `authors` et suit le même verrou.
+
+Tous ces champs respectent le verrouillage via `locked_fields` (booléens stricts).
 :::

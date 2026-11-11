@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 
 use super::*;
+use crate::metadata::field_policy::is_field_locked;
 use crate::state::test_state;
 
 use serde_json::json;
@@ -39,147 +40,24 @@ fn field_not_locked_when_non_boolean() {
     assert!(!is_field_locked(&locked, "description"));
 }
 
+/// Locks are strict booleans; legacy string/number encodings are normalized
+/// by migration 0139 and must not be honored by the reader.
 #[test]
-fn field_locked_when_string_true() {
+fn field_not_locked_when_string_true() {
     let locked = json!({"description": "true"});
-    assert!(is_field_locked(&locked, "description"));
+    assert!(!is_field_locked(&locked, "description"));
 }
 
 #[test]
-fn field_locked_when_string_true_uppercase() {
-    let locked = json!({"description": "TRUE"});
-    assert!(is_field_locked(&locked, "description"));
-}
-
-#[test]
-fn field_locked_when_nonzero_number() {
+fn field_not_locked_when_nonzero_number() {
     let locked = json!({"description": 1});
-    assert!(is_field_locked(&locked, "description"));
+    assert!(!is_field_locked(&locked, "description"));
 }
 
 #[test]
 fn field_not_locked_when_zero_number() {
     let locked = json!({"description": 0});
     assert!(!is_field_locked(&locked, "description"));
-}
-
-// -----------------------------------------------------------------------
-// classify_field_change
-// -----------------------------------------------------------------------
-
-#[test]
-fn classify_returns_cleared_when_new_is_none_and_old_is_some() {
-    let locked = json!({});
-    let result = classify_field_change("title", Some(json!("old")), None, &locked);
-    let (is_skipped, change) = result.expect("should return Some");
-    assert!(!is_skipped);
-    assert_eq!(change.field, "title");
-    assert_eq!(change.old_value, Some(json!("old")));
-    assert_eq!(change.new_value, None);
-}
-
-#[test]
-fn classify_returns_none_when_both_values_are_none() {
-    let locked = json!({});
-    let result = classify_field_change("title", None, None, &locked);
-    assert!(result.is_none());
-}
-
-#[test]
-fn classify_returns_updated_when_values_differ() {
-    let locked = json!({});
-    let result = classify_field_change(
-        "description",
-        Some(json!("old desc")),
-        Some(json!("new desc")),
-        &locked,
-    );
-    let (is_skipped, change) = result.expect("should return Some");
-    assert!(!is_skipped);
-    assert_eq!(change.field, "description");
-    assert_eq!(change.old_value, Some(json!("old desc")));
-    assert_eq!(change.new_value, Some(json!("new desc")));
-}
-
-#[test]
-fn classify_returns_skipped_when_locked() {
-    let locked = json!({"description": true});
-    let result = classify_field_change(
-        "description",
-        Some(json!("old")),
-        Some(json!("new")),
-        &locked,
-    );
-    let (is_skipped, change) = result.expect("should return Some");
-    assert!(is_skipped);
-    assert_eq!(change.field, "description");
-}
-
-#[test]
-fn classify_returns_none_when_values_equal_and_unlocked() {
-    let locked = json!({});
-    let result = classify_field_change("title", Some(json!("same")), Some(json!("same")), &locked);
-    assert!(
-        result.is_none(),
-        "identical values should produce no change"
-    );
-}
-
-#[test]
-fn classify_updated_from_none_to_some() {
-    let locked = json!({});
-    let result = classify_field_change("isbn", None, Some(json!("978-123")), &locked);
-    let (is_skipped, change) = result.expect("should return Some");
-    assert!(!is_skipped);
-    assert!(change.old_value.is_none());
-    assert_eq!(change.new_value, Some(json!("978-123")));
-}
-
-#[test]
-fn classify_locked_field_still_reported_even_when_old_is_none() {
-    let locked = json!({"isbn": true});
-    let result = classify_field_change("isbn", None, Some(json!("978-123")), &locked);
-    let (is_skipped, _change) = result.expect("should return Some");
-    assert!(is_skipped);
-}
-
-// -----------------------------------------------------------------------
-// extract_string_array
-// -----------------------------------------------------------------------
-
-#[test]
-fn extract_string_array_present() {
-    let metadata = json!({"authors": ["Alice", "Bob"]});
-    let result = extract_string_array(&metadata, "authors");
-    assert_eq!(result, vec!["Alice", "Bob"]);
-}
-
-#[test]
-fn extract_string_array_missing_key() {
-    let metadata = json!({"title": "test"});
-    let result = extract_string_array(&metadata, "authors");
-    assert!(result.is_empty());
-}
-
-#[test]
-fn extract_string_array_not_array() {
-    let metadata = json!({"authors": "single author"});
-    let result = extract_string_array(&metadata, "authors");
-    assert!(result.is_empty());
-}
-
-#[test]
-fn extract_string_array_filters_non_strings() {
-    let metadata = json!({"authors": ["Alice", 42, null, "Bob"]});
-    let result = extract_string_array(&metadata, "authors");
-    assert_eq!(result, vec!["Alice", "Bob"]);
-}
-
-#[test]
-fn extract_string_array_empty_array() {
-    let metadata = json!({"authors": []});
-    let result = extract_string_array(&metadata, "authors");
-    assert!(result.is_empty());
 }
 
 // -----------------------------------------------------------------------
