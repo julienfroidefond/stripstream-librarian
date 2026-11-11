@@ -29,7 +29,7 @@ export default async function AuthorDetailPage({
     fetchBooks(undefined, undefined, page, limit, undefined, undefined, authorName).catch(
       () => ({ items: [], total: 0, page: 1, limit }) as BooksPageDto
     ),
-    fetchAllSeries(undefined, undefined, undefined, 1, 200, undefined, undefined, undefined, undefined, authorName).catch(
+    fetchAllSeries({ author: authorName, page: 1, limit: 200 }).catch(
       () => ({ items: [], total: 0, page: 1, limit: 200 }) as SeriesPageDto
     ),
   ]);

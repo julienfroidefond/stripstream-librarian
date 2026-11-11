@@ -1,4 +1,5 @@
-import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesRecommendations, fetchMetadataProviders, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesRecommendations, fetchMetadataProviders, isCatalogVolumeType, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
+import type { CatalogQuery, CatalogRating, CatalogShelf } from "@/lib/api";
 import { cookies } from "next/headers";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -47,6 +48,26 @@ export default async function SeriesPage({
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 24);
 
+  const shelf: CatalogShelf | undefined =
+    booksFilter === "wishlist" || booksFilter === "in_library" ? booksFilter : undefined;
+  const volumeType = isCatalogVolumeType(volumeTypeFilter) ? volumeTypeFilter : undefined;
+  const rating: CatalogRating | undefined =
+    ratedOnly === "true" ? "rated" : ratedOnly === "unrated" ? "unrated" : undefined;
+  const catalogQuery: CatalogQuery = {
+    libraryId,
+    search: searchQuery || undefined,
+    readingStatus: hasActiveUser ? readingStatus : undefined,
+    sort,
+    seriesStatus,
+    hasMissing,
+    metadataProvider,
+    shelf,
+    volumeType,
+    rating: hasActiveUser ? rating : undefined,
+    page,
+    limit,
+  };
+
   const isGroupedByList = groupBy === "reading_list";
   const isRecommendationsView = view === "recommendations";
 
@@ -54,7 +75,7 @@ export default async function SeriesPage({
     fetchLibraries().catch(() => [] as LibraryDto[]),
     isGroupedByList || isRecommendationsView
       ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
-      : fetchAllSeries(libraryId, searchQuery || undefined, hasActiveUser ? readingStatus : undefined, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined, hasActiveUser ? ratedOnly || undefined : undefined).catch(
+      : fetchAllSeries(catalogQuery).catch(
           () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
         ),
     isRecommendationsView ? Promise.resolve([] as string[]) : fetchSeriesStatuses().catch(() => [] as string[]),
@@ -74,7 +95,12 @@ export default async function SeriesPage({
     { value: "community_score", label: t("series.sortCommunityScore") },
   ];
 
-  const hasFilters = searchQuery || libraryId || (hasActiveUser && readingStatus) || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider || (hasActiveUser && ratedOnly);
+  const hasFilters = Boolean(
+    catalogQuery.search || catalogQuery.libraryId || catalogQuery.readingStatus ||
+    catalogQuery.sort || catalogQuery.seriesStatus || catalogQuery.hasMissing ||
+    catalogQuery.shelf || catalogQuery.volumeType || catalogQuery.metadataProvider ||
+    catalogQuery.rating
+  );
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -195,16 +221,16 @@ export default async function SeriesPage({
           className="mb-6"
           basePath="/series"
           initialValues={{
-            q: searchQuery,
-            library: libraryId || "",
-            status: readingStatus || "",
-            series_status: seriesStatus || "",
-            has_missing: hasMissing ? "true" : "",
-            books_filter: booksFilter || "",
-            volume_type: volumeTypeFilter || "",
-            metadata_provider: metadataProvider || "",
-            sort: sort || "",
-            ...(hasActiveUser ? { rated_only: ratedOnly || "" } : {}),
+            q: catalogQuery.search || "",
+            library: catalogQuery.libraryId || "",
+            status: catalogQuery.readingStatus || "",
+            series_status: catalogQuery.seriesStatus || "",
+            has_missing: catalogQuery.hasMissing ? "true" : "",
+            books_filter: catalogQuery.shelf || "",
+            volume_type: catalogQuery.volumeType || "",
+            metadata_provider: catalogQuery.metadataProvider || "",
+            sort: catalogQuery.sort || "",
+            ...(hasActiveUser ? { rated_only: catalogQuery.rating === "rated" ? "true" : catalogQuery.rating || "" } : {}),
           }}
           fields={[
             { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
@@ -392,9 +418,9 @@ export default async function SeriesPage({
       {series.length > 0 ? (
         <>
           {viewMode === "list" ? (
-            <SeriesList series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
+            <SeriesList series={series} sort={catalogQuery.sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
           ) : (
-            <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
+            <SeriesGrid series={series} sort={catalogQuery.sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
           )}
 
           <OffsetPagination
