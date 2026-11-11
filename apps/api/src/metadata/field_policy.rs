@@ -3,7 +3,9 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::shared_sync::{self, LinkMetadata};
-use super::types::{BookSyncReport, FieldChange, SeriesSyncReport};
+use super::types::{
+    BookSyncReport, FieldChange, MetadataFieldCatalogDto, MetadataFieldDto, SeriesSyncReport,
+};
 use crate::metadata_providers::BookCandidate;
 
 // ---------------------------------------------------------------------------
@@ -166,6 +168,27 @@ const BOOK_FIELDS: &[FieldDescriptor] = &[
         report: false,
     },
 ];
+
+/// Catalog of sync-managed fields exposed to admin UIs. Derived-only fields
+/// (`books.author`) are excluded: they follow another field's lock.
+pub(crate) fn catalog() -> MetadataFieldCatalogDto {
+    fn entries(descriptors: &[FieldDescriptor]) -> Vec<MetadataFieldDto> {
+        descriptors
+            .iter()
+            .filter(|descriptor| descriptor.report)
+            .map(|descriptor| MetadataFieldDto {
+                key: descriptor.key.to_string(),
+                lockable: descriptor.lock.is_some(),
+                clearable: descriptor.clear.is_some(),
+            })
+            .collect()
+    }
+
+    MetadataFieldCatalogDto {
+        series: entries(SERIES_FIELDS),
+        books: entries(BOOK_FIELDS),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Values
@@ -820,6 +843,46 @@ mod tests {
         assert!(!is_field_locked(&locked, "status"));
         assert!(!is_field_locked(&locked, "cover_url"));
         assert!(!is_field_locked(&locked, "missing"));
+    }
+
+    #[test]
+    fn catalog_lists_lockable_and_clearable_fields_per_target() {
+        let catalog = catalog();
+
+        let series: Vec<(&str, bool, bool)> = catalog
+            .series
+            .iter()
+            .map(|field| (field.key.as_str(), field.lockable, field.clearable))
+            .collect();
+        assert_eq!(
+            series,
+            vec![
+                ("description", true, true),
+                ("authors", true, true),
+                ("publishers", true, true),
+                ("start_year", true, true),
+                ("total_volumes", true, true),
+                ("status", true, true),
+                ("genres", false, false),
+                ("cover_url", true, true),
+            ]
+        );
+
+        let books: Vec<(&str, bool, bool)> = catalog
+            .books
+            .iter()
+            .map(|field| (field.key.as_str(), field.lockable, field.clearable))
+            .collect();
+        assert_eq!(
+            books,
+            vec![
+                ("summary", true, false),
+                ("isbn", true, false),
+                ("publish_date", true, false),
+                ("language", true, false),
+                ("authors", true, false),
+            ]
+        );
     }
 
     #[test]

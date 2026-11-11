@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
+import { SERIES_LOCKABLE_FIELDS, pickLockableFields } from "@/lib/metadataLocks";
 import { useTranslation } from "@/lib/i18n/context";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
@@ -120,7 +121,9 @@ export function EditSeriesForm({
   const [status, setStatus] = useState(currentStatus ?? "");
 
   // Lock states
-  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(currentLockedFields);
+  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(() =>
+    pickLockableFields(currentLockedFields, SERIES_LOCKABLE_FIELDS),
+  );
 
   // Propagation aux livres — opt-in via bouton
   const [bookAuthor, setBookAuthor] = useState(currentBookAuthor ?? "");
@@ -205,7 +208,7 @@ export function EditSeriesForm({
     setStartYear(currentStartYear?.toString() ?? "");
     setTotalVolumes(currentTotalVolumes?.toString() ?? "");
     setStatus(currentStatus ?? "");
-    setLockedFields(currentLockedFields);
+    setLockedFields(pickLockableFields(currentLockedFields, SERIES_LOCKABLE_FIELDS));
     setShowApplyToBooks(false);
     setBookAuthor(currentBookAuthor ?? "");
     setBookLanguage(currentBookLanguage ?? "");
@@ -268,7 +271,7 @@ export function EditSeriesForm({
           start_year: startYear.trim() ? parseInt(startYear.trim(), 10) : null,
           total_volumes: totalVolumes.trim() ? parseInt(totalVolumes.trim(), 10) : null,
           status: status || null,
-          locked_fields: lockedFields,
+          locked_fields: pickLockableFields(lockedFields, SERIES_LOCKABLE_FIELDS),
         };
         if (showApplyToBooks) {
           body.author = bookAuthor.trim() || null;
@@ -441,10 +444,7 @@ export function EditSeriesForm({
 
               {/* Genres — multi-valeur avec autocomplete */}
               <FormField className="sm:col-span-2">
-                <div className="flex items-center gap-1">
-                  <FormLabel>{t("editSeries.genres")}</FormLabel>
-                  <LockButton locked={!!lockedFields.genres} onToggle={() => toggleLock("genres")} disabled={isPending} />
-                </div>
+                <FormLabel>{t("editSeries.genres")}</FormLabel>
                 <TagInput
                   values={genres}
                   input={genreInput}

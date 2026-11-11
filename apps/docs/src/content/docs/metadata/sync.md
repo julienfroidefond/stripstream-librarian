@@ -127,6 +127,8 @@ Livres :
 | `language` | Remplace si non-vide |
 | `authors` | Remplace si tableau non-vide |
 
+**Catalogue exposé par l'API** : `GET /metadata/fields` (admin) renvoie les champs synchronisés, groupés par cible (`series`, `books`), avec `lockable` et `clearable`. Le backoffice s'en sert pour n'afficher que les cadenas réellement pris en compte.
+
 **Score de confiance** : boost +0.30 si nombre de tomes identique (local == provider), +0.15 si proche (±2 tomes).
 
 **Matching des livres** : volume 0 (HS chez certains providers) ignoré. Seuls `regular` et `integral` participent au matching.

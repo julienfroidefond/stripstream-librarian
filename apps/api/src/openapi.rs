@@ -203,6 +203,7 @@ pub struct ClientApiDoc;
         // Metadata
         crate::metadata::handlers::search_metadata,
         crate::metadata::handlers::list_metadata_providers,
+        crate::metadata::handlers::list_metadata_fields,
         crate::metadata::handlers::create_metadata_match,
         crate::metadata::handlers::approve_metadata,
         crate::metadata::handlers::reject_metadata,
@@ -419,6 +420,8 @@ pub struct ClientApiDoc;
             crate::metadata::SeriesSyncReport,
             crate::metadata::BookSyncReport,
             crate::metadata::FieldChange,
+            crate::metadata::MetadataFieldDto,
+            crate::metadata::MetadataFieldCatalogDto,
             crate::metadata::MetadataSearchRequest,
             crate::metadata::SeriesCandidateDto,
             crate::metadata::MetadataMatchRequest,

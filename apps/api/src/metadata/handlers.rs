@@ -18,7 +18,10 @@ use super::shared_sync;
 
 // Re-exported for sibling modules; also brings the symbol into this module's scope.
 pub(crate) use super::sync::sync_series_from_links;
-pub use super::types::{BookSyncReport, FieldChange, SeriesSyncReport, SyncReport};
+pub use super::types::{
+    BookSyncReport, FieldChange, MetadataFieldCatalogDto, MetadataFieldDto, SeriesSyncReport,
+    SyncReport,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -252,6 +255,19 @@ pub async fn search_metadata(
 )]
 pub async fn list_metadata_providers() -> Json<Vec<ProviderDescriptor>> {
     Json(metadata_providers::available_providers())
+}
+
+/// Catalog of sync-managed fields, so admin UIs can render lock and clear
+/// controls without hardcoding the policy.
+#[utoipa::path(
+    get,
+    path = "/metadata/fields",
+    tag = "metadata",
+    responses((status = 200, body = MetadataFieldCatalogDto)),
+    security(("Bearer" = []))
+)]
+pub async fn list_metadata_fields() -> Json<MetadataFieldCatalogDto> {
+    Json(super::field_policy::catalog())
 }
 
 // ---------------------------------------------------------------------------

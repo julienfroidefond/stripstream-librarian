@@ -90,6 +90,61 @@ fn field_change_includes_both_when_present() {
 }
 
 // -----------------------------------------------------------------------
+// Metadata field catalog
+// -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn metadata_fields_catalog_matches_the_field_policy() {
+    let Json(catalog) = list_metadata_fields().await;
+
+    let series_keys: Vec<&str> = catalog
+        .series
+        .iter()
+        .map(|field| field.key.as_str())
+        .collect();
+    assert_eq!(
+        series_keys,
+        vec![
+            "description",
+            "authors",
+            "publishers",
+            "start_year",
+            "total_volumes",
+            "status",
+            "genres",
+            "cover_url",
+        ]
+    );
+    let genres = catalog.series.iter().find(|f| f.key == "genres").unwrap();
+    assert!(!genres.lockable, "genres are seed-only, never lockable");
+    assert!(!genres.clearable, "genres are never auto-cleared");
+    let publishers = catalog
+        .series
+        .iter()
+        .find(|f| f.key == "publishers")
+        .unwrap();
+    assert!(publishers.lockable && publishers.clearable);
+
+    let book_keys: Vec<&str> = catalog
+        .books
+        .iter()
+        .map(|field| field.key.as_str())
+        .collect();
+    assert_eq!(
+        book_keys,
+        vec!["summary", "isbn", "publish_date", "language", "authors"]
+    );
+    assert!(
+        catalog.books.iter().all(|field| field.lockable),
+        "all exposed book fields are lockable"
+    );
+    assert!(
+        catalog.books.iter().all(|field| !field.clearable),
+        "book fields are never auto-cleared"
+    );
+}
+
+// -----------------------------------------------------------------------
 // SyncReport / SeriesSyncReport defaults
 // -----------------------------------------------------------------------
 

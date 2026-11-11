@@ -90,6 +90,26 @@ describe("EditBookForm", () => {
     expect(screen.getByTestId("modal-panel")).toBeInTheDocument();
   });
 
+  it("only offers locks for fields external sync can write", async () => {
+    const fetchMock = stubFetch();
+    openForm(
+      makeBook({
+        locked_fields: { title: true, series: true, volume: true, summary: true },
+      })
+    );
+
+    // authors, language, isbn, publish_date and summary are the only lockable
+    // book fields; title, series and volume locks are stale.
+    expect(screen.getAllByTitle("editBook.clickToLock")).toHaveLength(4);
+    expect(screen.getAllByTitle("editBook.lockedField")).toHaveLength(1);
+
+    fireEvent.submit(screen.getByPlaceholderText("editBook.titlePlaceholder").closest("form")!);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.locked_fields).toEqual({ summary: true });
+  });
+
   it("toggles the locked-fields legend", () => {
     stubFetch();
     openForm();

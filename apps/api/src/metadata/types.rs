@@ -37,3 +37,22 @@ pub struct SyncReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub books_message: Option<String>,
 }
+
+/// A sync-managed field exposed by the metadata catalog.
+#[derive(Serialize, ToSchema)]
+pub struct MetadataFieldDto {
+    /// JSON key used in `locked_fields` and sync reports.
+    pub key: String,
+    /// Whether the field can be locked against external sync.
+    pub lockable: bool,
+    /// Whether the field is cleared when the last approved link is deleted.
+    pub clearable: bool,
+}
+
+/// Catalog of sync-managed fields, grouped by target, used by admin UIs to
+/// render lock controls.
+#[derive(Serialize, ToSchema)]
+pub struct MetadataFieldCatalogDto {
+    pub series: Vec<MetadataFieldDto>,
+    pub books: Vec<MetadataFieldDto>,
+}

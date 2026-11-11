@@ -134,6 +134,27 @@ describe("EditSeriesForm", () => {
     expect(screen.getByPlaceholderText("editBook.languagePlaceholder")).toHaveValue("fr");
   });
 
+  it("drops stale lock keys and never offers a genres lock", async () => {
+    const fetchMock = stubFetch();
+    openForm(
+      makeProps({
+        currentLockedFields: { genres: true, title: true, description: true },
+      })
+    );
+
+    // description, authors, publishers, start_year, total_volumes and status
+    // are the only lockable series fields.
+    expect(screen.getAllByTitle("editBook.clickToLock")).toHaveLength(5);
+    expect(screen.getAllByTitle("editBook.lockedField")).toHaveLength(1);
+
+    fireEvent.submit(screen.getByPlaceholderText("editSeries.namePlaceholder").closest("form")!);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const patchCall = fetchMock.mock.calls.find(([url]) => url === "/api/series/s1")!;
+    const body = JSON.parse((patchCall[1] as RequestInit).body as string);
+    expect(body.locked_fields).toEqual({ description: true });
+  });
+
   it("toggles the locked-fields legend", () => {
     stubFetch();
     openForm(makeProps());

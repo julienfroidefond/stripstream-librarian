@@ -111,6 +111,30 @@ fn series_owned_volumes_route_is_admin_only() {
     );
 }
 
+/// The field catalog drives admin lock controls: admin-only, never on the
+/// read-scoped Client API.
+#[test]
+fn metadata_field_catalog_is_admin_only() {
+    let admin = serde_json::to_value(AdminApiDoc::openapi()).unwrap();
+    assert!(
+        admin["paths"]["/metadata/fields"]["get"].is_object(),
+        "admin OpenAPI must expose GET /metadata/fields"
+    );
+    assert!(
+        admin["components"]["schemas"]["MetadataFieldCatalogDto"].is_object(),
+        "admin OpenAPI must document MetadataFieldCatalogDto"
+    );
+
+    let client = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
+    let paths = client["paths"]
+        .as_object()
+        .expect("paths must be an object");
+    assert!(
+        !paths.contains_key("/metadata/fields"),
+        "the read-scoped Client API must not expose /metadata/fields"
+    );
+}
+
 #[test]
 fn admin_openapi_exposes_the_alldebrid_routes() {
     let spec = serde_json::to_value(AdminApiDoc::openapi()).unwrap();

@@ -457,6 +457,10 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::get(metadata::list_metadata_providers),
         )
         .route(
+            "/metadata/fields",
+            axum::routing::get(metadata::list_metadata_fields),
+        )
+        .route(
             "/metadata/match",
             axum::routing::post(metadata::create_metadata_match),
         )
