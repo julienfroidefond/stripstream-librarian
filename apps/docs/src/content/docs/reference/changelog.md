@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.140 — 2026-11-12
+
+### Refactoring
+
+- **backoffice** — centralize browser API transport ([#275](https://github.com/julienfroidefond/stripstream-librarian/pull/275))
+
 ## v3.32.139 — 2026-11-12
 
 ### Documentation
