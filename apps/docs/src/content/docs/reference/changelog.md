@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.139 — 2026-11-12
+
+### Documentation
+
+- **backoffice** — document the settings draft module ([#274](https://github.com/julienfroidefond/stripstream-librarian/pull/274))
+
 ## v3.32.138 — 2026-11-12
 
 <details>
