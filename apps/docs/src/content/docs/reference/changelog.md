@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.137 — 2026-11-12
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump jose ([#272](https://github.com/julienfroidefond/stripstream-librarian/pull/272))
+
+</details>
+
 ## v3.32.136 — 2026-11-11
 
 ### Refactoring
