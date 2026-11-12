@@ -89,11 +89,13 @@ describe("OrphansTable", () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1"]));
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: ["s1"] }),
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/series/orphans",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ ids: ["s1"] }),
+      })
+    );
     expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":1,"skipped":0,"plural":""}', "success");
   });
 
@@ -125,11 +127,13 @@ describe("OrphansTable", () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1", "s2"]));
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: ["s1", "s2"] }),
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/series/orphans",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ ids: ["s1", "s2"] }),
+      })
+    );
     expect(toast).toHaveBeenCalledWith('settings.orphans.deleted:{"count":2,"skipped":0,"plural":"s"}', "success");
   });
 
@@ -159,11 +163,13 @@ describe("OrphansTable", () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(["s1"]));
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: ["s1"] }),
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/series/orphans",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ ids: ["s1"] }),
+      })
+    );
   });
 
   it("disables the bulk delete when every series has an in-progress download", () => {

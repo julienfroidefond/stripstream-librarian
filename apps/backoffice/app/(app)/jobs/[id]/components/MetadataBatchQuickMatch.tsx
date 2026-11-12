@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Icon, Button } from "@/app/components/ui";
+import { Icon, Button, toast } from "@/app/components/ui";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { MetadataBatchResultDto } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -86,41 +87,33 @@ export function MetadataBatchQuickMatch({
     setLinking(result.id);
     try {
       // Create match
-      const matchResp = await fetch("/api/metadata/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          library_id: libraryId,
-          series_name: result.series_name,
-          provider: result.provider_used,
-          external_id: candidate.external_id,
-          external_url: candidate.external_url,
-          confidence: candidate.confidence ?? result.best_confidence,
-          title: candidate.title,
-          metadata_json: {
-            description: candidate.description,
-            authors: candidate.authors,
-            start_year: candidate.start_year,
-          },
-          total_volumes: candidate.total_volumes,
-        }),
+      const matchData = await browserApi.metadata.match({
+        library_id: libraryId,
+        series_name: result.series_name,
+        provider: result.provider_used,
+        external_id: candidate.external_id,
+        external_url: candidate.external_url ?? null,
+        confidence: candidate.confidence ?? result.best_confidence ?? undefined,
+        title: candidate.title,
+        metadata_json: {
+          description: candidate.description,
+          authors: candidate.authors,
+          start_year: candidate.start_year,
+        },
+        total_volumes: candidate.total_volumes ?? null,
       });
-      const matchData = await matchResp.json();
-      if (!matchResp.ok) return;
 
       // Approve with series sync
-      await fetch("/api/metadata/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: matchData.id,
-          sync_series: true,
-          sync_books: true,
-        }),
+      await browserApi.metadata.approve({
+        id: matchData.id,
+        sync_series: true,
+        sync_books: true,
       });
 
       setLinked((prev) => new Set(prev).add(result.id));
       router.refresh();
+    } catch (error) {
+      toast(browserErrorMessage(error, t("metadata.linkFailed")), "error");
     } finally {
       setLinking(null);
     }

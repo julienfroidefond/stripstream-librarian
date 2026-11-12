@@ -13,11 +13,11 @@ describe("TestConnectionButton", () => {
       .fn()
       .mockResolvedValue({ json: async () => ({ success: true, message: "Connected" }) });
     vi.stubGlobal("fetch", fetchMock);
-    render(<TestConnectionButton endpoint="/api/settings/prowlarr/test" />);
+    render(<TestConnectionButton target="prowlarr" />);
 
     fireEvent.click(screen.getByRole("button", { name: "settings.testConnection" }));
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/settings/prowlarr/test");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/prowlarr/test");
     expect(await screen.findByText("Connected")).toBeInTheDocument();
   });
 
@@ -26,7 +26,7 @@ describe("TestConnectionButton", () => {
       "fetch",
       vi.fn().mockResolvedValue({ json: async () => ({ error: "Bad credentials" }) })
     );
-    render(<TestConnectionButton endpoint="/api/settings/qbittorrent/test" />);
+    render(<TestConnectionButton target="qbittorrent" />);
 
     fireEvent.click(screen.getByRole("button"));
 
@@ -35,7 +35,7 @@ describe("TestConnectionButton", () => {
 
   it("shows a generic message when the request fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
-    render(<TestConnectionButton endpoint="/api/settings/qbittorrent/test" />);
+    render(<TestConnectionButton target="qbittorrent" />);
 
     fireEvent.click(screen.getByRole("button"));
 
@@ -44,7 +44,7 @@ describe("TestConnectionButton", () => {
 
   it("shows a spinner while testing", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
-    render(<TestConnectionButton endpoint="/api/settings/qbittorrent/test" />);
+    render(<TestConnectionButton target="qbittorrent" />);
 
     fireEvent.click(screen.getByRole("button"));
 
@@ -53,7 +53,7 @@ describe("TestConnectionButton", () => {
 
   it("stays disabled when the disabled prop is set", () => {
     vi.stubGlobal("fetch", vi.fn());
-    render(<TestConnectionButton endpoint="/api/settings/qbittorrent/test" disabled />);
+    render(<TestConnectionButton target="qbittorrent" disabled />);
 
     expect(screen.getByRole("button")).toBeDisabled();
   });

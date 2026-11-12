@@ -110,7 +110,10 @@ describe("fetchSharedFile", () => {
 
     const file = await fetchSharedFile("/api/books/b1/file");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/books/b1/file");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/books/b1/file",
+      expect.objectContaining({ method: "GET" })
+    );
     expect(file).toBeInstanceOf(File);
     expect(file.name).toBe("GON T06.cbz");
     expect(file.type).toBe("application/vnd.comicbook+zip");
@@ -131,6 +134,6 @@ describe("fetchSharedFile", () => {
   it("throws on a failed response", async () => {
     stubDownloadResponse("nope", { status: 404 });
 
-    await expect(fetchSharedFile("/api/books/b1/file")).rejects.toThrow("download failed (404)");
+    await expect(fetchSharedFile("/api/books/b1/file")).rejects.toThrow("Request failed (404)");
   });
 });

@@ -42,11 +42,10 @@ describe("MarkBookReadButton", () => {
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByRole("button")).toBeDisabled();
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/books/book-1/progress", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/books/book-1/progress", expect.objectContaining({
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "read" }),
-    });
+    }));
     await vi.waitFor(() => expect(screen.getByRole("button")).not.toBeDisabled());
   });
 

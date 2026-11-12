@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { DownloadClientProvider, DownloadClientButton } from "./DownloadClientButton";
 import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
 import { useAcquisitionReadiness } from "./AcquisitionReadinessProvider";
@@ -90,12 +91,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
         title: b.title,
       })) ?? undefined;
       const body = { series_name: seriesName, custom_query: searchQuery.trim(), missing_volumes };
-      const resp = await fetch("/api/prowlarr/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
+      const data = await browserApi.prowlarr.search(body);
       if (data.error) {
         setError(data.error);
       } else {
@@ -104,8 +100,8 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
         setQuery(searchResp.query);
         setWarning(searchResp.warning ?? null);
       }
-    } catch {
-      setError(t("prowlarr.searchError"));
+    } catch (error) {
+      setError(browserErrorMessage(error, t("prowlarr.searchError")));
     } finally {
       setIsSearching(false);
     }

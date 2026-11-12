@@ -22,11 +22,10 @@ describe("MarkSeriesReadButton", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "markRead.markAllRead" }));
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/mark-read", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/series/mark-read", expect.objectContaining({
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ series: "series-1", status: "read" }),
-    });
+    }));
   });
 
   it("marks the whole series as unread when every book is read", () => {

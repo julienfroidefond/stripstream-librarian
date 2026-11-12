@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TranslationKey } from "../../lib/i18n/fr";
 import type {
@@ -12,6 +14,11 @@ import type {
 } from "../../lib/api";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
+
+function failureMessage(error: unknown): string {
+  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
+  return error instanceof Error ? error.message : String(error);
+}
 
 interface MissingBookItem {
   title: string | null;
@@ -104,9 +111,8 @@ export function DdlProviderSearchModal({
   // which providers the user can pick from.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/ddl-providers")
-      .then((resp) => (resp.ok ? resp.json() : []))
-      .then((list: DdlProviderDto[]) => {
+    browserApi.ddl.providers()
+      .then((list) => {
         if (cancelled) return;
         setProviders(list);
         const firstEnabled = list.find((p) => p.enabled);
@@ -122,9 +128,7 @@ export function DdlProviderSearchModal({
 
   const refreshStatuses = useCallback(async () => {
     try {
-      const resp = await fetch("/api/ddl-provider-downloads");
-      if (!resp.ok) return;
-      const list: DdlProviderDownloadDto[] = await resp.json();
+      const list = await browserApi.ddl.downloads();
       setStatuses((prev) => {
         const next = { ...prev };
         for (const d of list) next[downloadKey(d.provider, d.external_id)] = d.status;
@@ -151,33 +155,23 @@ export function DdlProviderSearchModal({
       setIsSearching(true);
       setSearched(false);
       try {
-        const resp = await fetch(`/api/ddl-providers/${provider}/search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: query.trim(),
-            series_name: seriesName,
-            library_id: libraryId,
-            missing_volumes: missingVolumes,
-          }),
+        const data = await browserApi.ddl.search(provider, {
+          query: query.trim(),
+          series_name: seriesName,
+          library_id: libraryId,
+          missing_volumes: missingVolumes,
         });
-        if (resp.ok) {
-          const data: { results: DdlProviderSearchResultDto[] } = await resp.json();
-          setResults(data.results ?? []);
-          setStatuses((prev) => {
-            const next = { ...prev };
-            for (const r of data.results ?? []) {
-              if (r.download_status) next[downloadKey(r.provider, r.external_id)] = r.download_status;
-            }
-            return next;
-          });
-        } else {
-          const body = await resp.json().catch(() => ({}));
-          toast(body?.error ?? `Error ${resp.status}`, "error");
-        }
+        setResults(data.results ?? []);
+        setStatuses((prev) => {
+          const next = { ...prev };
+          for (const r of data.results ?? []) {
+            if (r.download_status) next[downloadKey(r.provider, r.external_id)] = r.download_status;
+          }
+          return next;
+        });
         setSearched(true);
-      } catch (e) {
-        toast(String(e), "error");
+      } catch (error) {
+        toast(failureMessage(error), "error");
         setSearched(true);
       } finally {
         setIsSearching(false);
@@ -204,31 +198,18 @@ export function DdlProviderSearchModal({
     setActingKeys((prev) => new Set(prev).add(key));
     setStatuses((prev) => ({ ...prev, [key]: "queued" }));
     try {
-      const resp = await fetch(`/api/ddl-providers/${providerId}/downloads`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          external_id: result.external_id,
-          filename: result.filename,
-          size: result.size,
-          library_id: libraryId,
-          // Always import into the series the user is browsing: the provider's own
-          // series label ("Astérix le Gaulois") would create a parallel directory/series.
-          series_name: seriesName,
-          volume_number: result.volume_number,
-        }),
+      await browserApi.ddl.startDownload(providerId, {
+        external_id: result.external_id,
+        filename: result.filename,
+        size: result.size,
+        library_id: libraryId,
+        // Always import into the series the user is browsing: the provider's own
+        // series label ("Astérix le Gaulois") would create a parallel directory/series.
+        series_name: seriesName,
+        volume_number: result.volume_number,
       });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
-        setStatuses((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-      }
-    } catch (e) {
-      toast(String(e), "error");
+    } catch (error) {
+      toast(failureMessage(error), "error");
       setStatuses((prev) => {
         const next = { ...prev };
         delete next[key];
@@ -244,14 +225,14 @@ export function DdlProviderSearchModal({
   }
 
   async function handleDismiss(result: DdlProviderSearchResultDto) {
-    if (!providerId) return;
+    if (!providerId || !result.download_id) return;
     const key = downloadKey(providerId, result.external_id);
     setActingKeys((prev) => new Set(prev).add(key));
     try {
-      const resp = await fetch(`/api/ddl-provider-downloads/${result.download_id}`, {
-        method: "DELETE",
-      });
-      if (resp.ok) setStatuses((prev) => ({ ...prev, [key]: "dismissed" }));
+      await browserApi.ddl.dismissDownload(result.download_id);
+      setStatuses((prev) => ({ ...prev, [key]: "dismissed" }));
+    } catch {
+      // keep the current status when the dismiss is rejected
     } finally {
       setActingKeys((prev) => {
         const s = new Set(prev);

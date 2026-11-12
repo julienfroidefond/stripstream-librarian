@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 export function LogoutButton() {
@@ -9,7 +10,11 @@ export function LogoutButton() {
   const { t } = useTranslation();
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await browserApi.auth.logout();
+    } catch {
+      // Best-effort: still leave the UI even if the server call fails.
+    }
     router.push("/login");
     router.refresh();
   }

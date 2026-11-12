@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Icon, Modal } from "./ui";
 import { ProviderIcon, providerLabel } from "./ProviderIcon";
 import type { ExternalMetadataLinkDto, SeriesCandidateDto, MissingBooksDto, SyncReport, MetadataProviderDto } from "../../lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { useTranslation } from "@/lib/i18n/context";
 
 const FIELD_KEYS: string[] = [
@@ -73,9 +75,8 @@ export function MetadataSearchModal({
   const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
 
   useEffect(() => {
-    fetch("/api/metadata/providers")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
-      .then((data: MetadataProviderDto[]) => setProviders(data))
+    browserApi.metadata.providers()
+      .then((data) => setProviders(data))
       .catch(() => setProviders([]));
   }, []);
 
@@ -102,23 +103,11 @@ export function MetadataSearchModal({
     setActiveProvider(provider);
     const queryTerm = customQuery ?? searchInput;
     try {
-      const body: Record<string, string> = {
+      const data = await browserApi.metadata.search({
         library_id: libraryId,
         series_name: queryTerm,
-      };
-      if (provider) body.provider = provider;
-
-      const resp = await fetch("/api/metadata/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        provider: provider || undefined,
       });
-      const data = await resp.json();
-      if (!resp.ok) {
-        setError(data.error || t("metadata.searchFailed"));
-        setStep("results");
-        return;
-      }
       setCandidates(data);
       // Update activeProvider from first result (the API returns the actual provider used)
       if (data.length > 0 && data[0].provider) {
@@ -126,8 +115,12 @@ export function MetadataSearchModal({
         if (!provider) setSearchProvider(data[0].provider);
       }
       setStep("results");
-    } catch {
-      setError(t("common.networkError"));
+    } catch (error) {
+      setError(
+        error instanceof ApiError
+          ? browserErrorMessage(error, t("metadata.searchFailed"))
+          : t("common.networkError")
+      );
       setStep("results");
     }
   }, [libraryId, searchInput, t]);
@@ -170,54 +163,36 @@ export function MetadataSearchModal({
     if (!selectedCandidate) return;
     setStep("syncing");
     setError(null);
+    let stage: "match" | "approve" = "match";
     try {
       // Create match — use the provider from the candidate
-      const matchResp = await fetch("/api/metadata/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          library_id: libraryId,
-          series_name: seriesName,
-          provider: selectedCandidate.provider,
-          external_id: selectedCandidate.external_id,
-          external_url: selectedCandidate.external_url,
-          confidence: selectedCandidate.confidence,
-          title: selectedCandidate.title,
-          metadata_json: {
-            ...selectedCandidate.metadata_json,
-            description: selectedCandidate.description,
-            authors: selectedCandidate.authors,
-            publishers: selectedCandidate.publishers,
-            start_year: selectedCandidate.start_year,
-          },
-          total_volumes: selectedCandidate.total_volumes,
-        }),
+      const matchData = await browserApi.metadata.match({
+        library_id: libraryId,
+        series_name: seriesName,
+        provider: selectedCandidate.provider,
+        external_id: selectedCandidate.external_id,
+        external_url: selectedCandidate.external_url,
+        confidence: selectedCandidate.confidence,
+        title: selectedCandidate.title,
+        metadata_json: {
+          ...selectedCandidate.metadata_json,
+          description: selectedCandidate.description,
+          authors: selectedCandidate.authors,
+          publishers: selectedCandidate.publishers,
+          start_year: selectedCandidate.start_year,
+        },
+        total_volumes: selectedCandidate.total_volumes,
       });
-      const matchData = await matchResp.json();
-      if (!matchResp.ok) {
-        setError(matchData.error || t("metadata.linkFailed"));
-        setStep("results");
-        return;
-      }
       const newLinkId = matchData.id;
       setLinkId(newLinkId);
 
       // Approve
-      const approveResp = await fetch("/api/metadata/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: newLinkId,
-          sync_series: syncSeries,
-          sync_books: syncBooks,
-        }),
+      stage = "approve";
+      const approveData = await browserApi.metadata.approve({
+        id: newLinkId,
+        sync_series: syncSeries,
+        sync_books: syncBooks,
       });
-      const approveData = await approveResp.json();
-      if (!approveResp.ok) {
-        setError(approveData.error || t("metadata.approveFailed"));
-        setStep("results");
-        return;
-      }
 
       // Store sync report
       if (approveData.report) {
@@ -227,10 +202,7 @@ export function MetadataSearchModal({
       // Fetch missing books info
       if (syncBooks) {
         try {
-          const missingResp = await fetch(`/api/metadata/missing?id=${newLinkId}`);
-          if (missingResp.ok) {
-            setMissing(await missingResp.json());
-          }
+          setMissing(await browserApi.metadata.missing(newLinkId));
         } catch { /* ignore */ }
       }
 
@@ -238,8 +210,15 @@ export function MetadataSearchModal({
       // Refresh the server-rendered link list so the new provider shows up
       // immediately (the modal derives `approvedLinks` from its `links` prop).
       router.refresh();
-    } catch {
-      setError(t("common.networkError"));
+    } catch (error) {
+      setError(
+        error instanceof ApiError
+          ? browserErrorMessage(
+              error,
+              t(stage === "approve" ? "metadata.approveFailed" : "metadata.linkFailed")
+            )
+          : t("common.networkError")
+      );
       setStep("results");
     }
   }
@@ -251,21 +230,11 @@ export function MetadataSearchModal({
     // Optimistic: mark this link primary and clear the flag on the others.
     setLocalLinks((prev) => prev.map((l) => ({ ...l, is_primary: l.id === id })));
     try {
-      const resp = await fetch(`/api/metadata/links?id=${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_primary: true, sync_series: true, sync_books: true }),
-      });
-      if (resp.ok) {
-        router.refresh();
-      } else {
-        setLocalLinks(previous);
-        const body = await resp.json().catch(() => ({}));
-        setError(body?.error ?? t("common.networkError"));
-      }
-    } catch {
+      await browserApi.metadata.updateLink(id, { is_primary: true, sync_series: true, sync_books: true });
+      router.refresh();
+    } catch (error) {
       setLocalLinks(previous);
-      setError(t("common.networkError"));
+      setError(browserErrorMessage(error, t("common.networkError")));
     } finally {
       setBusyId(null);
     }
@@ -278,21 +247,15 @@ export function MetadataSearchModal({
     // Optimistic: drop the link from the list immediately.
     setLocalLinks((prev) => prev.filter((l) => l.id !== id));
     try {
-      const resp = await fetch(`/api/metadata/links?id=${id}`, { method: "DELETE" });
-      if (resp.ok) {
-        if (linkId === id) {
-          setLinkId(null);
-          setMissing(null);
-        }
-        router.refresh();
-      } else {
-        setLocalLinks(previous);
-        const body = await resp.json().catch(() => ({}));
-        setError(body?.error ?? t("common.networkError"));
+      await browserApi.metadata.deleteLink(id);
+      if (linkId === id) {
+        setLinkId(null);
+        setMissing(null);
       }
-    } catch {
+      router.refresh();
+    } catch (error) {
       setLocalLinks(previous);
-      setError(t("common.networkError"));
+      setError(browserErrorMessage(error, t("common.networkError")));
     } finally {
       setUnlinking(false);
     }
@@ -777,11 +740,11 @@ export function MetadataSearchModal({
                           setRefreshing(true);
                           setRefreshDone(false);
                           try {
-                            const resp = await fetch(`/api/metadata/refresh-link/${targetId}`, { method: "POST" });
-                            if (resp.ok) {
-                              setRefreshDone(true);
-                              setTimeout(() => setRefreshDone(false), 3000);
-                            }
+                            await browserApi.metadata.refreshLink(targetId);
+                            setRefreshDone(true);
+                            setTimeout(() => setRefreshDone(false), 3000);
+                          } catch {
+                            // Refresh is best-effort; the link list stays as-is.
                           } finally {
                             setRefreshing(false);
                           }

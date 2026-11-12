@@ -93,7 +93,12 @@ describe("MetadataProvidersCard", () => {
     const { writer } = renderCard({
       metadata_providers: { default_provider: "comicvine" },
     });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/metadata/providers"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/metadata/providers",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
     await userEvent.click(screen.getByText("Français"));
 
     await waitFor(() => expect(writer).toHaveBeenCalledWith("metadata_providers", {

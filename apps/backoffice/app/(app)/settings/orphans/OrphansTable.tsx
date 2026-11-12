@@ -7,6 +7,7 @@ import { Button } from "@/app/components/ui/Button";
 import { Icon } from "@/app/components/ui/Icon";
 import { Modal } from "@/app/components/ui/Modal";
 import { toast } from "@/app/components/ui/Toast";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface Props {
@@ -30,13 +31,7 @@ export function OrphansTable({ series, onDeleted }: Props) {
     if (ids.length === 0) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/series/orphans", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!response.ok) throw new Error("delete failed");
-      const result = (await response.json()) as OrphanDeleteResultDto;
+      const result = await browserApi.series.deleteOrphans(ids);
       const failedIds = new Set(result.failed);
       const removedIds = ids.filter((id) => !failedIds.has(id));
 

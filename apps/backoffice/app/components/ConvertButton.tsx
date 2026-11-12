@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "./ui";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface ConvertButtonProps {
@@ -23,16 +24,10 @@ export function ConvertButton({ bookId, children }: ConvertButtonProps) {
   const handleConvert = async () => {
     setState({ type: "loading" });
     try {
-      const res = await fetch(`/api/books/${bookId}/convert`, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        setState({ type: "error", message: body.error || t("convert.failed") });
-        return;
-      }
-      const job = await res.json();
+      const job = await browserApi.books.convert(bookId);
       setState({ type: "success", jobId: job.id });
     } catch (err) {
-      setState({ type: "error", message: err instanceof Error ? err.message : t("convert.unknownError") });
+      setState({ type: "error", message: browserErrorMessage(err, t("convert.failed")) });
     }
   };
 

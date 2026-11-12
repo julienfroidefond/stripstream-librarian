@@ -129,7 +129,10 @@ describe("ReadingOverview", () => {
     fireEvent.click(screen.getByText("Serie1"));
     expect(screen.getAllByTestId("volume-skeleton").length).toBeGreaterThan(0);
     expect(await screen.findByText("V1")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/reading-overview/u1/series-books?series_id=s1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reading-overview/u1/series-books?series_id=s1",
+      expect.objectContaining({ method: "GET" })
+    );
     expect(screen.getByText("T1")).toBeInTheDocument();
     expect(screen.getByText("OS")).toBeInTheDocument();
     expect(screen.getByText("Int 3")).toBeInTheDocument();
@@ -146,7 +149,10 @@ describe("ReadingOverview", () => {
 
     fireEvent.click(screen.getByText("Unclassified"));
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/reading-overview/u1/series-books"),
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/reading-overview/u1/series-books",
+        expect.objectContaining({ method: "GET" })
+      ),
     );
 
     fireEvent.click(screen.getByRole("tab", { name: /Bob/ }));

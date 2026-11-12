@@ -5,6 +5,7 @@ import { ArchivedSeriesItemDto, ArchivedSeriesDetailDto, ArchivedBookReadingProg
 import { Badge } from "@/app/components/ui/Badge";
 import { Icon } from "@/app/components/ui/Icon";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
 function volumeLabel(t: TranslateFunction, volume: number | null, volumeType: string): string {
@@ -76,9 +77,7 @@ export function ArchivesTable({ series }: Props) {
     setExpandedId(id);
     if (!details[id]) {
       setLoading((l) => ({ ...l, [id]: true }));
-      const detail = await fetch(`/api/series/archived/${id}`)
-        .then((r) => r.ok ? r.json() as Promise<ArchivedSeriesDetailDto> : null)
-        .catch(() => null);
+      const detail = await browserApi.series.archivedDetail(id).catch(() => null);
       if (detail) setDetails((d) => ({ ...d, [id]: detail }));
       setLoading((l) => ({ ...l, [id]: false }));
     }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type CallbackMessage = { key: TranslationKey; params?: Record<string, string | number> };
@@ -35,28 +36,31 @@ export default function AnilistCallbackPage() {
 
       try {
         // Read existing settings to preserve client_id
-        const existingResp = await fetch("/api/settings/anilist").catch(() => null);
-        const existing = existingResp?.ok ? await existingResp.json().catch(() => ({})) : {};
+        const existing =
+          (await browserApi.settings
+            .section<Record<string, unknown>>("anilist")
+            .catch(() => null)) ?? {};
 
         const save = (extra: Record<string, unknown>) =>
-          fetch("/api/settings/anilist", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ value: { ...existing, access_token: accessToken, ...extra } }),
+          browserApi.settings.saveSection("anilist", {
+            ...existing,
+            access_token: accessToken,
+            ...extra,
           });
 
-        const saveResp = await save({});
-        if (!saveResp.ok) {
+        try {
+          await save({});
+        } catch {
           setState({ status: "error", message: { key: "settings.anilistCallbackSaveError" } });
           return;
         }
 
         // Auto-fetch user info to populate user_id
-        const statusResp = await fetch("/api/anilist/status");
-        if (statusResp.ok) {
-          const data = await statusResp.json();
+        try {
+          const data = await browserApi.anilist.status();
           if (data.user_id) {
-            await save({ user_id: data.user_id });
+            // Best effort: a stale token still connects; the settings tab can resync later.
+            await save({ user_id: data.user_id }).catch(() => undefined);
           }
           setState({
             status: "success",
@@ -65,7 +69,7 @@ export default function AnilistCallbackPage() {
               params: { username: String(data.username) },
             },
           });
-        } else {
+        } catch {
           setState({ status: "success", message: { key: "settings.anilistCallbackTokenSaved" } });
         }
 

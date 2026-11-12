@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { AnilistMediaResultDto, AnilistSeriesLinkDto } from "../../lib/api";
 
@@ -50,13 +51,7 @@ export function ReadingStatusModal({
     setStep("searching");
     setError(null);
     try {
-      const resp = await fetch("/api/anilist/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Search failed");
+      const data = await browserApi.anilist.search(query);
       setCandidates(data);
       setStep("results");
     } catch (e) {
@@ -69,16 +64,7 @@ export function ReadingStatusModal({
     setIsLinking(true);
     setError(null);
     try {
-      const resp = await fetch(
-        `/api/series/${seriesId}/anilist`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ anilist_id: candidate.id }),
-        }
-      );
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Link failed");
+      const data = await browserApi.anilist.link(seriesId, candidate.id);
       setLink(data);
       setStep("linked");
       router.refresh();
@@ -93,11 +79,7 @@ export function ReadingStatusModal({
     setIsUnlinking(true);
     setError(null);
     try {
-      const resp = await fetch(
-        `/api/series/${seriesId}/anilist`,
-        { method: "DELETE" }
-      );
-      if (!resp.ok) throw new Error("Unlink failed");
+      await browserApi.anilist.unlink(seriesId);
       setLink(null);
       setStep("idle");
       router.refresh();

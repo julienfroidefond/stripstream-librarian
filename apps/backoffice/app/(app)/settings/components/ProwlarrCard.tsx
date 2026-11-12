@@ -107,7 +107,7 @@ export function ProwlarrCard() {
       </SettingsRow>
       <div className="pt-1">
         <TestConnectionButton
-          endpoint="/api/prowlarr/test"
+          target="prowlarr"
           disabled={!value.enabled || !value.url || !value.api_key}
         />
       </div>

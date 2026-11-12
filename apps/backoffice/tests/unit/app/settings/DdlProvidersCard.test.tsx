@@ -78,11 +78,13 @@ describe("DdlProvidersCard", () => {
     fireEvent.click(toggle);
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/fourtoutici/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: true, base_url: "https://fourtoutici.cc" }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/fourtoutici/toggle",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ enabled: true, base_url: "https://fourtoutici.cc" }),
+        })
+      )
     );
     expect(toast).toHaveBeenCalledWith("ddlProviders.saved", "success");
   });
@@ -99,11 +101,13 @@ describe("DdlProvidersCard", () => {
     fireEvent.blur(input);
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/fourtoutici/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: false, base_url: "https://mirror.example" }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/fourtoutici/toggle",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ enabled: false, base_url: "https://mirror.example" }),
+        })
+      )
     );
   });
 
@@ -140,11 +144,13 @@ describe("DdlProvidersCard", () => {
     fireEvent.change(select, { target: { value: "60" } });
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/search-settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ search_interval_minutes: 60 }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/search-settings",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ search_interval_minutes: 60 }),
+        })
+      )
     );
   });
 
@@ -175,7 +181,10 @@ describe("DdlProvidersCard", () => {
     fireEvent.click(button);
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/search-all", { method: "POST" })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/search-all",
+        expect.objectContaining({ method: "POST" })
+      )
     );
     await waitFor(() =>
       expect(toast).toHaveBeenCalledWith("ddlProviders.searchQueued", "success")

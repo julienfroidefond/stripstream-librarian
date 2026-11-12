@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import { inlineReadClassName, markReadClassName, overlayReadClassName, useMarkRead } from "@/hooks/useMarkRead";
 import { MarkReadButton } from "./MarkReadButton";
 
@@ -25,9 +26,7 @@ export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksRea
     : t(compact ? "markRead.read" as any : "markRead.markAllRead");
 
   const { loading, handleClick } = useMarkRead({
-    url: "/api/series/mark-read",
-    method: "POST",
-    body: { series: seriesId, status: targetStatus },
+    action: () => browserApi.series.markRead(seriesId, targetStatus),
     errorContext: "Failed to mark series",
   });
 

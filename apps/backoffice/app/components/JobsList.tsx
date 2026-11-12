@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "@/lib/i18n/context";
 import type { JobTypeCatalogDto } from "@/lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { JobRow } from "./JobRow";
 import { formatDateTime, formatDuration } from "@/lib/format";
 
@@ -105,34 +106,29 @@ export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highligh
   }, []);
 
   const handleCancel = async (id: string) => {
-    const response = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
-    if (response.ok) {
+    try {
+      await browserApi.jobs.cancel(id);
       setJobs(jobs.map(job =>
         job.id === id ? { ...job, status: "cancelled" } : job
       ));
-    } else {
-      const data = await response.json().catch(() => ({}));
-      console.error("Failed to cancel job:", data?.error ?? response.status);
+    } catch (error) {
+      console.error("Failed to cancel job:", browserErrorMessage(error, "cancel failed"));
     }
   };
 
   const refreshJobs = async () => {
     try {
-      const res = await fetch("/api/jobs/list");
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setJobs(data);
-      }
+      const data = await browserApi.jobs.list();
+      if (Array.isArray(data)) setJobs(data);
     } catch { /* SSE will catch up */ }
   };
 
   const handleReplay = async (id: string) => {
-    const response = await fetch(`/api/jobs/${id}/replay`, { method: "POST" });
-    if (response.ok) {
+    try {
+      await browserApi.jobs.replay(id);
       await refreshJobs();
-    } else {
-      const data = await response.json().catch(() => ({}));
-      console.error("Failed to replay job:", data?.error ?? response.status);
+    } catch (error) {
+      console.error("Failed to replay job:", browserErrorMessage(error, "replay failed"));
     }
   };
 

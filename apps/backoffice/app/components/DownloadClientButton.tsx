@@ -3,12 +3,12 @@
 import { useState, useEffect, useMemo, createContext, useContext, type ReactNode } from "react";
 import { Icon, Button, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { DownloadClient } from "@/lib/api";
 import {
   DOWNLOAD_CLIENTS,
   DOWNLOAD_CLIENT_LABELS,
   DOWNLOAD_CLIENT_SETTING_KEY,
-  downloadClientAddEndpoint,
   isClientConfigured,
   readDownloadClientSetting,
 } from "@/lib/downloadClient";
@@ -67,8 +67,7 @@ export function DownloadClientProvider({
     Promise.all(
       unknown.map(async (c) => {
         try {
-          const resp = await fetch(`/api/settings/${c}`);
-          const data = resp.ok ? await resp.json() : null;
+          const data = await browserApi.settings.section(c);
           return [c, isClientConfigured(c, data)] as const;
         } catch {
           return [c, false] as const;
@@ -93,8 +92,7 @@ export function DownloadClientProvider({
   useEffect(() => {
     if (initialClient !== undefined) return;
     let active = true;
-    fetch(`/api/settings/${DOWNLOAD_CLIENT_SETTING_KEY}`)
-      .then((resp) => (resp.ok ? resp.json() : null))
+    browserApi.settings.section(DOWNLOAD_CLIENT_SETTING_KEY)
       .catch(() => null)
       .then((data) => {
         if (!active) return;
@@ -188,22 +186,18 @@ export function DownloadClientButton({
   const clientLabel = DOWNLOAD_CLIENT_LABELS[client];
 
   async function handleSend(volumes?: number[], replaceExisting = false) {
+    if (!client) return;
     setSending(true);
     setError(null);
     try {
       const vols = volumes || expectedVolumes;
-      const resp = await fetch(downloadClientAddEndpoint(client!), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: downloadUrl,
-          ...(libraryId && { library_id: libraryId }),
-          ...(seriesName && { series_name: seriesName }),
-          ...(vols && vols.length > 0 ? { expected_volumes: vols } : replaceExisting && libraryId ? { expected_volumes: [] } : {}),
-          ...(replaceExisting && { replace_existing: true }),
-        }),
+      const data = await browserApi.downloads.add(client, {
+        url: downloadUrl,
+        ...(libraryId && { library_id: libraryId }),
+        ...(seriesName && { series_name: seriesName }),
+        ...(vols && vols.length > 0 ? { expected_volumes: vols } : replaceExisting && libraryId ? { expected_volumes: [] } : {}),
+        ...(replaceExisting && { replace_existing: true }),
       });
-      const data = await resp.json();
       if (data.error) {
         setError(data.error);
       } else if (data.success) {

@@ -31,7 +31,10 @@ describe("SeriesShelfAction", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "seriesShelf.shelve" }));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/series/s1/shelf", { method: "PUT" })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/series/s1/shelf",
+        expect.objectContaining({ method: "PUT" })
+      )
     );
     await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("menuitem", { name: "seriesShelf.resume" })).toBeInTheDocument();
@@ -44,7 +47,10 @@ describe("SeriesShelfAction", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "seriesShelf.resume" }));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/series/s1/shelf", { method: "DELETE" })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/series/s1/shelf",
+        expect.objectContaining({ method: "DELETE" })
+      )
     );
     await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("menuitem", { name: "seriesShelf.shelve" })).toBeInTheDocument();

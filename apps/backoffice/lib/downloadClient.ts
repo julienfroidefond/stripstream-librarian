@@ -32,11 +32,6 @@ export function readDownloadClientSetting(data: unknown): DownloadClient | null 
   return DOWNLOAD_CLIENTS.includes(client as DownloadClient) ? (client as DownloadClient) : null;
 }
 
-/** Backoffice proxy endpoint accepting a snatch for the given client. */
-export function downloadClientAddEndpoint(client: DownloadClient): string {
-  return `/api/${client}/add`;
-}
-
 /**
  * Decide whether a client is usable from its settings payload.
  *

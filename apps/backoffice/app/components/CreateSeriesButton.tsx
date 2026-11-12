@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
+import { browserApi, type SeriesCreateRequest } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 type Library = { id: string; name: string };
@@ -39,15 +40,8 @@ export function CreateSeriesButton({ libraries }: { libraries: Library[] }) {
       }
       setSearching(true);
       try {
-        const resp = await fetch("/api/metadata/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ library_id: libraryId, series_name: q }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          setCandidates(Array.isArray(data) ? data : []);
-        }
+        const data = await browserApi.metadata.search({ library_id: libraryId, series_name: q });
+        setCandidates(Array.isArray(data) ? data : []);
       } catch {
         setCandidates([]);
       } finally {
@@ -68,7 +62,7 @@ export function CreateSeriesButton({ libraries }: { libraries: Library[] }) {
     if (!name.trim() || !libraryId) return;
     setCreating(true);
     try {
-      const body: Record<string, unknown> = {
+      const body: SeriesCreateRequest = {
         library_id: libraryId,
         name: name.trim(),
       };
@@ -85,16 +79,9 @@ export function CreateSeriesButton({ libraries }: { libraries: Library[] }) {
           cover_url: selected.cover_url,
         };
       }
-      const resp = await fetch("/api/series/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setIsOpen(false);
-        router.push(`/series/${data.series_id}`);
-      }
+      const data = await browserApi.series.create(body);
+      setIsOpen(false);
+      router.push(`/series/${data.series_id}`);
     } catch {
       // error
     } finally {

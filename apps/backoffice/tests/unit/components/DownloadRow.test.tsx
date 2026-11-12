@@ -56,7 +56,12 @@ describe("DownloadRow — retry routing", () => {
 
     clickRetry();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/alldebrid/restart/dl-1", { method: "POST" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/alldebrid/restart/dl-1",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
     await waitFor(() => expect(onRetried).toHaveBeenCalled());
   });
 
@@ -66,7 +71,12 @@ describe("DownloadRow — retry routing", () => {
 
     clickRetry();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/torrent-downloads/dl-1/retry", { method: "POST" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/torrent-downloads/dl-1/retry",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
   });
 
   it("retries the import for a qBittorrent download", async () => {
@@ -75,7 +85,12 @@ describe("DownloadRow — retry routing", () => {
 
     clickRetry();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/torrent-downloads/dl-1/retry", { method: "POST" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/torrent-downloads/dl-1/retry",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
   });
 
   it("does not report success when the restart fails", async () => {
@@ -84,7 +99,12 @@ describe("DownloadRow — retry routing", () => {
 
     clickRetry();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/alldebrid/restart/dl-1", { method: "POST" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/alldebrid/restart/dl-1",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
     expect(onRetried).not.toHaveBeenCalled();
   });
 });

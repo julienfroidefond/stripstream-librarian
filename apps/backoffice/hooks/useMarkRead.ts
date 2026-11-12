@@ -4,12 +4,11 @@ import { useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { iconActionClassName } from "@/app/components/ui/iconAction";
+import { ApiError } from "@/lib/api/errors";
 
 export interface UseMarkReadOptions {
-  /** Target endpoint, e.g. `/api/books/<id>/progress`. */
-  url: string;
-  method: "POST" | "PATCH" | "PUT";
-  body: Record<string, unknown>;
+  /** Semantic action that performs the read/unread change. */
+  action: () => Promise<unknown>;
   /** Prefix used when logging failures, e.g. `Failed to update reading progress`. */
   errorContext: string;
 }
@@ -20,10 +19,10 @@ export interface UseMarkReadResult {
 }
 
 /**
- * Shared "mark as read/unread" click handler: prevents navigation, posts the
- * status, logs failures and refreshes the current route once done.
+ * Shared "mark as read/unread" click handler: prevents navigation, runs the
+ * supplied action, logs failures and refreshes the current route.
  */
-export function useMarkRead({ url, method, body, errorContext }: UseMarkReadOptions): UseMarkReadResult {
+export function useMarkRead({ action, errorContext }: UseMarkReadOptions): UseMarkReadResult {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -32,18 +31,14 @@ export function useMarkRead({ url, method, body, errorContext }: UseMarkReadOpti
     e.stopPropagation();
     setLoading(true);
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-        console.error(`${errorContext}:`, errorBody.error);
-      }
+      await action();
       router.refresh();
-    } catch (err) {
-      console.error(`${errorContext}:`, err);
+    } catch (error) {
+      console.error(`${errorContext}:`, error instanceof ApiError ? error.detail ?? error.message : error);
+      // An HTTP failure still changed nothing server-side, but the previous
+      // implementation refreshed the route anyway; keep that so stale data is
+      // re-fetched after a rejected mutation.
+      if (error instanceof ApiError) router.refresh();
     } finally {
       setLoading(false);
     }

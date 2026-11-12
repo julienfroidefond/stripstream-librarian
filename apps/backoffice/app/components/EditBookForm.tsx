@@ -8,6 +8,8 @@ import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
 import { pickLockableFields } from "@/lib/metadataLocks";
+import { browserApi, browserErrorMessage, type UpdateBookRequest } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -100,31 +102,27 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
 
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/books/${book.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: title.trim(),
-            author: finalAuthors[0] ?? null,
-            authors: finalAuthors,
-            series: series.trim() || null,
-            volume: volume.trim() ? parseInt(volume.trim(), 10) : null,
-            language: language.trim() || null,
-            summary: summary.trim() || null,
-            isbn: isbn.trim() || null,
-            publish_date: publishDate.trim() || null,
-            locked_fields: visibleLockedFields,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.error ?? t("editBook.saveError"));
-          return;
-        }
+        const body: UpdateBookRequest = {
+          title: title.trim(),
+          author: finalAuthors[0] ?? null,
+          authors: finalAuthors,
+          series: series.trim() || null,
+          volume: volume.trim() ? parseInt(volume.trim(), 10) : null,
+          language: language.trim() || null,
+          summary: summary.trim() || null,
+          isbn: isbn.trim() || null,
+          publish_date: publishDate.trim() || null,
+          locked_fields: visibleLockedFields,
+        };
+        await browserApi.books.update(book.id, body);
         setIsOpen(false);
         router.refresh();
-      } catch {
-        setError(t("common.networkError"));
+      } catch (error) {
+        if (error instanceof ApiError) {
+          setError(browserErrorMessage(error, t("editBook.saveError")));
+        } else {
+          setError(t("common.networkError"));
+        }
       }
     });
   };

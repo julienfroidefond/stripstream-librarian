@@ -5,6 +5,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserFetchVoid } from "@/lib/api/browser";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 const DEFAULT_REDIRECT = "/series";
@@ -28,13 +29,13 @@ export function DeleteConfirmButton({ endpoint, redirectTo = DEFAULT_REDIRECT, t
     setDeleting(true);
     setShowConfirm(false);
     try {
-      const resp = await fetch(endpoint, { method: "DELETE" });
-      if (resp.ok) {
-        // Navigate first, then refresh so the destination route is the one re-fetched.
-        // `redirectTo` is assembled dynamically; cast required by statically-typed routes.
-        router.push(redirectTo as Route);
-        router.refresh();
-      }
+      await browserFetchVoid(endpoint, { method: "DELETE" });
+      // Navigate first, then refresh so the destination route is the one re-fetched.
+      // `redirectTo` is assembled dynamically; cast required by statically-typed routes.
+      router.push(redirectTo as Route);
+      router.refresh();
+    } catch {
+      // A rejected delete keeps the current route and row.
     } finally {
       setDeleting(false);
     }

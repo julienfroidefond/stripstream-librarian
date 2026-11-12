@@ -3,12 +3,19 @@
 import { useState, useCallback } from "react";
 import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { isTelegramDownloadRetryable } from "@/lib/download";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
+
+function failureMessage(error: unknown): string {
+  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
+  return error instanceof Error ? error.message : String(error);
+}
 
 function tgStatusClass(status: string): string {
   switch (status) {
@@ -77,12 +84,10 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     setIsSearching(true);
     setSearched(false);
     try {
-      const resp = await fetch("/api/telegram-monitor/live-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim() }),
-      });
-      if (resp.ok) setResults(await resp.json());
+      setResults(await browserApi.telegram.liveSearch(query.trim()));
+      setSearched(true);
+    } catch {
+      setResults([]);
       setSearched(true);
     } finally {
       setIsSearching(false);
@@ -106,18 +111,9 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     setDownloadingIds(prev => new Set(prev).add(bookId));
     setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "queued" } : b));
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
-        setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: prevStatus } : b));
-      }
-    } catch (e) {
-      toast(String(e), "error");
+      await browserApi.telegram.downloadBook(bookId);
+    } catch (error) {
+      toast(failureMessage(error), "error");
       setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: prevStatus } : b));
     } finally {
       setDownloadingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
@@ -127,8 +123,10 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
   async function handleDismiss(bookId: string) {
     setDismissingIds(prev => new Set(prev).add(bookId));
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
-      if (resp.ok) setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "dismissed" } : b));
+      await browserApi.telegram.deleteBook(bookId);
+      setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "dismissed" } : b));
+    } catch {
+      // keep the current status when the dismiss is rejected
     } finally {
       setDismissingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
     }

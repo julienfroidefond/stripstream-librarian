@@ -8,6 +8,8 @@ import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
 import { pickLockableFields } from "@/lib/metadataLocks";
+import { browserApi, browserErrorMessage, type SeriesUpdateRequest } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -231,7 +233,7 @@ export function EditSeriesForm({
 
   useEffect(() => {
     if (isOpen && allGenres.length === 0) {
-      fetch("/api/series/genres").then(r => r.json()).then(setAllGenres).catch(() => {});
+      browserApi.series.genres().then(setAllGenres).catch(() => {});
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -266,7 +268,7 @@ export function EditSeriesForm({
     startTransition(async () => {
       try {
         const effectiveName = newName.trim() || "unclassified";
-        const body: Record<string, unknown> = {
+        const body: SeriesUpdateRequest = {
           new_name: effectiveName,
           authors: finalAuthors,
           genres: finalGenres,
@@ -282,23 +284,15 @@ export function EditSeriesForm({
           body.language = bookLanguage.trim() || null;
         }
 
-        const res = await fetch(
-          `/api/series/${seriesId}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }
-        );
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.error ?? t("editBook.saveError"));
-          return;
-        }
+        await browserApi.series.update(seriesId, body);
         setIsOpen(false);
         router.refresh();
-      } catch {
-        setError(t("common.networkError"));
+      } catch (error) {
+        if (error instanceof ApiError) {
+          setError(browserErrorMessage(error, t("editBook.saveError")));
+        } else {
+          setError(t("common.networkError"));
+        }
       }
     });
   };

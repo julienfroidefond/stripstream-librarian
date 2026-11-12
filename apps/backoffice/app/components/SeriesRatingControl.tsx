@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { browserApi } from "@/lib/api/browser";
 import RatingStars from "./RatingStars";
 
 interface SeriesRatingControlProps {
@@ -24,12 +25,7 @@ export function SeriesRatingControl({
     setSaving(true);
     setToast(null);
     try {
-      const res = await fetch(`/api/series/${seriesId}/rating`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating: newRating }),
-      });
-      if (!res.ok) throw new Error(await res.text());
+      await browserApi.series.updateRating(seriesId, newRating);
       setRating(newRating);
       if (hasAniListLink) {
         setToast("Synchronisé avec AniList");
@@ -47,8 +43,7 @@ export function SeriesRatingControl({
   async function handleClear() {
     setSaving(true);
     try {
-      const res = await fetch(`/api/series/${seriesId}/rating`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      await browserApi.series.deleteRating(seriesId);
       setRating(null);
       router.refresh();
     } catch {

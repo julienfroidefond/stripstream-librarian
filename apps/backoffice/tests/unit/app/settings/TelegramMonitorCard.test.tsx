@@ -200,10 +200,10 @@ describe("TelegramMonitorCard", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "telegramMonitor.add" }));
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Error: boom", "error"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("boom", "error"));
 
     await userEvent.click(screen.getAllByText("×")[0]);
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Error: boom", "error"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("boom", "error"));
 
     fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "1440" } });
     await waitFor(() => expect(toast).toHaveBeenCalledWith("settings.savedError", "error"));
@@ -228,7 +228,7 @@ describe("TelegramMonitorCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "telegramMonitor.saveSettings" }));
 
     await userEvent.click(screen.getByRole("button", { name: "telegramMonitor.sendCode" }));
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Error: nope", "error"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("nope", "error"));
 
     const header = screen.getByRole("button", { name: /telegramMonitor.apiCredentials/ });
     fireEvent.click(header);
@@ -254,7 +254,7 @@ describe("TelegramMonitorCard", () => {
     fireEvent.change(code, { target: { value: "0000" } });
     await userEvent.click(screen.getByRole("button", { name: "telegramMonitor.verify" }));
 
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Error: bad code", "error"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("bad code", "error"));
   });
 
   it("falls back to credentials when loading the status fails", async () => {

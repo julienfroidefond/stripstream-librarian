@@ -5,6 +5,8 @@ import { Icon, Modal } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { useTranslation } from "@/lib/i18n/context";
 import { getBookCoverUrl } from "@/lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import type { MetadataProviderDto } from "@/lib/api";
 import type { SeriesCandidateDto, SeriesDto } from "@/lib/api";
 import type { DiscoverySuggestion } from "../page";
@@ -127,9 +129,8 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/metadata/providers")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
-      .then((data: MetadataProviderDto[]) => setProviders(data))
+    browserApi.metadata.providers()
+      .then((data) => setProviders(data))
       .catch(() => setProviders([]));
   }, []);
 
@@ -159,24 +160,32 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
     const q = query.trim() || seriesTitle;
 
     const [seriesResp, metaResp] = await Promise.allSettled([
-      fetch(`/api/series?q=${encodeURIComponent(q)}&library_id=${libId}&limit=5`),
-      fetch("/api/metadata/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library_id: libId, series_name: q, ...(provider ? { provider } : {}) }),
+      browserApi.series.list({ q, libraryId: libId, limit: 5 }),
+      browserApi.metadata.search({
+        library_id: libId,
+        series_name: q,
+        ...(provider ? { provider } : {}),
       }),
     ]);
 
-    if (seriesResp.status === "fulfilled" && seriesResp.value.ok) {
-      const data = await seriesResp.value.json();
-      setExistingSeries(data.items ?? []);
+    if (seriesResp.status === "fulfilled") {
+      setExistingSeries(seriesResp.value.items ?? []);
     }
 
     let candidates: SeriesCandidateDto[] = [];
-    if (metaResp.status === "fulfilled" && metaResp.value.ok) {
-      const data = await metaResp.value.json();
-      if (Array.isArray(data)) candidates = data;
-      else setSearchError(data?.error ?? t("common.error"));
+    if (metaResp.status === "fulfilled") {
+      const value: unknown = metaResp.value;
+      if (Array.isArray(value)) {
+        candidates = value as SeriesCandidateDto[];
+      } else {
+        setSearchError((value as { error?: string } | null)?.error ?? t("common.error"));
+      }
+    } else {
+      setSearchError(
+        metaResp.reason instanceof ApiError
+          ? browserErrorMessage(metaResp.reason, t("common.error"))
+          : t("common.error")
+      );
     }
 
     // Discovery: on the first search only, inject the clicked suggestion at the
@@ -317,40 +326,37 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
 
         if (!addPayload) throw new Error("No payload");
 
-        const resp = await fetch("/api/discovery/add-to-library", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(addPayload),
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err?.error || `Error ${resp.status}`);
-        }
+        await browserApi.discovery.addToLibrary(addPayload);
       }
 
       if (download && mode === "prowlarr" && item?.best_download_url) {
         const seriesName = selectedExisting?.name ?? selectedCandidate?.title ?? item.series_name;
-        const dlResp = await fetch("/api/qbittorrent/add", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        try {
+          await browserApi.downloads.add("qbittorrent", {
             url: item.best_download_url,
             library_id: libraryId,
             series_name: seriesName,
             expected_volumes: item.volumes_found,
-          }),
-        });
-        if (!dlResp.ok) {
-          const err = await dlResp.json().catch(() => ({}));
-          setDownloadError(err?.error ?? `Erreur téléchargement (${dlResp.status})`);
+          });
+        } catch (error) {
+          setDownloadError(
+            error instanceof ApiError
+              ? browserErrorMessage(error, `Erreur téléchargement (${error.status})`)
+              : "Erreur téléchargement"
+          );
         }
       }
 
       setStep("done");
       onAdded();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : t("common.error"));
+      setErrorMessage(
+        err instanceof ApiError
+          ? browserErrorMessage(err, err.message)
+          : err instanceof Error
+            ? err.message
+            : t("common.error")
+      );
       setStep("error");
     }
   }

@@ -53,7 +53,10 @@ describe("OrphansTab", () => {
 
     resolve(ok(page({ total: 3 })));
     await waitFor(() => expect(screen.getByTestId("orphans-table")).toHaveTextContent("1"));
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans?page=1&limit=50");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/series/orphans?page=1&limit=50",
+      expect.objectContaining({ method: "GET" })
+    );
     expect(screen.getByText('settings.orphans.count:{"count":3,"plural":"s"}')).toBeInTheDocument();
   });
 
@@ -108,7 +111,12 @@ describe("OrphansTab", () => {
 
     fireEvent.click(screen.getByText("delete-all"));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/series/orphans?page=1&limit=50"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/series/orphans?page=1&limit=50",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
   });
 
   it("steps back a page when the last items of a page are deleted", async () => {

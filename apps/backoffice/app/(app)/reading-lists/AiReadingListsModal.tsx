@@ -10,6 +10,8 @@ import type {
   AiSuggestedSeries,
 } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { Button, Icon } from "@/app/components/ui";
 import { Modal } from "@/app/components/ui/Modal";
 import { toast } from "@/app/components/ui/Toast";
@@ -55,21 +57,8 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
     setDrafts({});
     setErrorMessage("");
     try {
-      const response = await fetch("/api/reading-lists/ai-suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const payload = await response.json().catch(() => null);
+      const data = await browserApi.readingLists.aiSuggest();
       if (requestId !== requestIdRef.current) return;
-      if (!response.ok) {
-        throw new Error(
-          response.status === 422
-            ? t("readingLists.aiError")
-            : payload?.error ?? t("readingLists.aiError")
-        );
-      }
-      const data = payload as AiReadingListSuggestions;
       setSuggestions(data);
       setDrafts(
         Object.fromEntries(
@@ -82,7 +71,11 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
       setStatus("ready");
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
-      setErrorMessage(error instanceof Error ? error.message : t("readingLists.aiError"));
+      setErrorMessage(
+        error instanceof ApiError && error.status === 422
+          ? t("readingLists.aiError")
+          : browserErrorMessage(error, t("readingLists.aiError"))
+      );
       setStatus("error");
     }
   }, [t]);
@@ -185,13 +178,8 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
 
     for (const { addition, series } of selection.additionSeries) {
       try {
-        const response = await fetch(`/api/reading-lists/${addition.list_id}/series`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ series_id: series.id }),
-        });
-        if (response.ok) applied += 1;
-        else failures += 1;
+        await browserApi.readingLists.addSeries(addition.list_id, series.id);
+        applied += 1;
       } catch {
         failures += 1;
       }
@@ -199,16 +187,8 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
 
     for (const { move, series } of selection.moveSeries) {
       try {
-        const response = await fetch(
-          `/api/reading-lists/${move.from_list_id}/series/${series.id}/move`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ to_list_id: move.to_list_id }),
-          }
-        );
-        if (response.ok) applied += 1;
-        else failures += 1;
+        await browserApi.readingLists.moveSeries(move.from_list_id, series.id, move.to_list_id);
+        applied += 1;
       } catch {
         failures += 1;
       }
@@ -218,34 +198,23 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
       const name = creation.draft.name.trim();
       const description = creation.draft.description.trim();
       try {
-        const response = await fetch("/api/reading-lists", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description }),
-        });
-        if (!response.ok) {
-          failures += 1;
-          continue;
-        }
-        const created = (await response.json()) as { id: string };
+        const created = await browserApi.readingLists.create(name, description);
         let addedSeries = 0;
         for (const series of creation.series) {
-          const addResponse = await fetch(`/api/reading-lists/${created.id}/series`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ series_id: series.id }),
-          });
-          if (addResponse.ok) {
+          try {
+            await browserApi.readingLists.addSeries(created.id, series.id);
             applied += 1;
             addedSeries += 1;
-          } else failures += 1;
+          } catch {
+            failures += 1;
+          }
         }
         if (addedSeries > 0) {
           applied += 1;
         } else {
           // Do not leave an empty list behind when every series failed.
           failures += 1;
-          await fetch(`/api/reading-lists/${created.id}`, { method: "DELETE" }).catch(() => {});
+          await browserApi.readingLists.remove(created.id).catch(() => {});
         }
       } catch {
         failures += 1;

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
@@ -30,13 +31,10 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
     if (!createName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/reading-lists", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: createName.trim(), description: createDescription.trim() || undefined }),
-      });
-      if (!res.ok) throw new Error();
-      const created: ReadingListDto = await res.json();
+      const created = await browserApi.readingLists.create(
+        createName.trim(),
+        createDescription.trim() || undefined
+      );
       setLists((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setShowCreate(false);
       setCreateName("");
@@ -55,10 +53,11 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
     if (!confirm(t("readingLists.deleteConfirm"))) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/reading-lists/${id}`, { method: "DELETE" });
-      if (!res.ok) return;
+      await browserApi.readingLists.remove(id);
       setLists((prev) => prev.filter((l) => l.id !== id));
       router.refresh();
+    } catch {
+      // keep the row when the delete is rejected
     } finally {
       setDeletingId(null);
     }
@@ -66,9 +65,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
 
   async function refreshLists() {
     try {
-      const res = await fetch("/api/reading-lists");
-      if (!res.ok) return;
-      const data: ReadingListDto[] = await res.json();
+      const data = await browserApi.readingLists.list();
       setLists([...data].sort((a, b) => a.name.localeCompare(b.name)));
       router.refresh();
     } catch {

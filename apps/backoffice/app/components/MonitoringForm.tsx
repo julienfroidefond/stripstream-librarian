@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface MonitoringFormProps {
@@ -17,18 +18,12 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
   const handleSubmit = (formData: FormData) => {
     startTransition(async () => {
       try {
-        const response = await fetch(`/api/libraries/${libraryId}/monitoring`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            monitor_enabled: formData.get("monitor_enabled") === "true",
-            scan_mode: formData.get("scan_mode"),
-            watcher_enabled: formData.get("watcher_enabled") === "true",
-          }),
+        await browserApi.libraries.updateMonitoring(libraryId, {
+          monitor_enabled: formData.get("monitor_enabled") === "true",
+          scan_mode: String(formData.get("scan_mode") ?? ""),
+          watcher_enabled: formData.get("watcher_enabled") === "true",
         });
-        if (response.ok) {
-          window.location.reload();
-        }
+        window.location.reload();
       } catch (error) {
         console.error("Failed to update monitoring:", error);
       }

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Button, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import type { MetadataProviderDto } from "../../lib/api";
 
 interface LibraryActionsProps {
@@ -43,9 +45,8 @@ export function LibraryActions({
   const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
 
   useEffect(() => {
-    fetch("/api/metadata/providers")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
-      .then((data: MetadataProviderDto[]) => setProviders(data))
+    browserApi.metadata.providers()
+      .then((data) => setProviders(data))
       .catch(() => setProviders([]));
   }, []);
 
@@ -75,49 +76,31 @@ export function LibraryActions({
       const newDownloadDetectionMode = (formData.get("download_detection_mode") as string) || "manual";
 
       try {
-        const [response] = await Promise.all([
-          fetch(`/api/libraries/${libraryId}/monitoring`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              monitor_enabled: monitorEnabled,
-              scan_mode: scanMode,
-              watcher_enabled: watcherEnabled,
-              metadata_refresh_mode: newMetadataRefreshMode,
-              download_detection_mode: newDownloadDetectionMode,
-            }),
+        await Promise.all([
+          browserApi.libraries.updateMonitoring(libraryId, {
+            monitor_enabled: monitorEnabled,
+            scan_mode: scanMode,
+            watcher_enabled: watcherEnabled,
+            metadata_refresh_mode: newMetadataRefreshMode,
+            download_detection_mode: newDownloadDetectionMode,
           }),
-          fetch(`/api/libraries/${libraryId}/metadata-provider`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ metadata_provider: newMetadataProvider, fallback_metadata_provider: newFallbackProvider }),
-          }),
-          fetch(`/api/libraries/${libraryId}/reading-status-provider`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              reading_status_provider: newReadingStatusProvider,
-              reading_status_push_mode: newReadingStatusPushMode,
-            }),
-          }),
-          fetch(`/api/libraries/${libraryId}/tags`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tags }),
-          }),
+          browserApi.libraries.updateMetadataProvider(libraryId, newMetadataProvider, newFallbackProvider),
+          browserApi.libraries.updateReadingStatusProvider(
+            libraryId,
+            newReadingStatusProvider,
+            newReadingStatusPushMode
+          ),
+          browserApi.libraries.updateTags(libraryId, tags),
         ]);
 
-        if (response.ok) {
-          setIsOpen(false);
-          window.location.reload();
-        } else {
-          const body = await response.json().catch(() => ({}));
-          const msg = body?.error || `HTTP ${response.status}`;
-          console.error("Failed to save settings:", msg);
-          setSaveError(msg);
-        }
+        setIsOpen(false);
+        window.location.reload();
       } catch (error) {
-        const msg = error instanceof Error ? error.message : "Network error";
+        const msg = error instanceof ApiError
+          ? browserErrorMessage(error, `HTTP ${error.status}`)
+          : error instanceof Error
+            ? error.message
+            : "Network error";
         console.error("Failed to save settings:", msg);
         setSaveError(msg);
       }

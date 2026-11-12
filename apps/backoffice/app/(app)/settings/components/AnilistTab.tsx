@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SettingsCard, SettingsRow, Button, FormInput, Icon } from "@/app/components/ui";
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import { useIsMounted } from "@/lib/useIsMounted";
 import type { AnilistSettings } from "@/lib/settingsSections";
@@ -78,13 +79,11 @@ export function AnilistTab({ users }: { users: UserDto[] }) {
     try {
       // Save token first so the API reads the current value
       await save(buildAnilistSettings());
-      const resp = await fetch("/api/anilist/status");
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Connection failed");
+      const data = await browserApi.anilist.status();
       setViewer(data);
       if (!userId && data.user_id) setUserId(String(data.user_id));
     } catch (e) {
-      setTestError(e instanceof Error ? e.message : "Connection failed");
+      setTestError(browserErrorMessage(e, "Connection failed"));
     } finally {
       setIsTesting(false);
     }
@@ -95,12 +94,10 @@ export function AnilistTab({ users }: { users: UserDto[] }) {
     setPreviewItems(null);
     setActionError(null);
     try {
-      const resp = await fetch("/api/anilist/sync/preview");
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Preview failed");
+      const data = await browserApi.anilist.preview();
       setPreviewItems(data);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Preview failed");
+      setActionError(browserErrorMessage(e, "Preview failed"));
     } finally {
       setIsPreviewing(false);
     }
@@ -111,12 +108,10 @@ export function AnilistTab({ users }: { users: UserDto[] }) {
     setSyncReport(null);
     setActionError(null);
     try {
-      const resp = await fetch("/api/anilist/sync", { method: "POST" });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Sync failed");
+      const data = await browserApi.anilist.sync();
       setSyncReport(data);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Sync failed");
+      setActionError(browserErrorMessage(e, "Sync failed"));
     } finally {
       setIsSyncing(false);
     }
@@ -127,12 +122,10 @@ export function AnilistTab({ users }: { users: UserDto[] }) {
     setPullReport(null);
     setActionError(null);
     try {
-      const resp = await fetch("/api/anilist/pull", { method: "POST" });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Pull failed");
+      const data = await browserApi.anilist.pull();
       setPullReport(data);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Pull failed");
+      setActionError(browserErrorMessage(e, "Pull failed"));
     } finally {
       setIsPulling(false);
     }

@@ -31,6 +31,8 @@ import {
   type DownloadFilter,
 } from "@/lib/downloads";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
@@ -50,6 +52,12 @@ interface DownloadsPageProps {
 }
 
 const PAGE_SIZE = 10;
+
+/** Upstream message for a failed action, preserving `Error N` for HTTP errors. */
+function browserFailureMessage(error: unknown): string {
+  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialDownloadClient = null, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
@@ -76,18 +84,18 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const refresh = useCallback(async (showSpinner = true) => {
     if (showSpinner) setIsRefreshing(true);
     try {
-      const [dlResp, lfResp, tgResp, tgDlResp, provResp] = await Promise.all([
-        fetch("/api/torrent-downloads"),
-        fetch("/api/download-detection/latest-found"),
-        fetch("/api/telegram-monitor/available"),
-        fetch("/api/telegram-monitor/downloads"),
-        fetch("/api/ddl-provider-downloads"),
+      const [dlResp, lfResp, tgResp, tgDlResp, provResp] = await Promise.allSettled([
+        browserApi.downloads.torrents.list(),
+        browserApi.downloads.detection.latest(),
+        browserApi.telegram.available(),
+        browserApi.telegram.downloads(),
+        browserApi.ddl.downloads(),
       ]);
-      if (dlResp.ok) setDownloads(await dlResp.json());
-      if (lfResp.ok) setLatestFound(await lfResp.json());
-      if (tgResp.ok) setTelegramAvailable(await tgResp.json());
-      if (tgDlResp.ok) setTelegramDownloads(await tgDlResp.json());
-      if (provResp.ok) setDdlProviderDownloads(await provResp.json());
+      if (dlResp.status === "fulfilled") setDownloads(dlResp.value);
+      if (lfResp.status === "fulfilled") setLatestFound(lfResp.value);
+      if (tgResp.status === "fulfilled") setTelegramAvailable(tgResp.value);
+      if (tgDlResp.status === "fulfilled") setTelegramDownloads(tgDlResp.value);
+      if (provResp.status === "fulfilled") setDdlProviderDownloads(provResp.value);
     } finally {
       if (showSpinner) setIsRefreshing(false);
     }
@@ -213,8 +221,10 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
     setDeleting(true);
     setShowConfirm(false);
     try {
-      const resp = await fetch(`/api/torrent-downloads/${dl.id}`, { method: "DELETE" });
-      if (resp.ok) onDeleted();
+      await browserApi.downloads.torrents.remove(dl.id);
+      onDeleted();
+    } catch {
+      // keep the row when the delete is rejected
     } finally {
       setDeleting(false);
     }
@@ -227,16 +237,14 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
       // itself instead of the (impossible) import. Import errors on a downloaded
       // torrent keep going through the regular import retry.
       const magnetFailed = dl.client === "alldebrid" && dl.status === "error" && !dl.content_path;
-      const url = magnetFailed
-        ? `/api/alldebrid/restart/${dl.id}`
-        : `/api/torrent-downloads/${dl.id}/retry`;
-      const resp = await fetch(url, { method: "POST" });
-      if (resp.ok) {
-        onRetried();
+      if (magnetFailed) {
+        await browserApi.downloads.alldebrid.restart(dl.id);
       } else {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
+        await browserApi.downloads.torrents.retry(dl.id);
       }
+      onRetried();
+    } catch (error) {
+      toast(browserFailureMessage(error), "error");
     } finally {
       setRetrying(false);
     }
@@ -426,15 +434,10 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
   async function handleRetry() {
     setRetrying(true);
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${item.id}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      if (resp.ok) {
-        onRefresh();
-      } else {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
-      }
-    } catch (e) {
-      toast(String(e), "error");
+      await browserApi.telegram.downloadBook(item.id);
+      onRefresh();
+    } catch (error) {
+      toast(browserFailureMessage(error), "error");
     } finally {
       setRetrying(false);
     }
@@ -444,8 +447,10 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
     setDeleting(true);
     setShowConfirm(false);
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${item.id}`, { method: "DELETE" });
-      if (resp.ok) onRefresh();
+      await browserApi.telegram.deleteBook(item.id);
+      onRefresh();
+    } catch {
+      // keep the row when the delete is rejected
     } finally {
       setDeleting(false);
     }
@@ -603,26 +608,17 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
     if (!item.library_id) return;
     setRetrying(true);
     try {
-      const resp = await fetch(`/api/ddl-providers/${encodeURIComponent(item.provider)}/downloads`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          external_id: item.external_id,
-          filename: item.filename,
-          size: item.file_size,
-          library_id: item.library_id,
-          series_name: item.series_name ?? item.filename,
-          volume_number: item.volume_number,
-        }),
+      await browserApi.ddl.startDownload(item.provider, {
+        external_id: item.external_id,
+        filename: item.filename,
+        size: item.file_size,
+        library_id: item.library_id,
+        series_name: item.series_name ?? item.filename,
+        volume_number: item.volume_number,
       });
-      if (resp.ok) {
-        onRefresh();
-      } else {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
-      }
-    } catch (e) {
-      toast(String(e), "error");
+      onRefresh();
+    } catch (error) {
+      toast(browserFailureMessage(error), "error");
     } finally {
       setRetrying(false);
     }
@@ -633,9 +629,10 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
     setShowConfirm(false);
     try {
       // Active downloads are only dismissed (aborted + hidden); finished ones are removed.
-      const suffix = isActive ? "" : "?hard=true";
-      const resp = await fetch(`/api/ddl-provider-downloads/${item.id}${suffix}`, { method: "DELETE" });
-      if (resp.ok) onRefresh();
+      await browserApi.ddl.dismissDownload(item.id, !isActive);
+      onRefresh();
+    } catch {
+      // keep the row when the delete is rejected
     } finally {
       setDeleting(false);
     }
@@ -819,12 +816,11 @@ export function AvailableDownloadsSection({
     const key = `${seriesId}-${releaseIdx}`;
     setDeletingKey(key);
     try {
-      const qs = blacklist ? `?release=${releaseIdx}&blacklist=true` : `?release=${releaseIdx}`;
-      const resp = await fetch(`/api/available-downloads/${seriesId}${qs}`, { method: "DELETE" });
-      if (resp.ok) {
-        onRefresh();
-        if (blacklist && showBlacklist) fetchBlacklist();
-      }
+      await browserApi.downloads.available.removeRelease(seriesId, releaseIdx, blacklist);
+      onRefresh();
+      if (blacklist && showBlacklist) fetchBlacklist();
+    } catch {
+      // keep the release when the remove is rejected
     } finally {
       setDeletingKey(null);
     }
@@ -840,7 +836,7 @@ export function AvailableDownloadsSection({
     ));
     setDeletingKey(group.key);
     try {
-      await Promise.all(ids.map(id => fetch(`/api/available-downloads/${id}`, { method: "DELETE" })));
+      await Promise.allSettled(ids.map(id => browserApi.downloads.available.removeEntry(id)));
       onRefresh();
     } finally {
       setDeletingKey(null);
@@ -856,26 +852,17 @@ export function AvailableDownloadsSection({
     try {
       const volume =
         source.release.matched_missing_volumes[0] ?? source.release.all_volumes[0] ?? null;
-      const resp = await fetch(`/api/ddl-providers/${encodeURIComponent(provider)}/downloads`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          external_id: externalId,
-          filename: source.release.title,
-          size: source.release.size,
-          library_id: group.library_id,
-          series_name: group.series_name,
-          volume_number: volume,
-        }),
+      await browserApi.ddl.startDownload(provider, {
+        external_id: externalId,
+        filename: source.release.title,
+        size: source.release.size,
+        library_id: group.library_id,
+        series_name: group.series_name,
+        volume_number: volume,
       });
-      if (resp.ok) {
-        onRefresh();
-      } else {
-        const body = await resp.json().catch(() => ({}));
-        toast(body?.error ?? `Error ${resp.status}`, "error");
-      }
-    } catch (e) {
-      toast(String(e), "error");
+      onRefresh();
+    } catch (error) {
+      toast(browserFailureMessage(error), "error");
     } finally {
       setDownloadingDdlKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
     }
@@ -884,12 +871,10 @@ export function AvailableDownloadsSection({
   async function handleTelegramDownload(bookId: string) {
     setDownloadingTelegramIds(prev => new Set(prev).add(bookId));
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (resp.ok) onTelegramDownloaded?.(bookId);
+      await browserApi.telegram.downloadBook(bookId);
+      onTelegramDownloaded?.(bookId);
+    } catch {
+      // leave the book available when the download cannot start
     } finally {
       setDownloadingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
@@ -898,8 +883,10 @@ export function AvailableDownloadsSection({
   async function handleTelegramDismiss(bookId: string) {
     setDismissingTelegramIds(prev => new Set(prev).add(bookId));
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
-      if (resp.ok) onRefresh();
+      await browserApi.telegram.deleteBook(bookId);
+      onRefresh();
+    } catch {
+      // keep the row when the dismiss is rejected
     } finally {
       setDismissingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
@@ -908,8 +895,10 @@ export function AvailableDownloadsSection({
   async function handleTelegramDelete(bookId: string) {
     setDeletingTelegramIds(prev => new Set(prev).add(bookId));
     try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}?hard=true`, { method: "DELETE" });
-      if (resp.ok) onRefresh();
+      await browserApi.telegram.deleteBook(bookId, true);
+      onRefresh();
+    } catch {
+      // keep the row when the delete is rejected
     } finally {
       setDeletingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
@@ -930,15 +919,18 @@ export function AvailableDownloadsSection({
   async function fetchBlacklist() {
     setLoadingBlacklist(true);
     try {
-      const resp = await fetch("/api/release-blacklist");
-      if (resp.ok) setBlacklistItems(await resp.json());
+      setBlacklistItems(await browserApi.downloads.blacklist.list());
     } catch { /* ignore */ }
     finally { setLoadingBlacklist(false); }
   }
 
   async function handleUnblacklist(itemId: string) {
-    await fetch(`/api/release-blacklist/${itemId}`, { method: "DELETE" });
-    setBlacklistItems((prev) => prev.filter((h) => h.id !== itemId));
+    try {
+      await browserApi.downloads.blacklist.remove(itemId);
+      setBlacklistItems((prev) => prev.filter((h) => h.id !== itemId));
+    } catch {
+      // keep the entry when the remove is rejected
+    }
   }
 
   return (

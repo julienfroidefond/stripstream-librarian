@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcAreaChart, RcMultiLineChart } from "@/app/components/DashboardCharts";
 import { CHART_COLORS, CHART_PALETTE } from "@/lib/chart-colors";
+import { browserApi } from "@/lib/api/browser";
 import type {
   StatsResponse,
   MonthlyReading,
@@ -130,9 +131,8 @@ export function TimeSeriesCharts({
     // Skip initial fetch — we already have server-rendered data for "week"
     if (period === "week") return;
     let cancelled = false;
-    fetch(`/api/stats?period=${period}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((stats: StatsResponse | null) => {
+    browserApi.stats.get(period)
+      .then((stats) => {
         if (!stats || cancelled) return;
         setData({
           reading_over_time: stats.reading_over_time ?? [],

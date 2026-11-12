@@ -58,7 +58,12 @@ describe("DownloadClientProvider", () => {
       </DownloadClientProvider>
     );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/download_client"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/settings/download_client",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
     // qBittorrent comes first in the fallback order, the stored setting wins.
     await waitFor(() => expect(screen.getByText(/AllDebrid/)).toBeInTheDocument());
   });

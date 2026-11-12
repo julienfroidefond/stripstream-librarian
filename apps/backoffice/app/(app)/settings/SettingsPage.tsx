@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto, LibraryDto } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
 import type { CacheSettings, DownloadsEnabledSettings, ImageProcessingSettings, LimitsSettings, ThumbnailSettings } from "@/lib/settingsSections";
@@ -98,8 +99,12 @@ function SettingsPageContent({
 
     let active = true;
     const refreshCacheStats = async () => {
-      const response = await fetch("/api/settings/cache/stats", { cache: "no-store" }).catch(() => null);
-      if (active && response?.ok) setCacheStats(await response.json());
+      try {
+        const stats = await browserApi.settings.cacheStats();
+        if (active) setCacheStats(stats);
+      } catch {
+        // Keep the last known stats while the API restarts.
+      }
     };
     void refreshCacheStats();
     const interval = window.setInterval(refreshCacheStats, 5000);
@@ -124,14 +129,12 @@ function SettingsPageContent({
     setIsClearing(true);
     setClearResult(null);
     try {
-      const response = await fetch("/api/settings/cache/clear", { method: "POST" });
-      const result = await response.json();
+      const result = await browserApi.settings.clearCache();
       setClearResult(result);
-      // Refresh cache stats
-      const statsResponse = await fetch("/api/settings/cache/stats");
-      if (statsResponse.ok) {
-        const stats = await statsResponse.json();
-        setCacheStats(stats);
+      try {
+        setCacheStats(await browserApi.settings.cacheStats());
+      } catch {
+        // The purge succeeded; keep the previous stats rather than reporting failure.
       }
     } catch {
       setClearResult({ success: false, message: t("settings.cacheClearError") });

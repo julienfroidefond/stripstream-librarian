@@ -6,6 +6,8 @@ import { Modal } from "./ui/Modal";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 
 interface Props {
   seriesId: string;
@@ -24,9 +26,8 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
 
   useEffect(() => {
     if (!isOpen) return;
-    fetch("/api/reading-lists")
-      .then((r) => r.json())
-      .then((data: ReadingListDto[]) => setLists(data))
+    browserApi.readingLists.list()
+      .then((data) => setLists(data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [isOpen]);
@@ -34,14 +35,14 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
   async function handleAdd(listId: string) {
     setAdding(listId);
     try {
-      const res = await fetch(`/api/reading-lists/${listId}/series`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ series_id: seriesId }),
-      });
-      if (res.ok || res.status === 400) {
+      await browserApi.readingLists.addSeries(listId, seriesId);
+      setAdded((prev) => new Set([...prev, listId]));
+      router.refresh();
+    } catch (error) {
+      // A 400 means the series is already in that list: show it as added
+      // without forcing another server refresh.
+      if (error instanceof ApiError && error.status === 400) {
         setAdded((prev) => new Set([...prev, listId]));
-        if (res.ok) router.refresh();
       }
     } finally {
       setAdding(null);

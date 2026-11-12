@@ -36,7 +36,12 @@ describe("PurgeCacheButton", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /diagnostics.purgeCache/ }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/cache/clear", { method: "POST" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/settings/cache/clear",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Cache purged", "success"));
   });
 
@@ -58,7 +63,12 @@ describe("CopyDiagnosticsButton", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /diagnostics.copy/ }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/diagnostics"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/diagnostics",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(JSON.stringify(report, null, 2))
     );

@@ -5,6 +5,8 @@
  * The workaround is to hand the file to the native share sheet instead.
  */
 
+import { browserFetchRaw } from "./api/browser/transport";
+
 export function isIosStandalone(): boolean {
   if (typeof navigator === "undefined") return false;
   return (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -48,10 +50,7 @@ export function isTelegramDownloadRetryable(status: string): boolean {
 
 /** Fetch the book file as a `File` so it can be passed to `navigator.share`. */
 export async function fetchSharedFile(url: string, fallbackName = "book"): Promise<File> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`download failed (${response.status})`);
-  }
+  const response = await browserFetchRaw(url);
 
   const blob = await response.blob();
   const filename =

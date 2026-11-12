@@ -84,7 +84,7 @@ export function TelegramCard() {
 
         <div className="flex items-center gap-3 pt-1">
           <TestConnectionButton
-            endpoint="/api/telegram/test"
+            target="telegram"
             disabled={!value.bot_token || !value.chat_id || !value.enabled}
           />
         </div>

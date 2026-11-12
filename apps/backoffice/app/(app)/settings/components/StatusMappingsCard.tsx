@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { SettingsCard, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { StatusMappingDto } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: { initialStatusMappings: Record<string, unknown>[]; initialSeriesStatuses: string[]; initialProviderStatuses: string[] }) {
@@ -49,15 +50,8 @@ export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuse
   async function handleAssign(providerStatus: string, targetStatus: string) {
     if (!providerStatus || !targetStatus) return;
     try {
-      const res = await fetch("/api/settings/status-mappings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider_status: providerStatus, mapped_status: targetStatus }),
-      });
-      if (res.ok) {
-        const created: StatusMappingDto = await res.json();
-        setMappings((prev) => [...prev.filter((m) => m.provider_status !== created.provider_status), created]);
-      }
+      const created = await browserApi.settings.createStatusMapping(providerStatus, targetStatus);
+      setMappings((prev) => [...prev.filter((m) => m.provider_status !== created.provider_status), created]);
     } catch {
       // ignore
     }
@@ -65,11 +59,8 @@ export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuse
 
   async function handleUnmap(id: string) {
     try {
-      const res = await fetch(`/api/settings/status-mappings/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        const updated: StatusMappingDto = await res.json();
-        setMappings((prev) => prev.map((m) => (m.id === id ? updated : m)));
-      }
+      const updated = await browserApi.settings.deleteStatusMapping(id);
+      setMappings((prev) => prev.map((m) => (m.id === id ? updated : m)));
     } catch {
       // ignore
     }

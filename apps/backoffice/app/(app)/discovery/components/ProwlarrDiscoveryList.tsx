@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { SeriesAddModal, type ProwlarrItem } from "./SeriesAddModal";
 import { formatVolumeRange } from "@/lib/format";
 
@@ -60,22 +62,21 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       setLoading(true);
       setError(null);
       try {
-        const p = new URLSearchParams();
-        p.set("sort", sort);
-        if (nocache) p.set("nocache", "true");
-        if (filterIndexer !== "all") p.set("indexer", filterIndexer);
-        if (filterCategory !== "all") p.set("category", categoryShortId(filterCategory));
-        const resp = await fetch(`/api/discovery/prowlarr?${p.toString()}`);
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({}));
-          setError(data?.error || `Error ${resp.status}`);
-          return;
-        }
-        const data = await resp.json();
+        const data = await browserApi.discovery.prowlarr({
+          sort,
+          nocache,
+          indexer: filterIndexer !== "all" ? filterIndexer : undefined,
+          category:
+            filterCategory !== "all" ? categoryShortId(filterCategory) : undefined,
+        });
         setItems(data.items ?? []);
         if (data.all_indexers?.length) setAllIndexers(data.all_indexers);
-      } catch {
-        setError("Network error");
+      } catch (error) {
+        setError(
+          error instanceof ApiError
+            ? browserErrorMessage(error, `Error ${error.status}`)
+            : "Network error"
+        );
       } finally {
         setLoading(false);
       }

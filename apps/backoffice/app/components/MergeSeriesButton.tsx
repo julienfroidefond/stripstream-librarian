@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 type SeriesResult = {
@@ -41,22 +42,12 @@ export function MergeSeriesButton({
       }
       setSearching(true);
       try {
-        const params = new URLSearchParams({
-          q,
-          page: "1",
-          limit: "20",
-        });
-        const resp = await fetch(`/api/series/search?${params}`);
-        const data = await resp.json();
-        if (resp.ok) {
-          setResults(
-            (data.items ?? []).filter(
-              (s: SeriesResult) => s.series_id !== seriesId,
-            ),
-          );
-        } else {
-          console.error("[merge search]", data);
-        }
+        const data = await browserApi.series.search(q, 1, 20);
+        setResults(
+          data.items.filter(
+            (s: SeriesResult) => s.series_id !== seriesId,
+          ),
+        );
       } catch {
         setResults([]);
       } finally {
@@ -77,15 +68,9 @@ export function MergeSeriesButton({
     if (!selected) return;
     setMerging(true);
     try {
-      const resp = await fetch(`/api/series/${seriesId}/merge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: selected.series_id }),
-      });
-      if (resp.ok) {
-        setIsOpen(false);
-        router.refresh();
-      }
+      await browserApi.series.merge(seriesId, selected.series_id);
+      setIsOpen(false);
+      router.refresh();
     } catch {
       // error
     } finally {
