@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, FormInput, Icon, Select, SettingsCard, Switch, toast } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import type { TranslationKey } from "@/lib/i18n/fr";
 import type { DdlProviderDto } from "@/lib/api";
 
@@ -40,12 +42,8 @@ export function DdlProvidersCard() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/ddl-providers")
-      .then((resp) => {
-        if (!resp.ok) throw new Error(String(resp.status));
-        return resp.json();
-      })
-      .then((list: DdlProviderDto[]) => {
+    browserApi.ddl.providers()
+      .then((list) => {
         if (cancelled) return;
         setProviders(list);
         setBaseUrls(Object.fromEntries(list.map((p) => [p.id, p.base_url])));
@@ -53,9 +51,8 @@ export function DdlProvidersCard() {
       .catch(() => {
         if (!cancelled) setLoadError(true);
       });
-    fetch("/api/ddl-providers/search-settings")
-      .then((resp) => (resp.ok ? resp.json() : null))
-      .then((data: { search_interval_minutes: number } | null) => {
+    browserApi.ddl.searchSettings()
+      .then((data) => {
         if (!cancelled && data) setSearchInterval(data.search_interval_minutes);
       })
       .catch(() => {
@@ -70,22 +67,12 @@ export function DdlProvidersCard() {
     async (id: string, enabled: boolean, baseUrl?: string) => {
       setSavingId(id);
       try {
-        const resp = await fetch(`/api/ddl-providers/${id}/toggle`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled, base_url: baseUrl }),
-        });
-        const data = await resp.json().catch(() => null);
-        if (!resp.ok) {
-          toast(data?.error ?? `Error ${resp.status}`, "error");
-          return;
-        }
-        const list: DdlProviderDto[] = data;
+        const list = await browserApi.ddl.toggle(id, enabled, baseUrl);
         setProviders(list);
         setBaseUrls(Object.fromEntries(list.map((p) => [p.id, p.base_url])));
         toast(t("ddlProviders.saved"), "success");
       } catch (e) {
-        toast(String(e), "error");
+        toast(browserErrorMessage(e, e instanceof ApiError ? `Error ${e.status}` : String(e)), "error");
       } finally {
         setSavingId(null);
       }
@@ -102,23 +89,16 @@ export function DdlProvidersCard() {
         return next;
       });
       try {
-        const resp = await fetch(`/api/ddl-providers/${id}/test`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        if (!resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          setTestResults((prev) => ({
-            ...prev,
-            [id]: { success: false, message: body?.error ?? `Error ${resp.status}` },
-          }));
-          return;
-        }
-        const data: TestResult = await resp.json();
+        const data = await browserApi.ddl.test(id);
         setTestResults((prev) => ({ ...prev, [id]: data }));
       } catch (e) {
-        setTestResults((prev) => ({ ...prev, [id]: { success: false, message: String(e) } }));
+        setTestResults((prev) => ({
+          ...prev,
+          [id]: {
+            success: false,
+            message: browserErrorMessage(e, e instanceof ApiError ? `Error ${e.status}` : String(e)),
+          },
+        }));
       } finally {
         setTestingId(null);
       }
@@ -132,21 +112,11 @@ export function DdlProvidersCard() {
       setSearchInterval(minutes);
       setSavingInterval(true);
       try {
-        const resp = await fetch("/api/ddl-providers/search-settings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ search_interval_minutes: minutes }),
-        });
-        const data = await resp.json().catch(() => null);
-        if (!resp.ok) {
-          setSearchInterval(previous);
-          toast(data?.error ?? `Error ${resp.status}`, "error");
-          return;
-        }
+        const data = await browserApi.ddl.updateSearchSettings(minutes);
         setSearchInterval(data.search_interval_minutes);
       } catch (e) {
         setSearchInterval(previous);
-        toast(String(e), "error");
+        toast(browserErrorMessage(e, e instanceof ApiError ? `Error ${e.status}` : String(e)), "error");
       } finally {
         setSavingInterval(false);
       }
@@ -157,12 +127,7 @@ export function DdlProvidersCard() {
   const runSearchAll = useCallback(async () => {
     setSearching(true);
     try {
-      const resp = await fetch("/api/ddl-providers/search-all", { method: "POST" });
-      const data = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        toast(data?.error ?? `Error ${resp.status}`, "error");
-        return;
-      }
+      const data = await browserApi.ddl.searchAll();
       toast(
         data?.status === "already_running"
           ? t("ddlProviders.searchAlreadyRunning")
@@ -170,7 +135,7 @@ export function DdlProvidersCard() {
         "success"
       );
     } catch (e) {
-      toast(String(e), "error");
+      toast(browserErrorMessage(e, e instanceof ApiError ? `Error ${e.status}` : String(e)), "error");
     } finally {
       setSearching(false);
     }

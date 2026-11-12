@@ -6,6 +6,7 @@ import {
   Button, FormInput, FormSelect, FormLabel, Icon, Tooltip, toast,
 } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import type { LibraryDto, TelegramMonitorStatus, TelegramSourceDto } from "@/lib/api";
 import type { LimitsSettings } from "@/lib/settingsSections";
 import { useSettingsSection } from "../SettingsDraftProvider";
@@ -17,18 +18,6 @@ interface ChannelSuggestion {
 }
 
 const SYNC_INTERVAL_VALUES = new Set(["30", "60", "1440", "43200"]);
-
-async function tgFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api/telegram-monitor/${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Request failed (${res.status})`);
-  }
-  return res.json();
-}
 
 
 export function TelegramMonitorCard({
@@ -78,8 +67,8 @@ export function TelegramMonitorCard({
 
   useEffect(() => {
     Promise.all([
-      tgFetch<TelegramMonitorStatus>("status").catch(() => null),
-      tgFetch<TelegramSourceDto[]>("sources").catch(() => []),
+      browserApi.telegram.status().catch(() => null),
+      browserApi.telegram.sources().catch(() => []),
     ]).then(([s, srcs]) => {
       if (s) {
         setStatus(s);
@@ -116,7 +105,7 @@ export function TelegramMonitorCard({
     debounceRef.current = setTimeout(async () => {
       setLoadingSuggestions(true);
       try {
-        const data = await tgFetch<ChannelSuggestion[]>(`channels?q=${encodeURIComponent(q)}`);
+        const data = await browserApi.telegram.channels(q);
         setSuggestions(data);
         setShowSuggestions(data.length > 0);
       } catch {
@@ -143,12 +132,14 @@ export function TelegramMonitorCard({
     if (!apiId || !apiHash || !phone) return;
     setSavingSettings(true);
     try {
-      await tgFetch("settings", {
-        method: "POST",
-        body: JSON.stringify({ api_id: parseInt(apiId), api_hash: apiHash, phone, sync_interval_minutes: parseInt(syncInterval) }),
+      await browserApi.telegram.saveSettings({
+        api_id: parseInt(apiId),
+        api_hash: apiHash,
+        phone,
+        sync_interval_minutes: parseInt(syncInterval),
       });
       toast(t("settings.savedSuccess"), "success");
-      const s = await tgFetch<TelegramMonitorStatus>("status");
+      const s = await browserApi.telegram.status();
       setStatus(s);
       if (s.authorized) setCredentialsOpen(false);
     } catch {
@@ -161,11 +152,11 @@ export function TelegramMonitorCard({
   async function handleSendCode() {
     setSendingCode(true);
     try {
-      await tgFetch("auth/start", { method: "POST" });
+      await browserApi.telegram.startAuth();
       setCodeSent(true);
       toast(t("telegramMonitor.codeSent"), "success");
     } catch (e) {
-      toast(String(e), "error");
+      toast(browserErrorMessage(e, String(e)), "error");
     } finally {
       setSendingCode(false);
     }
@@ -175,15 +166,15 @@ export function TelegramMonitorCard({
     if (!code) return;
     setVerifying(true);
     try {
-      await tgFetch("auth/verify", { method: "POST", body: JSON.stringify({ code }) });
+      await browserApi.telegram.verifyCode(code);
       setCode("");
       setCodeSent(false);
       toast(t("telegramMonitor.authorized"), "success");
-      const s = await tgFetch<TelegramMonitorStatus>("status");
+      const s = await browserApi.telegram.status();
       setStatus(s);
       if (s.authorized) setCredentialsOpen(false);
     } catch (e) {
-      toast(String(e), "error");
+      toast(browserErrorMessage(e, String(e)), "error");
     } finally {
       setVerifying(false);
     }
@@ -192,9 +183,9 @@ export function TelegramMonitorCard({
   async function handleDisconnect() {
     setDisconnecting(true);
     try {
-      await tgFetch("auth", { method: "DELETE" });
+      await browserApi.telegram.disconnect();
       setCodeSent(false);
-      const s = await tgFetch<TelegramMonitorStatus>("status");
+      const s = await browserApi.telegram.status();
       setStatus(s);
       setCredentialsOpen(true);
     } catch { /* ignore */ } finally {
@@ -205,11 +196,8 @@ export function TelegramMonitorCard({
   async function handleSaveSyncInterval(next: string) {
     setSyncInterval(next);
     try {
-      await tgFetch("settings", {
-        method: "POST",
-        body: JSON.stringify({ sync_interval_minutes: parseInt(next) }),
-      });
-      const s = await tgFetch<TelegramMonitorStatus>("status");
+      await browserApi.telegram.saveSyncInterval(parseInt(next));
+      const s = await browserApi.telegram.status();
       setStatus(s);
       toast(t("settings.savedSuccess"), "success");
     } catch {
@@ -221,15 +209,15 @@ export function TelegramMonitorCard({
     if (!newChannel) return;
     setAddingSource(true);
     try {
-      const src = await tgFetch<TelegramSourceDto>("sources", {
-        method: "POST",
-        body: JSON.stringify({ channel_username: newChannel, library_id: newChannelLibrary || null }),
+      const src = await browserApi.telegram.addSource({
+        channel_username: newChannel,
+        library_id: newChannelLibrary || null,
       });
       setSources(prev => [...prev, src]);
       setNewChannel("");
       setNewChannelLibrary("");
     } catch (e) {
-      toast(String(e), "error");
+      toast(browserErrorMessage(e, String(e)), "error");
     } finally {
       setAddingSource(false);
     }
@@ -237,10 +225,10 @@ export function TelegramMonitorCard({
 
   async function handleDeleteSource(id: string) {
     try {
-      await tgFetch(`sources/${id}`, { method: "DELETE" });
+      await browserApi.telegram.deleteSource(id);
       setSources(prev => prev.filter(s => s.id !== id));
     } catch (e) {
-      toast(String(e), "error");
+      toast(browserErrorMessage(e, String(e)), "error");
     }
   }
 

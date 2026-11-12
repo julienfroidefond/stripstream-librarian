@@ -84,18 +84,20 @@ describe("AvailableDownloadsSection — DDL releases", () => {
     fireEvent.click(await screen.findByTitle("ddlProviders.download"));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/fourtoutici/downloads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          external_id: "ext-41",
-          filename: "Astérix - T41.pdf",
-          size: 1024,
-          library_id: "lib-1",
-          series_name: "Astérix",
-          volume_number: 41,
-        }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/fourtoutici/downloads",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            external_id: "ext-41",
+            filename: "Astérix - T41.pdf",
+            size: 1024,
+            library_id: "lib-1",
+            series_name: "Astérix",
+            volume_number: 41,
+          }),
+        })
+      )
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });

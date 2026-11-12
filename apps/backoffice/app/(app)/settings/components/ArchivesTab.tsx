@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { SettingsCard, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { ArchivedSeriesItemDto } from "@/lib/api";
 import { ArchivesTable } from "../archives/ArchivesTable";
 
@@ -12,8 +13,7 @@ export function ArchivesTab() {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    fetch("/api/series/archived")
-      .then((r) => r.json())
+    browserApi.series.archived()
       .then((data) => setSeries(Array.isArray(data) ? data : []))
       .catch(() => setFailed(true));
   }, []);

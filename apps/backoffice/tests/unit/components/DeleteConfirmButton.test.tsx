@@ -64,7 +64,10 @@ describe("DeleteConfirmButton", () => {
     const panel = screen.getByTestId("modal-panel");
     fireEvent.click(within(panel).getByRole("button", { name: "common.delete" }));
 
-    expect(fetchMock).toHaveBeenCalledWith(ENDPOINT, { method: "DELETE" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      ENDPOINT,
+      expect.objectContaining({ method: "DELETE" })
+    );
     await vi.waitFor(() =>
       expect(screen.queryByText("seriesDetail.delete")).not.toBeInTheDocument()
     );

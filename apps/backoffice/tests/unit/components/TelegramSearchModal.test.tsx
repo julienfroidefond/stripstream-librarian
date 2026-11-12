@@ -113,11 +113,10 @@ describe("TelegramSearchModal", () => {
       await waitFor(() =>
         expect(fetchMock).toHaveBeenCalledWith(
           `/api/telegram-monitor/books/${status}-book/download`,
-          {
+          expect.objectContaining({
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({}),
-          }
+          })
         )
       );
       expect(await screen.findByText("downloads.status.queued")).toBeInTheDocument();
@@ -165,19 +164,22 @@ describe("TelegramSearchModal", () => {
     const downloadRow = (await screen.findByText("download.cbz")).closest("tr") as HTMLElement;
     fireEvent.click(within(downloadRow).getByTitle("telegramMonitor.download"));
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/telegram-monitor/books/download-book/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/telegram-monitor/books/download-book/download",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({}),
+        })
+      )
     );
 
     const dismissRow = screen.getByText("dismiss.cbz").closest("tr") as HTMLElement;
     fireEvent.click(within(dismissRow).getByTitle("telegramMonitor.dismiss"));
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/telegram-monitor/books/dismiss-book", {
-        method: "DELETE",
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/telegram-monitor/books/dismiss-book",
+        expect.objectContaining({ method: "DELETE" })
+      )
     );
   });
 
@@ -210,7 +212,7 @@ describe("TelegramSearchModal", () => {
 
     fireEvent.click(await screen.findByTitle("downloads.retry"));
 
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Error: network down", "error"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("network down", "error"));
     expect(await screen.findByText(label)).toBeInTheDocument();
     expect(screen.queryByText("downloads.status.queued")).not.toBeInTheDocument();
   });

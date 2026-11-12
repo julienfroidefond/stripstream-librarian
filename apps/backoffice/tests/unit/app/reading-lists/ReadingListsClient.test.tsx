@@ -71,7 +71,10 @@ describe("ReadingListsClient", () => {
     await userEvent.click(screen.getByRole("button", { name: "apply-ai" }));
 
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(fetchMock).toHaveBeenCalledWith("/api/reading-lists");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reading-lists",
+      expect.objectContaining({ method: "GET" })
+    );
     expect(await screen.findByText("Favourites")).toBeInTheDocument();
   });
 
@@ -117,9 +120,10 @@ describe("ReadingListsClient", () => {
     );
 
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(fetchMock).toHaveBeenCalledWith("/api/reading-lists/list-1", {
-      method: "DELETE",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reading-lists/list-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
     confirm.mockRestore();
   });
 });

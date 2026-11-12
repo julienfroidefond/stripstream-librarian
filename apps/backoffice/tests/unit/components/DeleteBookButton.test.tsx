@@ -39,7 +39,10 @@ describe("DeleteBookButton", () => {
 
     confirmDelete({ seriesId: "s1" });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/books/b1", { method: "DELETE" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/books/b1",
+      expect.objectContaining({ method: "DELETE" })
+    );
     await vi.waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/series/s1"));
     expect(routerMock.refresh).toHaveBeenCalled();
   });

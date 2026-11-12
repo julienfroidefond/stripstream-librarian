@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 
 import { Magnetic } from "@/app/components/motion";
+import { browserApi } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -21,20 +23,14 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (res.ok) {
-        window.location.href = from;
+      await browserApi.auth.login(username, password);
+      window.location.href = from;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setError(error.detail || "Identifiants invalides");
       } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || "Identifiants invalides");
+        setError("Erreur réseau");
       }
-    } catch {
-      setError("Erreur réseau");
     } finally {
       setLoading(false);
     }

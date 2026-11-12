@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput } from "@/app/components/ui";
+import { browserApi } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { useTranslation } from "@/lib/i18n/context";
 import {
   DEFAULT_AI_LISTS_PROMPT,
@@ -29,15 +31,20 @@ export function AiTaggingCard() {
     setTesting(true);
     setTestResult(null);
     try {
-      const response = await fetch("/api/settings/ai_tagging/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base_url: value.base_url, api_key: value.api_key, model: value.model }),
+      const result = await browserApi.settings.testAiTagging({
+        base_url: value.base_url,
+        api_key: value.api_key,
+        model: value.model,
       });
-      const result = await response.json();
-      setTestResult({ ok: response.ok, message: result.message ?? result.error ?? t("settings.aiTestError") });
-    } catch {
-      setTestResult({ ok: false, message: t("settings.aiTestError") });
+      setTestResult({
+        ok: result.success !== false && !result.error,
+        message: result.message ?? result.error ?? t("settings.aiTestError"),
+      });
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        message: error instanceof ApiError ? error.detail ?? t("settings.aiTestError") : t("settings.aiTestError"),
+      });
     } finally {
       setTesting(false);
     }

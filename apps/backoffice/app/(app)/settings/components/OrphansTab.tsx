@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Icon, SettingsCard } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { OrphanSeriesPageDto } from "@/lib/api";
 import { OrphansTable } from "../orphans/OrphansTable";
 
@@ -18,11 +19,7 @@ export function OrphansTab() {
 
   useEffect(() => {
     let active = true;
-    fetch(`/api/series/orphans?page=${page}&limit=${PAGE_SIZE}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("load failed");
-        return r.json() as Promise<OrphanSeriesPageDto>;
-      })
+    browserApi.series.orphans(page, PAGE_SIZE)
       .then((payload) => {
         if (!active) return;
         setFailed(false);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import { inlineReadClassName, markReadClassName, overlayReadClassName, useMarkRead } from "@/hooks/useMarkRead";
 import { MarkReadButton } from "./MarkReadButton";
 
@@ -23,9 +24,7 @@ export function MarkBookReadButton({ bookId, currentStatus, compact, iconOnly, v
     : t(compact ? "markRead.read" as any : "markRead.markAsRead");
 
   const { loading, handleClick } = useMarkRead({
-    url: `/api/books/${bookId}/progress`,
-    method: "PATCH",
-    body: { status: targetStatus },
+    action: () => browserApi.books.markProgress(bookId, targetStatus),
     errorContext: "Failed to update reading progress",
   });
 

@@ -166,7 +166,7 @@ export function AlldebridCard() {
 
       <div className="pt-1">
         <TestConnectionButton
-          endpoint="/api/alldebrid/test"
+          target="alldebrid"
           disabled={!value.enabled || !configured}
         />
       </div>

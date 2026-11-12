@@ -48,7 +48,12 @@ describe("DiagnosticsProbePanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /diagnostics.runProbe/ }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/diagnostics/probe"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/diagnostics/probe",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
 
     expect(await screen.findByText("qBittorrent")).toBeInTheDocument();
     expect(screen.getByText("Prowlarr")).toBeInTheDocument();

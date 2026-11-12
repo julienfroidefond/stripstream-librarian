@@ -371,9 +371,10 @@ describe("AiReadingListsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: /readingLists\.aiApply/ }));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/reading-lists/new-list", {
-        method: "DELETE",
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/reading-lists/new-list",
+        expect.objectContaining({ method: "DELETE" })
+      )
     );
     expect(onApplied).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import type { DiscoverySuggestion } from "../page";
 import { DiscoveryCard } from "./DiscoveryCard";
 import { ProwlarrDiscoveryList } from "./ProwlarrDiscoveryList";
@@ -70,14 +71,14 @@ export function DiscoveryGrid({
     setLoading(true);
     setAddedIds(new Set());
     const provDef = PROVIDERS.find((p) => p.id === providerId);
-    const periodParam = provDef?.hasPeriod && period ? `&period=${period}` : "";
     try {
-      const resp = await fetch(`/api/discovery/trending?provider=${providerId}&limit=100${periodParam}${nocache ? "&nocache=true" : ""}`);
-      if (resp.ok) {
-        setSuggestions(await resp.json());
-      } else {
-        setSuggestions([]);
-      }
+      setSuggestions(
+        await browserApi.discovery.trending(providerId, {
+          limit: 100,
+          period: provDef?.hasPeriod ? period : undefined,
+          nocache,
+        })
+      );
     } catch {
       setSuggestions([]);
     } finally {
@@ -126,18 +127,21 @@ export function DiscoveryGrid({
   async function fetchHidden() {
     setLoadingHidden(true);
     try {
-      const resp = await fetch("/api/discovery/hidden");
-      if (resp.ok) setHiddenItems(await resp.json());
+      setHiddenItems(await browserApi.discovery.hidden());
     } catch { /* ignore */ }
     finally { setLoadingHidden(false); }
   }
 
   async function handleUnhide(item: HiddenItem) {
-    await fetch("/api/discovery/unhide", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: item.provider, external_id: item.external_id, title: item.title }),
-    });
+    try {
+      await browserApi.discovery.unhide({
+        provider: item.provider,
+        external_id: item.external_id,
+        title: item.title,
+      });
+    } catch {
+      // stay best-effort, like the previous direct fetch
+    }
     setHiddenItems((prev) => prev.filter((h) => h.id !== item.id));
   }
 

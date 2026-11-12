@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api/errors";
 import { markReadClassName, useMarkRead } from "@/hooks/useMarkRead";
 
 const routerMock = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -15,15 +16,17 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+beforeEach(() => {
+  routerMock.refresh.mockClear();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function Harness() {
+function Harness({ action }: { action: () => Promise<unknown> }) {
   const { loading, handleClick } = useMarkRead({
-    url: "/api/books/book-1/progress",
-    method: "PATCH",
-    body: { status: "read" },
+    action,
     errorContext: "Failed to update reading progress",
   });
 
@@ -35,31 +38,21 @@ function Harness() {
 }
 
 describe("useMarkRead", () => {
-  it("posts the body and refreshes the route", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
+  it("runs the action and refreshes the route", async () => {
+    const action = vi.fn().mockResolvedValue(undefined);
 
-    render(<Harness />);
+    render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button"));
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/books/book-1/progress", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "read" }),
-    });
+    expect(action).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
   });
 
-  it("logs the error body but still refreshes when the response is not ok", async () => {
+  it("logs the API detail but still refreshes when the request fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      statusText: "Bad Request",
-      json: async () => ({ error: "nope" }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    const action = vi.fn().mockRejectedValue(new ApiError(400, "nope", "nope"));
 
-    render(<Harness />);
+    render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button"));
 
     await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith("Failed to update reading progress:", "nope"));
@@ -68,14 +61,15 @@ describe("useMarkRead", () => {
     errorSpy.mockRestore();
   });
 
-  it("logs thrown fetch failures", async () => {
+  it("logs thrown network failures without refreshing", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    const action = vi.fn().mockRejectedValue(new Error("network"));
 
-    render(<Harness />);
+    render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button"));
 
     await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith("Failed to update reading progress:", expect.any(Error)));
+    expect(routerMock.refresh).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
   });

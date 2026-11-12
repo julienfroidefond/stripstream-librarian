@@ -6,16 +6,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
+import { browserApi, browserErrorMessage, type GenreDto, type GenreSuggestion } from "@/lib/api/browser";
 import { matchesSearchText } from "@/lib/search";
 import { useTranslation } from "@/lib/i18n/context";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { toast } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
-export type GenreDto = {
-  name: string;
-  series_count: number;
-};
+export type { GenreDto } from "@/lib/api/browser";
 
 type Props = {
   initialGenres: GenreDto[];
@@ -28,7 +26,7 @@ type Props = {
 type GenreFilter = string[] | null;
 type SeriesView = "cards" | "table";
 type GenreFilterMode = "include" | "exclude";
-type AiSuggestion = { series_id: string; name: string; tags: string[] };
+type AiSuggestion = GenreSuggestion;
 
 function mergeGenreCounts(groups: GenreDto[][]): GenreDto[] {
   const counts = new Map<string, number>();
@@ -80,11 +78,13 @@ function GenreSeriesModal({
   const [name, setName] = useState(genre);
 
   useEffect(() => {
-    fetch(`/api/series?genre=${encodeURIComponent(genre)}&limit=200`)
-      .then(r => r.json())
-      .then(data => { setSeries(data.items ?? []); setTotal(data.total ?? 0); })
-      .catch(() => setSeries([]))
-      .finally(() => setLoading(false));
+    let active = true;
+    browserApi.series
+      .list({ genre, limit: 200 })
+      .then(data => { if (!active) return; setSeries(data.items); setTotal(data.total); })
+      .catch(() => { if (active) setSeries([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [genre]);
 
   const saveRename = async () => {
@@ -210,9 +210,8 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     if (initialGenres.length === 0) return;
     Promise.all(
       initialGenres.map(g =>
-        fetch(`/api/series?genre=${encodeURIComponent(g.name)}&limit=4`)
-          .then(r => r.json())
-          .then(d => [g.name, d.items ?? []] as const)
+        browserApi.series.list({ genre: g.name, limit: 4 })
+          .then(d => [g.name, d.items] as const)
           .catch(() => [g.name, []] as const)
       )
     ).then(pairs => setGenreCovers(Object.fromEntries(pairs)));
@@ -241,15 +240,14 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const didFetchRef = useRef(false);
 
   const refreshGenres = useCallback(async () => {
-    const [res, ...libraryResponses] = await Promise.all([
-      fetch("/api/genres"),
+    const [genresResult, ...libraryGroups] = await Promise.all([
+      browserApi.genres.list().catch(() => null),
       ...(libraryFilter.length > 0
-        ? libraryFilter.map(libraryId => fetch(`/api/genres?library_id=${libraryId}`))
-        : [fetch("/api/genres")]),
+        ? libraryFilter.map(libraryId => browserApi.genres.list(libraryId).catch(() => [] as GenreDto[]))
+        : [browserApi.genres.list().catch(() => [] as GenreDto[])]),
     ]);
-    if (res.ok) setGenres(await res.json());
-    const genreGroups = await Promise.all(libraryResponses.map(async response => response.ok ? response.json() as Promise<GenreDto[]> : []));
-    setBrowserGenres(mergeGenreCounts(genreGroups));
+    if (genresResult) setGenres(genresResult);
+    setBrowserGenres(mergeGenreCounts(libraryGroups));
   }, [libraryFilter]);
 
   const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[], excluded: string[] = [], q = "") => {
@@ -259,11 +257,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
       if (genre === null) {
         const results = await Promise.all(requestedLibraries.map(async libraryId => {
-          const params = new URLSearchParams();
-          if (libraryId) params.set("library_id", libraryId);
-          if (q) params.set("q", q);
-          const response = await fetch(`/api/genres/untagged-series?${params}`);
-          return response.ok ? response.json() as Promise<SeriesDto[]> : [];
+          return browserApi.genres
+            .untagged(libraryId ?? undefined, q || undefined)
+            .catch(() => [] as SeriesDto[]);
         }));
         const series = results.flat();
         setSeriesList(series);
@@ -273,12 +269,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       } else {
         const genreFilters = genre.length > 0 ? genre : [null];
         const results = await Promise.all(requestedLibraries.flatMap(libraryId => genreFilters.map(async genreName => {
-          const params = new URLSearchParams({ limit: "500" });
-          if (genreName) params.set("genre", genreName);
-          if (libraryId) params.set("library_id", libraryId);
-          if (q) params.set("q", q);
-          const response = await fetch(`/api/series?${params}`);
-          return response.ok ? response.json() as Promise<{ items: SeriesDto[] }> : { items: [] };
+          return browserApi.series.list({
+            limit: 500,
+            genre: genreName ?? undefined,
+            libraryId: libraryId ?? undefined,
+            q: q || undefined,
+          }).catch(() => ({ items: [] as SeriesDto[] }));
         })));
         const series = Array.from(new Map(results.flatMap(result => result.items).map(item => [item.series_id, item])).values())
           .filter(series => !excluded.some(excludedGenre => series.genres.includes(excludedGenre)));
@@ -329,17 +325,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const fetchBrowserGenres = useCallback(async (libraryIds: string[]) => {
     const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
     const results = await Promise.all(requestedLibraries.map(async libraryId => {
-      const qs = libraryId ? `?library_id=${libraryId}` : "";
-      const [genresRes, untaggedRes, seriesRes] = await Promise.all([
-        fetch(`/api/genres${qs}`),
-        fetch(`/api/genres/untagged-series${qs}`),
-        fetch(`/api/series${qs}${qs ? "&" : "?"}limit=1`),
+      const [genres, untagged, total] = await Promise.all([
+        browserApi.genres.list(libraryId ?? undefined).catch(() => [] as GenreDto[]),
+        browserApi.genres.untagged(libraryId ?? undefined).catch(() => [] as SeriesDto[]),
+        browserApi.series.count({ libraryId: libraryId ?? undefined }).catch(() => 0),
       ]);
-      return {
-        genres: genresRes.ok ? await genresRes.json() as GenreDto[] : [],
-        untagged: untaggedRes.ok ? await untaggedRes.json() as SeriesDto[] : [],
-        total: seriesRes.ok ? (await seriesRes.json() as { total: number }).total : 0,
-      };
+      return { genres, untagged, total };
     }));
     setBrowserGenres(mergeGenreCounts(results.map(result => result.genres)));
     setUntaggedCount(results.reduce((count, result) => count + result.untagged.length, 0));
@@ -356,11 +347,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     if (!newName || newName === oldName) return true;
     setBusy(true);
     try {
-      await fetch(`/api/genres/${encodeURIComponent(oldName)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ new_name: newName }),
-      });
+      await browserApi.genres.rename(oldName, newName);
       if (Array.isArray(seriesFilter) && seriesFilter.includes(oldName)) {
         setSeriesFilter(seriesFilter.map(genre => genre === oldName ? newName : genre));
       }
@@ -376,6 +363,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       await refreshGenres();
       toast(t("genres.renameSuccess"));
       return true;
+    } catch (error) {
+      toast(browserErrorMessage(error, t("common.error")), "error");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -385,7 +375,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     if (!confirm(t("genres.deleteConfirm"))) return false;
     setBusy(true);
     try {
-      await fetch(`/api/genres/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await browserApi.genres.remove(name);
       setGenreCovers(prev => {
         const next = { ...prev };
         delete next[name];
@@ -403,6 +393,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       ]);
       toast(t("genres.deleteSuccess"));
       return true;
+    } catch (error) {
+      toast(browserErrorMessage(error, t("common.error")), "error");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -413,15 +406,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     if (!genre || selected.size === 0) return;
     setBusy(true);
     try {
-      await fetch("/api/genres/assign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ genre, series_ids: Array.from(selected) }),
-      });
+      await browserApi.genres.assign(genre, Array.from(selected));
       const count = selected.size;
       await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
       setAssignInput("");
       toast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
+    } catch (error) {
+      toast(browserErrorMessage(error, t("common.error")), "error");
     } finally {
       setBusy(false);
     }
@@ -431,17 +422,11 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     if (selected.size === 0) return;
     setAiLoading(true);
     try {
-      const response = await fetch("/api/genres/ai-suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ series_ids: Array.from(selected) }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? t("genres.aiError"));
+      const data = await browserApi.genres.aiSuggest(Array.from(selected));
       setAiSuggestions(data.suggestions ?? []);
       if ((data.suggestions ?? []).length === 0) toast(t("genres.aiNoSuggestions"), "info");
     } catch (error) {
-      toast(error instanceof Error && error.message ? error.message : t("genres.aiError"), "error");
+      toast(browserErrorMessage(error, t("genres.aiError")), "error");
     } finally {
       setAiLoading(false);
     }
@@ -450,17 +435,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const handleApplyAiTag = async (seriesId: string, genre: string) => {
     setBusy(true);
     try {
-      const response = await fetch("/api/genres/assign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ genre, series_ids: [seriesId] }),
-      });
-      if (!response.ok) throw new Error();
+      await browserApi.genres.assign(genre, [seriesId]);
       setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
       await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
       toast(t("genres.assignSuccess", { count: "1", plural: "" }));
-    } catch {
-      toast(t("genres.aiError"), "error");
+    } catch (error) {
+      toast(browserErrorMessage(error, t("genres.aiError")), "error");
     } finally {
       setBusy(false);
     }

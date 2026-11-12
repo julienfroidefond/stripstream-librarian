@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDetailDto, ReadingListSeriesDto, SeriesDto } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 
@@ -36,16 +37,15 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
     if (!editName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/reading-lists/${list.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName.trim(), description: editDescription.trim() || null }),
+      const updated = await browserApi.readingLists.update(list.id, {
+        name: editName.trim(),
+        description: editDescription.trim() || null,
       });
-      if (!res.ok) throw new Error();
-      const updated = await res.json();
       setList((prev) => ({ ...prev, ...updated }));
       setEditMode(false);
       router.refresh();
+    } catch {
+      // keep the edit form open so the reader can retry
     } finally {
       setSaving(false);
     }
@@ -57,9 +57,10 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
     setSearching(true);
     searchTimeout.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/series?q=${encodeURIComponent(q)}&limit=20`);
-        const data = await res.json();
+        const data = await browserApi.series.list({ q, limit: 20 });
         setSearchResults(data.items ?? []);
+      } catch {
+        setSearchResults([]);
       } finally {
         setSearching(false);
       }
@@ -68,12 +69,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
 
   async function handleAdd(series: SeriesDto) {
     try {
-      const res = await fetch(`/api/reading-lists/${list.id}/series`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ series_id: series.series_id }),
-      });
-      if (!res.ok) return;
+      await browserApi.readingLists.addSeries(list.id, series.series_id);
       const newItem: ReadingListSeriesDto = {
         id: series.series_id,
         name: series.name,
@@ -100,8 +96,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
 
   async function handleRemove(seriesId: string) {
     try {
-      const res = await fetch(`/api/reading-lists/${list.id}/series/${seriesId}`, { method: "DELETE" });
-      if (!res.ok) return;
+      await browserApi.readingLists.removeSeries(list.id, seriesId);
       setItems((prev) => prev.filter((i) => i.id !== seriesId));
       router.refresh();
     } catch {
@@ -116,15 +111,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
     [newItems[index], newItems[swapIndex]] = [newItems[swapIndex], newItems[index]];
     setItems(newItems);
     try {
-      const res = await fetch(`/api/reading-lists/${list.id}/series/reorder`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ series_ids: newItems.map((i) => i.id) }),
-      });
-      if (!res.ok) {
-        setItems(items);
-        return;
-      }
+      await browserApi.readingLists.reorder(list.id, newItems.map((i) => i.id));
       router.refresh();
     } catch {
       setItems(items);

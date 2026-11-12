@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ActionsMenuItem, Icon, toast } from "./ui";
 
 interface SeriesShelfActionProps {
@@ -26,21 +27,14 @@ export function SeriesShelfAction({ seriesId, initialIsShelved }: SeriesShelfAct
     setPending(true);
 
     try {
-      const response = await fetch(`/api/series/${seriesId}/shelf`, {
-        method: isShelved ? "DELETE" : "PUT",
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || t("seriesShelf.error"));
-      }
+      await browserApi.series.setShelf(seriesId, !isShelved);
 
       const nextIsShelved = !isShelved;
       setIsShelved(nextIsShelved);
       toast(t(nextIsShelved ? "seriesShelf.shelved" : "seriesShelf.resumed"), "success");
       router.refresh();
     } catch (error) {
-      toast(error instanceof Error && error.message ? error.message : t("seriesShelf.error"), "error");
+      toast(browserErrorMessage(error, t("seriesShelf.error")), "error");
     } finally {
       setPending(false);
     }

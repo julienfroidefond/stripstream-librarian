@@ -8,6 +8,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { NavIcon } from "./ui";
 import type { IconName } from "./ui/Icon";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import { useIsMounted } from "@/lib/useIsMounted";
 import type { NavHref } from "@/lib/navigation";
 import type { UserDto } from "@/lib/api";
@@ -46,7 +47,11 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
   const [, startTransition] = useTransition();
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await browserApi.auth.logout();
+    } catch {
+      // Best-effort: still leave the UI even if the server call fails.
+    }
     router.push("/login");
     router.refresh();
   }

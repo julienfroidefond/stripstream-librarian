@@ -153,7 +153,12 @@ describe("AnilistTab", () => {
     });
 
     await userEvent.click(screen.getByRole("button", { name: "settings.anilistTestConnection" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/anilist/status"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/anilist/status",
+        expect.objectContaining({ method: "GET" })
+      )
+    );
     expect(screen.getByDisplayValue("77")).toBeInTheDocument();
   });
 

@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal, FormInput } from "./ui";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n";
 
@@ -115,22 +116,7 @@ export function RenameSeriesBooksModal({
       setStep("loading");
       setError(null);
       try {
-        const resp = await fetch(`/api/series/${seriesId}/rename-books`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildBody("preview", ovs)),
-        });
-        if (!resp.ok) {
-          let msg = `Error ${resp.status}`;
-          try {
-            const errData = await resp.json();
-            msg = errData?.error || msg;
-          } catch { /* non-JSON response */ }
-          setError(msg);
-          setStep("error");
-          return;
-        }
-        const data: RenameResponse = await resp.json();
+        const data = await browserApi.series.renameBooks(seriesId, buildBody("preview", ovs));
         setResult(data);
         setStep("preview");
       } catch (e) {
@@ -184,21 +170,11 @@ export function RenameSeriesBooksModal({
     setStep("executing");
     setError(null);
     try {
-      const resp = await fetch(`/api/series/${seriesId}/rename-books`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildBody("execute", overrides)),
-      });
-      const data: RenameResponse = await resp.json();
-      if (!resp.ok) {
-        setError((data as unknown as { error?: string }).error || "Rename failed");
-        setStep("error");
-        return;
-      }
+      const data = await browserApi.series.renameBooks(seriesId, buildBody("execute", overrides));
       setResult(data);
       setStep("done");
-    } catch {
-      setError("Network error");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
       setStep("error");
     }
   }, [seriesId, buildBody, overrides]);

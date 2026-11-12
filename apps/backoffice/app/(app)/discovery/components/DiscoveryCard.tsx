@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { browserApi } from "@/lib/api/browser";
 import { SeriesAddModal } from "./SeriesAddModal";
 import type { DiscoverySuggestion } from "../page";
 
@@ -30,20 +31,14 @@ export function DiscoveryCard({
 
   async function handleHide() {
     try {
-      const resp = await fetch("/api/discovery/hide", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: suggestion.provider,
-          external_id: suggestion.external_id,
-          title: suggestion.title,
-          cover_url: suggestion.cover_url,
-        }),
+      await browserApi.discovery.hide({
+        provider: suggestion.provider,
+        external_id: suggestion.external_id,
+        title: suggestion.title,
+        cover_url: suggestion.cover_url,
       });
-      if (resp.ok) {
-        setHidden(true);
-        onHidden?.(suggestion.external_id);
-      }
+      setHidden(true);
+      onHidden?.(suggestion.external_id);
     } catch { /* ignore */ }
   }
 

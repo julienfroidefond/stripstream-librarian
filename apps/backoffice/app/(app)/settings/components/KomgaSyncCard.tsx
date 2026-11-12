@@ -3,14 +3,15 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { SettingsCard, SettingsRow, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 import { useTranslation } from "@/lib/i18n/context";
 import type { KomgaSettings } from "@/lib/settingsSections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 
 async function loadKomgaReports(): Promise<KomgaSyncReportSummary[] | null> {
   try {
-    const resp = await fetch("/api/komga/reports");
-    if (resp.ok) return (await resp.json()) as KomgaSyncReportSummary[];
+    return await browserApi.komga.reports();
   } catch { /* ignore */ }
   return null;
 }
@@ -57,8 +58,7 @@ export function KomgaSyncCard({ users }: { users: UserDto[] }) {
     setShowReportUnmatched(false);
     setShowReportMatchedBooks(false);
     try {
-      const resp = await fetch(`/api/komga/reports/${id}`);
-      if (resp.ok) setSelectedReport(await resp.json());
+      setSelectedReport(await browserApi.komga.report(id));
     } catch { /* ignore */ }
   }
 
@@ -69,29 +69,24 @@ export function KomgaSyncCard({ users }: { users: UserDto[] }) {
     setShowUnmatched(false);
     setShowMatchedBooks(false);
     try {
-      const response = await fetch("/api/komga/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: value.url,
-          username: value.username,
-          password: komgaPassword,
-          user_id: komgaUserId,
-        }),
+      const data = await browserApi.komga.sync({
+        url: value.url,
+        username: value.username,
+        password: komgaPassword,
+        user_id: komgaUserId,
       });
-      const data = await response.json();
-      if (!response.ok) {
-        setSyncError(data.error || "Sync failed");
-      } else {
-        setSyncResult(data);
-        fetchReports();
-        // Persist the connection details only after a successful sync, like the
-        // previous direct POST; the password itself is never stored.
-        section.patch({ url: value.url, username: value.username, user_id: komgaUserId });
-        void section.save();
-      }
-    } catch {
-      setSyncError("Failed to connect to sync endpoint");
+      setSyncResult(data);
+      fetchReports();
+      // Persist the connection details only after a successful sync, like the
+      // previous direct POST; the password itself is never stored.
+      section.patch({ url: value.url, username: value.username, user_id: komgaUserId });
+      void section.save();
+    } catch (error) {
+      setSyncError(
+        error instanceof ApiError
+          ? browserErrorMessage(error, "Sync failed")
+          : "Failed to connect to sync endpoint"
+      );
     } finally {
       setIsSyncing(false);
     }

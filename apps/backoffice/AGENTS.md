@@ -26,7 +26,8 @@ app/
 lib/
 ├── api/                # Client API : types DTO + fetch vers l'API Rust, découpé par domaine
 │   ├── index.ts        # Barrel (`@/lib/api`)
-│   ├── client.ts       # `apiFetch` / `config`
+│   ├── client.ts       # `apiFetch` / `config` (serveur uniquement)
+│   ├── browser/        # Transport + fonctions typées pour les Client Components
 │   └── ...             # libraries, jobs, books, series, metadata, downloads, ...
 └── api-handler.ts      # `withRoute` pour les route handlers
 ```
@@ -44,6 +45,29 @@ réexporte automatiquement.
 `lib/api-handler.ts` expose `withRoute(handler, options)`, enveloppe standard des route handlers
 `app/api/**` (extraction du message d'erreur, statut 500 par défaut, options `fallback` / `status` /
 `statusFromError` / `onError`). L'utiliser pour tout nouveau handler.
+
+## Client API navigateur (lib/api/browser/)
+
+`lib/api/client.ts` (`apiFetch`, `config`) est réservé au serveur. Les Client Components passent
+par `lib/api/browser/` : un adaptateur unique, `transport.ts`, possède les requêtes same-origin
+vers les routes proxy Next (`/api/...`), donc la session et le forward vers l'API Rust restent
+dans les route handlers.
+
+- `browserFetch<T>` sérialise le corps JSON, pose les en-têtes, vérifie le statut et décode la
+  réponse (`204`/corps vide → `undefined`). Il lève un `ApiError` (`lib/api/errors.ts`, avec
+  `status` et `detail`) sur une réponse non-2xx, en conservant l'enveloppe `{ error }`.
+- `browserFetchVoid`, `browserFetchText`, `browserFetchRaw` couvrent les réponses sans corps, le
+  texte et les blobs ; `withQuery` encode les query strings (`%20`, tableaux répétés) ;
+  `browserErrorMessage(error, fallback)` renvoie le détail upstream d'un `ApiError`, sinon le
+  fallback fourni par l'appelant.
+- Les fonctions typées vivent dans un module par domaine (`series.ts`, `downloads.ts`,
+  `settings.ts`…) qui reflète `lib/api/<domaine>.ts`, et sont agrégées sous `browserApi` dans
+  `lib/api/browser/index.ts`.
+
+Les vues appellent `browserApi.<domaine>.<fonction>` ; ne pas refaire de `fetch("/api/...")`
+direct ni importer une valeur runtime d'un module `lib/api` serveur (les imports de types
+uniquement sont sûrs). Pour les erreurs visibles, utiliser `browserErrorMessage` avec un message
+traduit ; les actions volontairement « best-effort » peuvent rester silencieuses.
 
 ## Readiness d'acquisition
 
@@ -74,7 +98,7 @@ sauvegarde sans modification d'être ignorée.
 
 `app/(app)/settings/SettingsDraftProvider.tsx` expose le moteur via `useSettingsDraft`,
 `useSettingsSection<T>(key)` (tranche `useSyncExternalStore` limitée à la clé) et
-`useSettingsSaving`. Les écritures navigateur passent par `fetch("/api/settings/:key")`, car
+`useSettingsSaving`. Les écritures navigateur passent par `browserApi.settings.saveSection`, car
 `apiFetch` est réservé au serveur ; les toasts de succès/erreur sont centralisés dans le provider.
 
 Les cartes de formulaire lisent et écrivent leur section via `useSettingsSection`, jamais par un
@@ -132,7 +156,8 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
   - routes/app : `app/health`, `app/login` (formulaire), `app/theme-provider`, et l'ensemble des route handlers `app/api/**` (CRUD, SSE `streams.test.ts`, cas d'erreur data-driven `errors.test.ts`).
 - Les tests de route handlers utilisent `// @vitest-environment node` et `tests/unit/app/api/helpers.ts` (`createApiMock()`, `jsonRequest()`, `routeCtx()` retournant `{ params: Promise<any> }`).
 - Pour les composants à `fetch` global, stubber `vi.stubGlobal("fetch", fetchMock)` et router par `url`/`method` ; préférer `fireEvent.change`/`fireEvent.blur` pour les champs `{var}` ou number contrôlés.
-- `lib/api/**` est couvert par `tests/unit/lib/api-*.test.ts` ; `lib/api-handler.ts` par
+- `lib/api/**` est couvert par `tests/unit/lib/api-*.test.ts` ; le transport navigateur par
+  `tests/unit/lib/browserApi.test.ts`, `lib/api-handler.ts` par
   `tests/unit/lib/api-handler.test.ts`.
 - Le test de `lib/i18n/context` appelle `vi.unmock("@/lib/i18n/context")` pour rétablir le vrai provider (le setup le mocke globalement).
 - Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
@@ -194,7 +219,10 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 - **Port 7082** : pas le port Next.js par défaut (3000). Défini dans `package.json` scripts (`-p 7082`).
 - **API_BASE_URL** : en prod, configuré via env. En dev local, l'API doit tourner sur `http://localhost:7080`.
 - **React 19 + Next.js 16** : utiliser les nouvelles APIs (actions serveur, `use()` hook) si disponibles.
-- **Pas de gestion d'état global** : fetch direct depuis les Server Components ou `useState`/`useEffect` dans les Client Components. Seule exception : le brouillon de la page `/settings` (`SettingsDraftProvider`), qui est local à cette route.
+- **Pas de gestion d'état global** : fetch direct depuis les Server Components, `useState`/`useEffect`
+  dans les Client Components, et `browserApi` (jamais `fetch("/api/...")`) pour les appels navigateur.
+  Seule exception : le brouillon de la page `/settings` (`SettingsDraftProvider`), qui est local à
+  cette route.
 - **Cache & images** : `staleTimes.dynamic = 30` ; les fetch API utilisent
   `{ next: { revalidate: N } }` (15 s pour les listes, 30-60 s pour les données stables). Les
   images utilisent `unoptimized: true` — servir des WebP pré-optimisés depuis `public/`.

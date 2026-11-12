@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge, Button, Icon, toast } from "@/app/components/ui";
 import type { DiagnosticsIntegration, DiagnosticsProbe } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -60,11 +61,7 @@ export function DiagnosticsProbePanel() {
   async function runProbe() {
     setIsRunning(true);
     try {
-      const response = await fetch("/api/diagnostics/probe");
-      if (!response.ok) {
-        throw new Error(`probe failed (${response.status})`);
-      }
-      setProbe((await response.json()) as DiagnosticsProbe);
+      setProbe(await browserApi.diagnostics.probe());
     } catch {
       toast(t("diagnostics.probeError"), "error");
     } finally {

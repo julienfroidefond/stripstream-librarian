@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "@/app/components/ui";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
 import {
@@ -23,23 +24,13 @@ import { seedSettingsSections, validateSettingsSection } from "@/lib/settingsSec
  * Browser write for one `app_settings` section.
  *
  * `apiFetch` is server-only (it needs the bootstrap token), so the browser goes
- * through the Next.js proxy route. A non-2xx response becomes a rejected
- * promise; the draft then rolls the section back to its acknowledged value.
- * A successful response returns the stored section (the API may redact a
- * secret), which the draft adopts as its new baseline.
+ * through the Next.js proxy via `browserApi.settings.saveSection`. A non-2xx
+ * response becomes a rejected promise; the draft then rolls the section back to
+ * its acknowledged value. A successful response returns the stored section (the
+ * API may redact a secret), which the draft adopts as its new baseline.
  */
 export async function writeSettingsSection(key: string, value: unknown): Promise<unknown> {
-  const response = await fetch(`/api/settings/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value }),
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Failed to save ${key} (${response.status})`);
-  }
-  if (response.status === 204) return undefined;
-  return response.json().catch(() => undefined);
+  return browserApi.settings.saveSection(key, value);
 }
 
 export type SettingsSectionWriter = (key: string, value: unknown) => Promise<unknown>;

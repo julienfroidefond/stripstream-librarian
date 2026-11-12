@@ -67,7 +67,7 @@ export function QBittorrentCard() {
 
       <div className="pt-1">
         <TestConnectionButton
-          endpoint="/api/qbittorrent/test"
+          target="qbittorrent"
           disabled={!value.enabled || !value.url || !value.username}
         />
       </div>

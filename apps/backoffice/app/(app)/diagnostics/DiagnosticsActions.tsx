@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button, Icon, toast } from "@/app/components/ui";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 /**
@@ -40,18 +41,17 @@ export function PurgeCacheButton() {
   async function handlePurge() {
     setIsPurging(true);
     try {
-      const response = await fetch("/api/settings/cache/clear", { method: "POST" });
-      const data = (await response.json()) as { success?: boolean; message?: string; error?: string };
+      const data = await browserApi.settings.clearCache();
 
-      if (!response.ok || data.error || data.success === false) {
+      if (data.error || data.success === false) {
         toast(data.error ?? data.message ?? t("diagnostics.purgeError"), "error");
         return;
       }
 
       toast(data.message ?? t("diagnostics.purgeSuccess"), "success");
       router.refresh();
-    } catch {
-      toast(t("diagnostics.purgeError"), "error");
+    } catch (error) {
+      toast(browserErrorMessage(error, t("diagnostics.purgeError")), "error");
     } finally {
       setIsPurging(false);
     }
@@ -87,12 +87,7 @@ export function CopyDiagnosticsButton() {
   async function handleCopy() {
     setIsCopying(true);
     try {
-      const response = await fetch("/api/diagnostics");
-      if (!response.ok) {
-        throw new Error(`diagnostics failed (${response.status})`);
-      }
-
-      const data: unknown = await response.json();
+      const data = await browserApi.diagnostics.get();
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
       toast(t("diagnostics.copySuccess"), "success");
     } catch {

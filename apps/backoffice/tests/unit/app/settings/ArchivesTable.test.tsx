@@ -88,7 +88,10 @@ describe("ArchivesTable", () => {
     fireEvent.click(screen.getByText("Astérix"));
 
     await waitFor(() => expect(screen.getByText("Le Gaulois")).toBeInTheDocument());
-    expect(fetchMock).toHaveBeenCalledWith("/api/series/archived/s1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/series/archived/s1",
+      expect.objectContaining({ method: "GET" })
+    );
     expect(screen.getByText('settings.archives.volume:{"volume":1}')).toBeInTheDocument();
     expect(screen.getByText("status.reading · p.12")).toBeInTheDocument();
   });

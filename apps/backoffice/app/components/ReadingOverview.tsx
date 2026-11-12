@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Card, Icon, type IconName } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { getBookCoverUrl } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import type {
   UserReadingOverviewDto,
   UserReadingOverviewItemDto,
@@ -261,14 +262,9 @@ function useSeriesBooks(userId: string, seriesId: string | null, enabled: boolea
 
   useEffect(() => {
     if (!enabled || books) return;
-    const qs = seriesId ? `?series_id=${encodeURIComponent(seriesId)}` : "";
     let cancelled = false;
-    fetch(`/api/reading-overview/${userId}/series-books${qs}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(String(r.status));
-        return r.json();
-      })
-      .then((data: UserReadingOverviewSeriesBookDto[]) => {
+    browserApi.stats.readingOverviewSeriesBooks(userId, seriesId ?? undefined)
+      .then((data) => {
         if (cancelled) return;
         setFailed(false);
         setBooks(data);

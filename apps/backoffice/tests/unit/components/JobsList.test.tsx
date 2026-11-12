@@ -146,7 +146,10 @@ describe("JobsList", () => {
     fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
 
     expect(await screen.findAllByText("cancelled")).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledWith("/api/jobs/aaaaaaaa1111/cancel", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/jobs/aaaaaaaa1111/cancel",
+      expect.objectContaining({ method: "POST" })
+    );
     expect(screen.queryByRole("button", { name: "common.cancel" })).toBeNull();
   });
 
@@ -172,8 +175,14 @@ describe("JobsList", () => {
     fireEvent.click(screen.getByRole("button", { name: "jobRow.replay" }));
 
     await screen.findByText("eeeeeeee");
-    expect(fetchMock).toHaveBeenCalledWith("/api/jobs/aaaaaaaa1111/replay", { method: "POST" });
-    expect(fetchMock).toHaveBeenCalledWith("/api/jobs/list");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/jobs/aaaaaaaa1111/replay",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/jobs/list",
+      expect.objectContaining({ method: "GET" })
+    );
   });
 
   it("paginates when there are more than 25 jobs", () => {

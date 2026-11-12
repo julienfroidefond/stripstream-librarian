@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { FolderItem } from "../../lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import { Icon } from "./ui";
 
@@ -42,14 +43,11 @@ export function FolderBrowser({ initialFolders, selectedPath, onSelect }: Folder
 
   const loadChildren = useCallback(async (parentPath: string): Promise<FolderItem[]> => {
     try {
-      const response = await fetch(`/api/folders?path=${encodeURIComponent(parentPath)}`);
-      if (response.ok) {
-        return await response.json();
-      }
+      return await browserApi.libraries.folders(parentPath);
     } catch (error) {
       console.error("Failed to load folders:", error);
+      return [];
     }
-    return [];
   }, []);
 
   const toggleExpand = useCallback(async (node: TreeNode) => {

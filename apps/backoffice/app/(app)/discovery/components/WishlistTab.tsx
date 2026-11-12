@@ -6,6 +6,7 @@ import { Icon } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { useTranslation } from "@/lib/i18n/context";
 import { getBookCoverUrl, type SeriesDto } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 
 interface Library {
   id: string;
@@ -21,11 +22,8 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
     async function fetchWishlist() {
       setLoading(true);
       try {
-        const resp = await fetch("/api/series?no_books=true&limit=100");
-        if (resp.ok) {
-          const data = await resp.json();
-          setSeries(data.items ?? []);
-        }
+        const data = await browserApi.series.list({ noBooks: true, limit: 100 });
+        setSeries(data.items ?? []);
       } catch { /* ignore */ } finally {
         setLoading(false);
       }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SettingsCard, SettingsRow, FormInput } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import type { MetadataProviderDto } from "@/lib/api";
+import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { MetadataProvidersSettings } from "@/lib/settingsSections";
 import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
@@ -34,9 +35,8 @@ export function MetadataProvidersCard() {
   const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
 
   useEffect(() => {
-    fetch("/api/metadata/providers")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
-      .then((data: MetadataProviderDto[]) => setProviders(data))
+    browserApi.metadata.providers()
+      .then((data) => setProviders(data))
       .catch(() => setProviders([]));
   }, []);
 
