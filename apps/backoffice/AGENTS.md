@@ -54,6 +54,35 @@ DDL) et le mémoïse pour le rendu. Le layout expose la valeur via `AcquisitionR
 les pages la passent aux toolbars : ne pas refetcher les settings pour décider d'afficher une
 action d'acquisition.
 
+## Brouillon de paramètres (Settings draft)
+
+La page `/settings` édite plusieurs sections `app_settings` en parallèle. Le module
+`lib/settingsDraft.ts` porte l'état et la politique d'écriture, sans dépendance React :
+
+- il garde la valeur courante et la dernière valeur acquittée par le serveur pour chaque clé ;
+- `patch` fusionne les champs d'un objet, `set` remplace une section scalaire ;
+- il calcule `dirty` par comparaison profonde, valide avant la requête et expose une erreur par clé ;
+- il sérialise les écritures d'une même clé : une rafale de clics est coalescée sur la dernière
+  valeur, sans réordonnancement ;
+- il applique les éditions de façon optimiste et restaure la valeur acquittée en cas d'échec, sauf
+  si une édition plus récente est arrivée entre-temps.
+
+`lib/settingsSections.ts` possède les valeurs par défaut et la validation de chaque section. Les
+défauts sont fusionnés avec les valeurs stockées (les champs `null`/`undefined` retombent sur le
+défaut), ce qui permet à une première sauvegarde d'envoyer une section complète et à une
+sauvegarde sans modification d'être ignorée.
+
+`app/(app)/settings/SettingsDraftProvider.tsx` expose le moteur via `useSettingsDraft`,
+`useSettingsSection<T>(key)` (tranche `useSyncExternalStore` limitée à la clé) et
+`useSettingsSaving`. Les écritures navigateur passent par `fetch("/api/settings/:key")`, car
+`apiFetch` est réservé au serveur ; les toasts de succès/erreur sont centralisés dans le provider.
+
+Les cartes de formulaire lisent et écrivent leur section via `useSettingsSection`, jamais par un
+`fetch` direct. Les ressources qui ne sont pas des sections de formulaire (mappings de statuts,
+fournisseurs DDL, surveillance Telegram, tokens, archives, orphelins) gardent leurs endpoints
+dédiés. Les tests de cartes utilisent `tests/unit/helpers/settingsDraft.tsx`
+(`renderWithSettingsDraft`), qui monte le provider avec un writer contrôlable.
+
 ## Composants UI
 
 Les composants génériques sont dans `app/components/ui/`. Utiliser ces composants plutôt que des éléments HTML bruts :
@@ -165,7 +194,7 @@ npx playwright test catalog/series.spec.ts -g "recherche"   # cibler un test
 - **Port 7082** : pas le port Next.js par défaut (3000). Défini dans `package.json` scripts (`-p 7082`).
 - **API_BASE_URL** : en prod, configuré via env. En dev local, l'API doit tourner sur `http://localhost:7080`.
 - **React 19 + Next.js 16** : utiliser les nouvelles APIs (actions serveur, `use()` hook) si disponibles.
-- **Pas de gestion d'état global** : fetch direct depuis les Server Components ou `useState`/`useEffect` dans les Client Components.
+- **Pas de gestion d'état global** : fetch direct depuis les Server Components ou `useState`/`useEffect` dans les Client Components. Seule exception : le brouillon de la page `/settings` (`SettingsDraftProvider`), qui est local à cette route.
 - **Cache & images** : `staleTimes.dynamic = 30` ; les fetch API utilisent
   `{ next: { revalidate: N } }` (15 s pour les listes, 30-60 s pour les données stables). Les
   images utilisent `unoptimized: true` — servir des WebP pré-optimisés depuis `public/`.
