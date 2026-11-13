@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
-import { browserApi } from "@/lib/api/browser";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
+import { ReadingListsProvider, useReadingLists } from "@/app/components/ReadingListsProvider";
 import { Button, Card, Icon } from "@/app/components/ui";
 import { AiReadingListsModal } from "./AiReadingListsModal";
 
@@ -15,62 +14,43 @@ type Props = {
   hasActiveUser: boolean;
 };
 
-
+/** The overview page: one store shared by the grid and the AI modal. */
 export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
+  return (
+    <ReadingListsProvider lists={initialLists}>
+      <ReadingListsView hasActiveUser={hasActiveUser} />
+    </ReadingListsProvider>
+  );
+}
+
+function ReadingListsView({ hasActiveUser }: { hasActiveUser: boolean }) {
   const { t } = useTranslation();
-  const router = useRouter();
-  const [lists, setLists] = useState<ReadingListDto[]>(initialLists);
+  const readingLists = useReadingLists();
+  const lists = readingLists.lists ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const saving = readingLists.pending("create");
 
   async function handleCreate() {
-    if (!createName.trim()) return;
-    setSaving(true);
-    try {
-      const created = await browserApi.readingLists.create(
-        createName.trim(),
-        createDescription.trim() || undefined
-      );
-      setLists((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setShowCreate(false);
-      setCreateName("");
-      setCreateDescription("");
-      router.refresh();
-    } catch {
-      // silently fail
-    } finally {
-      setSaving(false);
-    }
+    if (!createName.trim() || saving) return;
+    const outcome = await readingLists.run({
+      type: "create",
+      name: createName.trim(),
+      description: createDescription.trim() || undefined,
+    });
+    if (!outcome.ok) return;
+    setShowCreate(false);
+    setCreateName("");
+    setCreateDescription("");
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
+  function handleDelete(e: React.MouseEvent, id: string) {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm(t("readingLists.deleteConfirm"))) return;
-    setDeletingId(id);
-    try {
-      await browserApi.readingLists.remove(id);
-      setLists((prev) => prev.filter((l) => l.id !== id));
-      router.refresh();
-    } catch {
-      // keep the row when the delete is rejected
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  async function refreshLists() {
-    try {
-      const data = await browserApi.readingLists.list();
-      setLists([...data].sort((a, b) => a.name.localeCompare(b.name)));
-      router.refresh();
-    } catch {
-      // keep the current list on a transient error
-    }
+    void readingLists.run({ type: "delete", listId: id });
   }
 
   return (
@@ -132,7 +112,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
                   variant="ghost"
                   size="sm"
                   onClick={(e) => handleDelete(e, list.id)}
-                  disabled={deletingId === list.id}
+                  disabled={readingLists.pending(`list:${list.id}`)}
                   className="shrink-0 px-2 text-muted-foreground hover:text-destructive"
                   title={t("common.delete")}
                 >
@@ -203,7 +183,6 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
       <AiReadingListsModal
         isOpen={showAi}
         onClose={() => setShowAi(false)}
-        onApplied={refreshLists}
       />
     </div>
   );

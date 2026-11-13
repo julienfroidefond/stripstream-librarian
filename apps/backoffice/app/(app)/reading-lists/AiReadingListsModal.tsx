@@ -16,12 +16,17 @@ import { Button, Icon } from "@/app/components/ui";
 import { Modal } from "@/app/components/ui/Modal";
 import { toast } from "@/app/components/ui/Toast";
 import { coverSrc } from "@/app/components/ReadingListCover";
+import { useReadingLists } from "@/app/components/ReadingListsProvider";
+import type { ReadingListOp } from "@/lib/readingLists/actions";
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  /** Called after at least one proposal was applied, so the page can refresh. */
-  onApplied: () => Promise<void> | void;
+  /**
+   * Called after at least one proposal was applied. The shared store already
+   * reconciles the overview; this is only a hook for the caller.
+   */
+  onApplied?: () => Promise<void> | void;
 };
 
 type Status = "loading" | "ready" | "error";
@@ -45,7 +50,8 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
   const [errorMessage, setErrorMessage] = useState("");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [drafts, setDrafts] = useState<Record<number, ListDraft>>({});
-  const [applying, setApplying] = useState(false);
+  const readingLists = useReadingLists();
+  const applying = readingLists.pending("batch");
   const requestedRef = useRef(false);
   const requestIdRef = useRef(0);
 
@@ -171,64 +177,37 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
   };
 
   const handleApply = async () => {
-    if (!suggestions || selection.actionCount === 0) return;
-    setApplying(true);
-    let failures = 0;
-    let applied = 0;
+    if (!suggestions || selection.actionCount === 0 || applying) return;
+    const ops: ReadingListOp[] = [
+      ...selection.additionSeries.map(({ addition, series }): ReadingListOp => ({
+        type: "add",
+        listId: addition.list_id,
+        seriesId: series.id,
+      })),
+      ...selection.moveSeries.map(({ move, series }): ReadingListOp => ({
+        type: "moveToList",
+        fromListId: move.from_list_id,
+        toListId: move.to_list_id,
+        seriesId: series.id,
+      })),
+      ...selection.creations.map((creation): ReadingListOp => ({
+        type: "create",
+        name: creation.draft.name.trim(),
+        description: creation.draft.description.trim(),
+        seriesIds: creation.series.map((series) => series.id),
+      })),
+    ];
 
-    for (const { addition, series } of selection.additionSeries) {
-      try {
-        await browserApi.readingLists.addSeries(addition.list_id, series.id);
-        applied += 1;
-      } catch {
-        failures += 1;
-      }
-    }
-
-    for (const { move, series } of selection.moveSeries) {
-      try {
-        await browserApi.readingLists.moveSeries(move.from_list_id, series.id, move.to_list_id);
-        applied += 1;
-      } catch {
-        failures += 1;
-      }
-    }
-
-    for (const creation of selection.creations) {
-      const name = creation.draft.name.trim();
-      const description = creation.draft.description.trim();
-      try {
-        const created = await browserApi.readingLists.create(name, description);
-        let addedSeries = 0;
-        for (const series of creation.series) {
-          try {
-            await browserApi.readingLists.addSeries(created.id, series.id);
-            applied += 1;
-            addedSeries += 1;
-          } catch {
-            failures += 1;
-          }
-        }
-        if (addedSeries > 0) {
-          applied += 1;
-        } else {
-          // Do not leave an empty list behind when every series failed.
-          failures += 1;
-          await browserApi.readingLists.remove(created.id).catch(() => {});
-        }
-      } catch {
-        failures += 1;
-      }
-    }
-
-    setApplying(false);
-    if (applied > 0) {
-      toast(failures > 0 ? t("readingLists.aiApplyError") : t("readingLists.aiApplied"), failures > 0 ? "error" : "success");
-      await onApplied();
-      onClose();
-    } else {
-      toast(t("readingLists.aiApplyFailed"), "error");
-    }
+    // Failures follow the store's policy (one error toast, nothing refreshed
+    // when nothing applied); only the wording is this modal's.
+    const outcome = await readingLists.runAll(ops, {
+      failureMessage: ({ applied }) =>
+        applied > 0 ? t("readingLists.aiApplyError") : t("readingLists.aiApplyFailed"),
+    });
+    if (outcome.applied === 0) return;
+    if (outcome.ok) toast(t("readingLists.aiApplied"), "success");
+    await onApplied?.();
+    onClose();
   };
 
   const empty =

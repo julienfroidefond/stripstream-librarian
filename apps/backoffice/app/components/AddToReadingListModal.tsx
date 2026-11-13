@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Modal } from "./ui/Modal";
 import { useTranslation } from "@/lib/i18n/context";
-import type { ReadingListDto } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
-import { ApiError } from "@/lib/api/errors";
+import { useReadingLists } from "./ReadingListsProvider";
 
 interface Props {
   seriesId: string;
@@ -17,36 +15,38 @@ interface Props {
 
 export function AddToReadingListModal({ seriesId, children }: Props) {
   const { t } = useTranslation();
-  const router = useRouter();
+  const readingLists = useReadingLists();
+  const { hydrate } = readingLists;
+  const lists = readingLists.lists ?? [];
   const [isOpen, setIsOpen] = useState(false);
-  const [lists, setLists] = useState<ReadingListDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState<string | null>(null);
+  /** Lists the server says hold the series (read on open, then confirmed adds). */
   const [added, setAdded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isOpen) return;
-    browserApi.readingLists.list()
-      .then((data) => setLists(data))
+    let cancelled = false;
+    Promise.all([
+      browserApi.readingLists.list(),
+      browserApi.readingLists.list(seriesId),
+    ])
+      .then(([all, holding]) => {
+        if (cancelled) return;
+        hydrate({ lists: all });
+        setAdded(new Set(holding.map((list) => list.id)));
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isOpen]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, seriesId, hydrate]);
 
   async function handleAdd(listId: string) {
-    setAdding(listId);
-    try {
-      await browserApi.readingLists.addSeries(listId, seriesId);
-      setAdded((prev) => new Set([...prev, listId]));
-      router.refresh();
-    } catch (error) {
-      // A 400 means the series is already in that list: show it as added
-      // without forcing another server refresh.
-      if (error instanceof ApiError && error.status === 400) {
-        setAdded((prev) => new Set([...prev, listId]));
-      }
-    } finally {
-      setAdding(null);
-    }
+    const outcome = await readingLists.run({ type: "add", listId, seriesId });
+    if (outcome.ok) setAdded((prev) => new Set([...prev, listId]));
   }
 
   const open = () => { setIsOpen(true); setAdded(new Set()); setLoading(true); };
@@ -73,7 +73,7 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
             <div className="space-y-1 max-h-72 overflow-y-auto">
               {lists.map((list) => {
                 const isAdded = added.has(list.id);
-                const isAdding = adding === list.id;
+                const isAdding = readingLists.pending(`item:${list.id}:${seriesId}`);
                 return (
                   <button
                     key={list.id}

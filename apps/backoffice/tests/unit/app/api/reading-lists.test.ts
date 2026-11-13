@@ -40,6 +40,12 @@ describe("/api/reading-lists", () => {
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
+  it("GET forwards the series_id filter", async () => {
+    mockApi.mockResolvedValue([{ id: "1" }]);
+    await listLists(jsonRequest("/api/reading-lists?series_id=s%201"));
+    expect(mockApi).toHaveBeenLastCalledWith("/reading-lists?series_id=s%201");
+  });
+
   it("GET returns 500 on error", async () => {
     mockApi.mockRejectedValue(new Error("bad"));
     expect((await listLists()).status).toBe(500);

@@ -181,6 +181,18 @@ Les lignes (`DownloadRow`, `TelegramDownloadRow`, `DdlProviderDownloadRow`,
 direct. `DownloadClientButton` garde son flux d'ajout manuel (ce n'est pas une action de ligne) et
 `ProwlarrSearchModal` ne fait que chercher.
 
+## Écritures des listes de lecture (Reading lists store)
+
+`lib/readingLists/actions.ts` est la seule porte d'écriture des listes de lecture
+([ADR 0027](../../docs/adr/0027-reading-lists-write-store.md)) : opérations `create`, `rename`,
+`delete`, `add`, `remove`, `move`, `reorder`, `moveToList` ; écritures confirmées par le serveur
+puis réconciliées via `detail()`/`list()` (jamais d'objet fabriqué) ; seul le reorder est
+optimiste, avec rollback vers le dernier ordre acquitté ; un échec = toast, état serveur conservé,
+pas de refresh. `app/components/ReadingListsProvider.tsx` expose `ReadingListsProvider` /
+`useReadingLists` (store local hors provider). Les surfaces (`ReadingListsClient`,
+`ReadingListDetailClient`, `AddToReadingListModal`, `AiReadingListsModal`) ne gardent aucune copie
+des listes en `useState` et n'appellent jamais `browserApi.readingLists` pour écrire.
+
 ## Fraîcheur du cache (Cache invalidation)
 
 `lib/cache/` est la seule porte du cache de données Next ([ADR 0021](../../docs/adr/0021-backoffice-cache-invalidation.md)) :
