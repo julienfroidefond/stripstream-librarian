@@ -3,9 +3,10 @@
 //! Every field of the row is declared once here, with its default and its
 //! accepted range. [`Limits::parse`] is the write-side validation (it rejects
 //! the whole value on the first bad field set) and [`Limits::from_stored`] the
-//! read side (a bad stored field falls back to its default). Both go through
-//! the same per-field rule, so the stored JSON and the running process cannot
-//! disagree on what a value means, and no consumer re-clamps a value it reads.
+//! read side (a stored integer out of range is clamped to the nearest bound,
+//! an unreadable field falls back to its default). Both go through the same
+//! per-field rule, so the stored JSON and the running process cannot disagree
+//! on what a value means, and no consumer re-clamps a value it reads.
 //!
 //! Fields are `NonZero*`: a `0` that would build a `Semaphore::new(0)` (every
 //! render or download blocked forever) or a zero-length timeout cannot be
@@ -122,8 +123,19 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self::decode(&Map::new()).0
+        Self::decode(&Map::new(), Mode::Strict).0
     }
+}
+
+/// How [`Limits::decode`] treats a present but invalid field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// Write side: every invalid field is an error.
+    Strict,
+    /// Read side: an out-of-range integer is clamped to the nearest bound
+    /// (a row written by older, looser code keeps its intent); only an
+    /// unreadable value falls back to the default.
+    Lenient,
 }
 
 impl Limits {
@@ -137,7 +149,7 @@ impl Limits {
                 message: "must be a JSON object".to_string(),
             }]);
         };
-        let (limits, errors) = Self::decode(obj);
+        let (limits, errors) = Self::decode(obj, Mode::Strict);
         if errors.is_empty() {
             Ok(limits)
         } else {
@@ -146,8 +158,11 @@ impl Limits {
     }
 
     /// Lenient decoding of a stored row: a missing or non-object row yields the
-    /// defaults, and every invalid field falls back to its own default (with a
-    /// warning) instead of discarding the valid ones.
+    /// defaults; a field holding an integer out of range is clamped to the
+    /// nearest bound, and a field that is not an integer at all falls back to
+    /// its own default (each with a warning) instead of discarding the valid
+    /// ones. A row saved by older code that accepted e.g.
+    /// `download_stall_timeout_seconds: 5` therefore runs at 10 s, not 180 s.
     pub fn from_stored(value: Option<&Value>) -> Self {
         let Some(obj) = value.and_then(Value::as_object) else {
             if let Some(other) = value.filter(|v| !v.is_null()) {
@@ -155,9 +170,9 @@ impl Limits {
             }
             return Self::default();
         };
-        let (limits, errors) = Self::decode(obj);
+        let (limits, errors) = Self::decode(obj, Mode::Lenient);
         for error in errors {
-            warn!("ignoring stored {error}; using the default");
+            warn!("stored {error}");
         }
         limits
     }
@@ -169,9 +184,9 @@ impl Limits {
         Self::from_stored(value.as_ref())
     }
 
-    fn decode(obj: &Map<String, Value>) -> (Self, Vec<FieldError>) {
+    fn decode(obj: &Map<String, Value>, mode: Mode) -> (Self, Vec<FieldError>) {
         let mut errors = Vec::new();
-        let mut field = |spec: &Spec| read_field(obj, spec, &mut errors);
+        let mut field = |spec: &Spec| read_field(obj, spec, mode, &mut errors);
         let limits = Self {
             concurrent_renders: usize_of(field(&CONCURRENT_RENDERS)),
             rate_limit_per_second: u32_of(field(&RATE_LIMIT_PER_SECOND)),
@@ -191,23 +206,47 @@ impl Limits {
 }
 
 /// The single per-field rule: absent → default; present → an integer within
-/// `spec.min..=spec.max`, otherwise an error and the default.
-fn read_field(obj: &Map<String, Value>, spec: &Spec, errors: &mut Vec<FieldError>) -> NonZeroU64 {
+/// `spec.min..=spec.max`. Otherwise an error is recorded and the value is the
+/// default, except for an out-of-range integer read in [`Mode::Lenient`],
+/// which is clamped to the nearest bound (the error then says so).
+fn read_field(
+    obj: &Map<String, Value>,
+    spec: &Spec,
+    mode: Mode,
+    errors: &mut Vec<FieldError>,
+) -> NonZeroU64 {
     let value = match obj.get(spec.name) {
         None => spec.default,
-        Some(raw) => match raw.as_u64() {
-            Some(n) if (spec.min..=spec.max).contains(&n) => n,
+        Some(raw) => match integer_of(raw) {
+            Some(n) if n >= i128::from(spec.min) && n <= i128::from(spec.max) => n as u64,
             Some(n) => {
+                let bound = if n < i128::from(spec.min) {
+                    spec.min
+                } else {
+                    spec.max
+                };
+                let mut message = out_of_range(spec, n);
+                let value = match mode {
+                    Mode::Strict => spec.default,
+                    Mode::Lenient => {
+                        message.push_str(&format!(" (got {n}); clamped to {bound}"));
+                        bound
+                    }
+                };
                 errors.push(FieldError {
                     field: spec.name,
-                    message: out_of_range(spec, n),
+                    message,
                 });
-                spec.default
+                value
             }
             None => {
+                let mut message = "must be a positive integer".to_string();
+                if mode == Mode::Lenient {
+                    message.push_str(&format!(" (got {raw}); using the default {}", spec.default));
+                }
                 errors.push(FieldError {
                     field: spec.name,
-                    message: "must be a positive integer".to_string(),
+                    message,
                 });
                 spec.default
             }
@@ -217,8 +256,15 @@ fn read_field(obj: &Map<String, Value>, spec: &Spec, errors: &mut Vec<FieldError
     NonZeroU64::new(value).unwrap_or(NonZeroU64::MIN)
 }
 
-fn out_of_range(spec: &Spec, n: u64) -> String {
-    if n < spec.min {
+/// A JSON integer (signed or not); `None` for any other type, floats included.
+fn integer_of(raw: &Value) -> Option<i128> {
+    raw.as_u64()
+        .map(i128::from)
+        .or_else(|| raw.as_i64().map(i128::from))
+}
+
+fn out_of_range(spec: &Spec, n: i128) -> String {
+    if n < i128::from(spec.min) {
         if spec.min == 1 {
             "must be greater than 0".to_string()
         } else {
@@ -385,25 +431,87 @@ mod tests {
     }
 
     #[test]
-    fn from_stored_falls_back_field_by_field() {
+    fn from_stored_clamps_out_of_range_and_defaults_unreadable_fields() {
         let limits = Limits::from_stored(Some(&json!({
             "concurrent_renders": 0,
             "telegram_download_connections": 99,
+            "download_max_attempts": -3,
             "ddl_download_connections": "many",
+            "concurrent_alldebrid_downloads": 2.5,
             "rate_limit_per_second": 7,
         })));
         let default = Limits::default();
-        assert_eq!(limits.concurrent_renders, default.concurrent_renders);
+        // Out of range: clamped to the nearest bound, not reset to the default.
         assert_eq!(
-            limits.telegram_download_connections,
-            default.telegram_download_connections
+            limits.concurrent_renders.get() as u64,
+            CONCURRENT_RENDERS.min
         );
+        assert_eq!(
+            limits.telegram_download_connections.get() as u64,
+            TELEGRAM_DOWNLOAD_CONNECTIONS.max
+        );
+        assert_eq!(
+            limits.download_max_attempts.get() as u64,
+            DOWNLOAD_MAX_ATTEMPTS.min
+        );
+        // Not an integer: the default.
         assert_eq!(
             limits.ddl_download_connections,
             default.ddl_download_connections
         );
+        assert_eq!(
+            limits.concurrent_alldebrid_downloads,
+            default.concurrent_alldebrid_downloads
+        );
         // Valid fields are kept even when siblings are invalid.
         assert_eq!(limits.rate_limit_per_second.get(), 7);
+    }
+
+    #[test]
+    fn from_stored_keeps_a_legacy_short_stall_timeout_at_its_floor() {
+        // Older code accepted 5 s and clamped it to 10 s when reading; the row
+        // must keep meaning 10 s, not silently become the 180 s default.
+        let limits = Limits::from_stored(Some(&json!({ "download_stall_timeout_seconds": 5 })));
+        assert_eq!(limits.download_stall_timeout_seconds.get(), 10);
+    }
+
+    #[test]
+    fn from_stored_clamps_every_spec_at_both_ends() {
+        for spec in ALL {
+            let low = Limits::from_stored(Some(&json!({ spec.name: 0 })));
+            let high = Limits::from_stored(Some(&json!({ spec.name: u64::MAX })));
+            assert_eq!(value_of(&low, spec.name), spec.min, "{} low", spec.name);
+            assert_eq!(value_of(&high, spec.name), spec.max, "{} high", spec.name);
+        }
+    }
+
+    #[test]
+    fn parse_stays_strict_on_out_of_range_values() {
+        let errors = Limits::parse(&json!({ "download_stall_timeout_seconds": 5 })).unwrap_err();
+        assert_eq!(
+            errors[0].to_string(),
+            "limits.download_stall_timeout_seconds must be at least 10"
+        );
+    }
+
+    fn value_of(limits: &Limits, name: &str) -> u64 {
+        match name {
+            "concurrent_renders" => limits.concurrent_renders.get() as u64,
+            "rate_limit_per_second" => limits.rate_limit_per_second.get() as u64,
+            "timeout_seconds" => limits.timeout_seconds.get(),
+            "concurrent_telegram_downloads" => limits.concurrent_telegram_downloads.get() as u64,
+            "concurrent_ddl_provider_downloads" => {
+                limits.concurrent_ddl_provider_downloads.get() as u64
+            }
+            "concurrent_alldebrid_downloads" => limits.concurrent_alldebrid_downloads.get() as u64,
+            "telegram_download_connections" => limits.telegram_download_connections.get() as u64,
+            "ddl_download_connections" => limits.ddl_download_connections.get() as u64,
+            "download_max_attempts" => limits.download_max_attempts.get() as u64,
+            "download_stall_timeout_seconds" => limits.download_stall_timeout_seconds.get(),
+            "download_timeout_minutes" => limits.download_timeout_minutes.get(),
+            "alldebrid_stall_timeout_minutes" => limits.alldebrid_stall_timeout_minutes.get(),
+            other => panic!("unknown field {other}"),
+        }
     }
 
     #[test]

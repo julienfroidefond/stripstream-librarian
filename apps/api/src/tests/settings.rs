@@ -745,13 +745,10 @@ async fn download_settings_default_then_fallback_and_validate(pool: PgPool) {
         default_connections
     );
 
-    // A stored value the schema rejects (legacy row, manual edit) falls back to
-    // the default: the read side applies the same rule as the write side.
-    let cases = [
-        (6u64, 6usize),
-        (0, default_connections),
-        (99, default_connections),
-    ];
+    // A stored value out of range (legacy row, manual edit) is clamped to the
+    // nearest bound on read; only the write side rejects it.
+    let max_connections = TELEGRAM_DOWNLOAD_CONNECTIONS.max as usize;
+    let cases = [(6u64, 6usize), (0, 1), (99, max_connections)];
     for (stored, expected) in cases {
         sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'limits'")
             .bind(json!({ "telegram_download_connections": stored }))

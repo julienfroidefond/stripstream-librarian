@@ -81,7 +81,7 @@ async fn get_book(...) { }
 `settings/limits.rs` est le seul schéma de `app_settings.limits` : chaque champ y a un `Spec`
 (défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture
 (`POST /settings/limits` → 400 listant chaque champ fautif) ; `Limits::load` / `from_stored` lit
-la ligne (un champ invalide stocké retombe sur son défaut). Ne pas relire le JSON `limits` à la
+la ligne (un entier stocké hors plage est borné, un champ illisible retombe sur son défaut). Ne pas relire le JSON `limits` à la
 main ni re-clamper une valeur : dériver de `Limits` (`DownloadSettings::from(&limits)`,
 `DynamicSettings::apply_limits`). Tout rechargement à chaud passe par `settings::apply(state, key)`,
 y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
