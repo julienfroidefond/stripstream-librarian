@@ -5,17 +5,35 @@ import { useEffect, useRef } from "react";
 interface UseEventSourceOptions<T> {
   url: string;
   onMessage: (data: T) => void;
+  /** Called when the connection drops (before the automatic reconnect). */
+  onError?: () => void;
+  /** Called when a payload cannot be parsed as JSON. */
+  onParseError?: (error: unknown) => void;
+  /** When false, no connection is opened (and an open one is closed). */
+  enabled?: boolean;
   staleTimeoutMs?: number;
   reconnectDelayMs?: number;
 }
 
+/**
+ * The only place allowed to open an `EventSource`.
+ *
+ * Owns reconnection, the stale-connection watchdog and the tab-visibility
+ * pause/resume. Consumers describe *what* to do with messages; they never see
+ * the transport (see `useJobStream` for the job-specific wrappers).
+ */
 export function useEventSource<T>({
   url,
   onMessage,
+  onError,
+  onParseError,
+  enabled = true,
   staleTimeoutMs = 30000,
   reconnectDelayMs = 3000,
 }: UseEventSourceOptions<T>) {
   const onMessageRef = useRef(onMessage);
+  const onErrorRef = useRef(onError);
+  const onParseErrorRef = useRef(onParseError);
   const urlRef = useRef(url);
 
   useEffect(() => {
@@ -23,10 +41,20 @@ export function useEventSource<T>({
   }, [onMessage]);
 
   useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    onParseErrorRef.current = onParseError;
+  }, [onParseError]);
+
+  useEffect(() => {
     urlRef.current = url;
   }, [url]);
 
   useEffect(() => {
+    if (!enabled) return;
+
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let staleTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -51,14 +79,15 @@ export function useEventSource<T>({
         resetStaleTimer();
         try {
           onMessageRef.current(JSON.parse(event.data));
-        } catch {
-          // ignore malformed data
+        } catch (error) {
+          onParseErrorRef.current?.(error);
         }
       };
 
       eventSource.onerror = () => {
         eventSource?.close();
         eventSource = null;
+        onErrorRef.current?.();
         reconnectTimeout = setTimeout(connect, reconnectDelayMs);
       };
     };
@@ -93,5 +122,5 @@ export function useEventSource<T>({
       disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [staleTimeoutMs, reconnectDelayMs]);
+  }, [staleTimeoutMs, reconnectDelayMs, enabled]);
 }

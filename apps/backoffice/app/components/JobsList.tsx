@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useTranslation } from "@/lib/i18n/context";
 import type { JobTypeCatalogDto } from "@/lib/api";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
+import { jobTypeShortLabel, resolveJobTypeDescriptor } from "@/lib/jobs/descriptors";
+import { useJobsStream } from "@/lib/useJobStream";
 import { JobRow } from "./JobRow";
 import { formatDateTime, formatDuration } from "@/lib/format";
 
@@ -48,7 +50,7 @@ interface JobsListProps {
 
 export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highlightJobId }: JobsListProps) {
   const { t, locale } = useTranslation();
-  const [jobs, setJobs] = useState(initialJobs);
+  const { jobs, setJobs } = useJobsStream<Job>({ initial: initialJobs });
   const [filterType, setFilterType] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterLibrary, setFilterLibrary] = useState<string>("");
@@ -67,8 +69,6 @@ export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highligh
 
   const formatDate = (dateStr: string): string => formatDateTime(dateStr, locale);
 
-  const catalogByType = new Map(jobTypeCatalog.map((entry) => [entry.job_type, entry]));
-
   // Derive unique types, statuses, libraries for filter options
   const jobTypes = [...new Set([...jobTypeCatalog.map(entry => entry.job_type), ...jobs.map(j => j.type)])].sort();
   // `partial` is always offered even when the current page holds none: the
@@ -79,31 +79,6 @@ export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highligh
   const totalPages = Math.ceil(filteredJobs.length / PAGE_SIZE);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const visibleJobs = filteredJobs.slice(pageStart, pageStart + PAGE_SIZE);
-
-  // Refresh jobs list via SSE
-  useEffect(() => {
-    const eventSource = new EventSource("/api/jobs/stream");
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (Array.isArray(data)) {
-          setJobs(data);
-        }
-      } catch (error) {
-        console.error("Failed to parse SSE data:", error);
-      }
-    };
-    
-    eventSource.onerror = (err) => {
-      console.error("SSE error:", err);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
 
   const handleCancel = async (id: string) => {
     try {
@@ -142,7 +117,7 @@ export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highligh
         >
           <option value="">{t("jobsList.allTypes")}</option>
           {jobTypes.map((type) => (
-            <option key={type} value={type}>{t(`jobType.${type}` as never) || type}</option>
+            <option key={type} value={type}>{jobTypeShortLabel(type, t)}</option>
           ))}
         </select>
         <select
@@ -192,20 +167,23 @@ export function JobsList({ initialJobs, libraries, jobTypeCatalog = [], highligh
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {visibleJobs.map((job) => (
-              <JobRow
-                key={job.id}
-                job={job}
-                libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
-                category={catalogByType.get(job.type)?.category}
-                replayable={catalogByType.get(job.type)?.replayable ?? false}
-                highlighted={job.id === highlightJobId}
-                onCancel={handleCancel}
-                onReplay={handleReplay}
-                formatDate={formatDate}
-                formatDuration={formatDuration}
-              />
-            ))}
+            {visibleJobs.map((job) => {
+              const descriptor = resolveJobTypeDescriptor(job.type, { t, catalog: jobTypeCatalog });
+              return (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
+                  category={descriptor.category}
+                  replayable={descriptor.replayable}
+                  highlighted={job.id === highlightJobId}
+                  onCancel={handleCancel}
+                  onReplay={handleReplay}
+                  formatDate={formatDate}
+                  formatDuration={formatDuration}
+                />
+              );
+            })}
           </tbody>
         </table>
       </div>

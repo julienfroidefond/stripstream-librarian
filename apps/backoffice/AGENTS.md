@@ -89,15 +89,33 @@ La politique de dégradation est unique et vit dans ce module :
 
 - **fatal** (indisponible ⇒ `not-found`) : la série elle-même et sa bibliothèque ;
 - **non fatal** (valeur vide/défaut + nom de la section dans `model.degraded`) : la page de livres
-  courante (grille vide, comme avant), métadonnées,
-  liens de métadonnées, lien AniList, fournisseurs masqués, formats de renommage, séries
-  similaires, listes de lecture, notes, activité des lecteurs, tomes possédés et rapport de tomes
-  manquants.
+  courante (grille vide, comme avant), métadonnées, liens de métadonnées, lien AniList,
+  fournisseurs masqués, formats de renommage, séries similaires, listes de lecture, notes, activité
+  des lecteurs, tomes possédés et rapport de tomes manquants.
 
 La readiness d'acquisition garde son propre repli (`loadAcquisitionReadiness`) et n'apparaît donc
 pas dans `degraded`. `SeriesActionsToolbar` reçoit un unique prop `model` (`SeriesActionsModel`,
 dérivé du modèle de page) : toutes ses données viennent de là, jamais d'un fetch ou d'un calcul
 dans la page.
+
+## Jobs (descripteurs et flux live)
+
+`lib/jobs/descriptors.ts` est le registre unique des types de jobs connus du backoffice.
+Chaque entrée porte son libellé, sa description, sa catégorie, sa rejouabilité, son rapport
+optionnel et son plan de cartes (progression, statistiques d'index, résultats). La liste des jobs
+et la page de détail lisent leurs libellés, couleurs et cartes depuis `resolveJobTypeDescriptor`,
+jamais via des prédicats `job.type === "..."` : le catalogue serveur (`GET /index/job-types`) reste
+autoritaire pour `category` et `replayable`, le registre fournit la présentation de secours. Un
+type inconnu retombe sur le type brut, la catégorie `other` et aucune carte de résultat.
+
+Le module est pur (pas de React, pas d'appel API) pour rester importable par les Client
+Components. Les fetchers de rapports sont dans `lib/jobs/serverReports.ts` : la page serveur les
+injecte via `loaders` ; `JobResultCards` choisit la carte à partir de `descriptor.resultCard.kind`.
+
+`lib/useJobStream.ts` est la seule porte des flux SSE jobs, construits sur `lib/useEventSource.ts`
+(qui détient la reconnexion, le watchdog et la pause d'onglet). `useJobStream(id)` alimente la
+progression d'un job et se ferme dès son statut terminal ; `useJobsStream` alimente la liste.
+Aucun composant ne doit instancier `EventSource` directement.
 
 ## Brouillon de paramètres (Settings draft)
 
