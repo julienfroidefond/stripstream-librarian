@@ -919,7 +919,7 @@ const en: Record<TranslationKey, string> = {
   "settings.analysisTimeoutSeconds": "Book analysis timeout (seconds)",
   "settings.analysisTimeoutSecondsHelp": "Time the indexer allows to open one book (page count and cover). Large PDFs can need more than the page render timeout.",
   "settings.rateLimit": "Rate limit (req/s)",
-  "settings.limitsNote": "Download settings (concurrent downloads, connections, attempts, timeouts) apply immediately, without a restart. The \"Concurrent renders\" setting only takes effect after a server restart and controls both page rendering and thumbnail generation parallelism.",
+  "settings.limitsNote": "Download settings (concurrent downloads, connections, attempts, timeouts) apply immediately, without a restart. The \"Concurrent renders\" setting also applies without a restart: immediately for page rendering, and from the next analysis job for thumbnail generation parallelism.",
 
   // Settings - Thumbnails
   "settings.thumbnails": "Thumbnails",
