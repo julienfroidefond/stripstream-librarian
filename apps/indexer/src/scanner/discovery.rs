@@ -5,21 +5,19 @@ use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
-use stripstream_core::analysis::AnalysisStatus;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::batch::{
-    flush_all_batches, BookInsert, BookUpdate, ErrorInsert, EventInsert, FileInsert, FileUpdate,
-};
 use crate::job::is_job_cancelled;
 use crate::utils;
 use crate::AppState;
 
 use super::archive::restore_archived_data;
 use super::mtime::{handle_stale_deletions, upsert_directory_mtimes};
-use super::{ExistingFile, JobStats, BATCH_SIZE};
+use super::reconcile::{reconcile, FileStat, Observation};
+use super::writer::ScanWriter;
+use super::{ExistingFile, JobStats};
 
 const NOTIFICATION_ITEMS_LIMIT: usize = 10;
 
@@ -179,7 +177,7 @@ pub async fn scan_library_discovery(
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
-    let mut series_map: HashMap<String, Uuid> = series_rows
+    let series_map: HashMap<String, Uuid> = series_rows
         .into_iter()
         .map(|row| {
             let name: String = row.get("name");
@@ -221,13 +219,7 @@ pub async fn scan_library_discovery(
     let mut library_processed_count = 0i32;
     let mut last_progress_update = std::time::Instant::now();
 
-    // Batching buffers
-    let mut books_to_update: Vec<BookUpdate> = Vec::with_capacity(BATCH_SIZE);
-    let mut files_to_update: Vec<FileUpdate> = Vec::with_capacity(BATCH_SIZE);
-    let mut books_to_insert: Vec<BookInsert> = Vec::with_capacity(BATCH_SIZE);
-    let mut files_to_insert: Vec<FileInsert> = Vec::with_capacity(BATCH_SIZE);
-    let mut errors_to_insert: Vec<ErrorInsert> = Vec::with_capacity(BATCH_SIZE);
-    let mut events_to_insert: Vec<EventInsert> = Vec::with_capacity(BATCH_SIZE);
+    let mut writer = ScanWriter::new(state.pool.clone(), job_id, library_id, series_map);
 
     // Track discovered directory mtimes for upsert after scan
     let mut new_dir_mtimes: Vec<(String, DateTime<Utc>)> = Vec::new();
@@ -315,161 +307,22 @@ pub async fn scan_library_discovery(
             continue;
         }
 
-        // Check if this file is under a skipped dir
+        // Files under an unchanged directory are still reconciled: an in-place copy does not
+        // bump the parent mtime, and a filename rule may have changed since the last scan.
         let under_skipped = skipped_dir_prefixes
             .iter()
             .any(|p| local_path.starts_with(p.as_str()));
 
+        let library_path = state.library_root.resolve(&local_path)?;
+        let abs_path = library_path.to_db().to_string();
+        let lookup_path = library_path.to_local().to_string();
+
         if under_skipped {
-            // Dir unchanged — just mark file as seen so it's not deleted
-            let library_path = state.library_root.resolve(&local_path)?;
-            let abs_path = library_path.to_db().to_string();
-            let lookup_path = library_path.to_local().to_string();
+            // Unchanged dir: the file is present even if it cannot be stat'ed below.
             seen.insert(lookup_path.clone(), true);
-
-            if let Some(existing_file) = existing.get(&lookup_path) {
-                let file_id = existing_file.file_id;
-                let book_id = existing_file.book_id;
-                let old_fingerprint = existing_file.fingerprint.clone();
-                let Some(format) = detect_format(&path) else {
-                    continue;
-                };
-                let mut parsed = parse_metadata_fast(&path, format, root);
-                // Apply series rename mapping (same as normal scan branch)
-                if let Some(ref fs_series) = parsed.series {
-                    if let Some(renamed) = series_rename_map.get(fs_series) {
-                        debug!(
-                            "[SCAN] Mapping renamed series (skipped dir): '{}' → '{}'",
-                            fs_series, renamed
-                        );
-                        parsed.series = Some(renamed.clone());
-                    }
-                }
-
-                // Detect in-place file changes that the directory mtime did not reflect
-                // (e.g. `cp` over an existing file does not bump the parent dir mtime on
-                // macOS/Linux). Compute the fingerprint and trigger a re-index if it changed.
-                if let Ok(metadata) = std::fs::metadata(&path) {
-                    let mtime: DateTime<Utc> = metadata
-                        .modified()
-                        .map(DateTime::<Utc>::from)
-                        .unwrap_or_else(|_| Utc::now());
-                    if let Ok(fingerprint) =
-                        utils::compute_fingerprint(&path, metadata.len(), &mtime)
-                    {
-                        if fingerprint != old_fingerprint {
-                            debug!(
-                                target: "scan",
-                                "[SCAN] Fingerprint changed in skipped dir for {}: re-indexing",
-                                path.display()
-                            );
-                            let update_series_id = if let Some(ref series_name) = parsed.series {
-                                Some(
-                                    get_or_create_series_id(
-                                        &state.pool,
-                                        library_id,
-                                        series_name,
-                                        &mut series_map,
-                                    )
-                                    .await?,
-                                )
-                            } else {
-                                None
-                            };
-
-                            books_to_update.push(BookUpdate {
-                                book_id,
-                                title: parsed.title.clone(),
-                                kind: utils::kind_from_format(format).to_string(),
-                                format: format.as_str().to_string(),
-                                series_id: update_series_id,
-                                volume: parsed.volume,
-                                volume_type: parsed.volume_type.as_str().to_string(),
-                                page_count: None,
-                                clear_thumbnail: true,
-                                analysis_status: AnalysisStatus::Discovered,
-                            });
-
-                            files_to_update.push(FileUpdate {
-                                file_id,
-                                format: format.as_str().to_string(),
-                                size_bytes: metadata.len() as i64,
-                                mtime,
-                                fingerprint,
-                            });
-
-                            events_to_insert.push(EventInsert {
-                                job_id,
-                                event_type: "book_updated".to_string(),
-                                level: "info".to_string(),
-                                entity_type: Some("book".to_string()),
-                                entity_id: Some(book_id),
-                                entity_name: Some(abs_path.clone()),
-                                message: Some(format!(
-                                    "Book updated (fingerprint changed in skipped dir): {}",
-                                    path.display()
-                                )),
-                                detail: None,
-                            });
-
-                            stats.indexed_files += 1;
-
-                            if books_to_update.len() >= BATCH_SIZE
-                                || files_to_update.len() >= BATCH_SIZE
-                            {
-                                flush_all_batches(
-                                    &state.pool,
-                                    &mut books_to_update,
-                                    &mut files_to_update,
-                                    &mut books_to_insert,
-                                    &mut files_to_insert,
-                                    &mut errors_to_insert,
-                                    &mut events_to_insert,
-                                )
-                                .await?;
-                            }
-
-                            continue;
-                        }
-                    }
-                }
-
-                // Fingerprint unchanged — still check if title/volume need updating
-                // (e.g., file renamed, or volume not extracted on a previous scan)
-                let db_title = &existing_file.title;
-                let db_volume = existing_file.volume;
-                let db_volume_type = &existing_file.volume_type;
-                let parsed_vt = parsed.volume_type.as_str();
-                if db_title != &parsed.title
-                    || db_volume != parsed.volume
-                    || db_volume_type != parsed_vt
-                {
-                    debug!("[SCAN] Title/volume/type mismatch (skipped dir) for {:?}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
-                        path.file_name().unwrap_or_default(), db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
-                    let update_series_id = if let Some(ref series_name) = parsed.series {
-                        Some(
-                            get_or_create_series_id(
-                                &state.pool,
-                                library_id,
-                                series_name,
-                                &mut series_map,
-                            )
-                            .await?,
-                        )
-                    } else {
-                        None
-                    };
-                    sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
-                        .bind(&parsed.title)
-                        .bind(parsed.volume)
-                        .bind(parsed_vt)
-                        .bind(update_series_id)
-                        .bind(book_id)
-                        .execute(&state.pool)
-                        .await?;
-                }
+            if !existing.contains_key(&lookup_path) {
+                continue;
             }
-            continue;
         }
 
         let Some(format) = detect_format(&path) else {
@@ -483,12 +336,10 @@ pub async fn scan_library_discovery(
             path.display(),
             format
         );
-        stats.scanned_files += 1;
+        if !under_skipped {
+            stats.scanned_files += 1;
+        }
 
-        let abs_path_local = path.to_string_lossy().to_string();
-        let library_path = state.library_root.resolve(&abs_path_local)?;
-        let abs_path = library_path.to_db().to_string();
-        let lookup_path = library_path.to_local().to_string();
         let file_name = path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -517,7 +368,12 @@ pub async fn scan_library_discovery(
             .modified()
             .map(DateTime::<Utc>::from)
             .unwrap_or_else(|_| Utc::now());
-        let fingerprint = utils::compute_fingerprint(&path, metadata.len(), &mtime)?;
+        let file = FileStat {
+            format,
+            size_bytes: metadata.len() as i64,
+            mtime,
+            fingerprint: utils::compute_fingerprint(&path, metadata.len(), &mtime)?,
+        };
 
         library_processed_count += 1;
         *total_processed_count += 1;
@@ -542,16 +398,7 @@ pub async fn scan_library_discovery(
 
             if is_job_cancelled(&state.pool, job_id).await? {
                 info!("[JOB] Job {} cancelled by user, stopping...", job_id);
-                flush_all_batches(
-                    &state.pool,
-                    &mut books_to_update,
-                    &mut files_to_update,
-                    &mut books_to_insert,
-                    &mut files_to_insert,
-                    &mut errors_to_insert,
-                    &mut events_to_insert,
-                )
-                .await?;
+                writer.flush().await?;
                 return Err(anyhow::anyhow!("Job cancelled by user"));
             }
         }
@@ -574,134 +421,16 @@ pub async fn scan_library_discovery(
         }
 
         if let Some(existing_file) = existing.get(&lookup_path) {
-            let file_id = existing_file.file_id;
-            let book_id = existing_file.book_id;
-            let old_fingerprint = existing_file.fingerprint.clone();
-            if !is_full_rebuild && old_fingerprint == fingerprint {
-                // Even if fingerprint hasn't changed, check if title/volume need updating
-                // (e.g., after a rename, the file was renamed but title in books table is stale,
-                // or volume was not extracted on a previous scan)
-                let db_title = &existing_file.title;
-                let db_volume = existing_file.volume;
-                let db_volume_type = &existing_file.volume_type;
-                let parsed_vt = parsed.volume_type.as_str();
-                if db_title != &parsed.title
-                    || db_volume != parsed.volume
-                    || db_volume_type != parsed_vt
-                {
-                    debug!("[SCAN] Title/volume/type mismatch for {}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
-                        file_name, db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
-                    let update_series_id = if let Some(ref series_name) = parsed.series {
-                        Some(
-                            get_or_create_series_id(
-                                &state.pool,
-                                library_id,
-                                series_name,
-                                &mut series_map,
-                            )
-                            .await?,
-                        )
-                    } else {
-                        None
-                    };
-                    sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
-                        .bind(&parsed.title)
-                        .bind(parsed.volume)
-                        .bind(parsed_vt)
-                        .bind(update_series_id)
-                        .bind(book_id)
-                        .execute(&state.pool)
-                        .await?;
-
-                    events_to_insert.push(EventInsert {
-                        job_id,
-                        event_type: "book_updated".to_string(),
-                        level: "info".to_string(),
-                        entity_type: Some("book".to_string()),
-                        entity_id: Some(book_id),
-                        entity_name: Some(abs_path.clone()),
-                        message: Some(format!(
-                            "Title/volume updated: ('{}', {:?}) → ('{}', {:?})",
-                            db_title, db_volume, parsed.title, parsed.volume
-                        )),
-                        detail: None,
-                    });
-                }
-                continue;
-            }
-
-            debug!(
-                target: "scan",
-                "[SCAN] Updating: {} (fingerprint_changed={})",
-                file_name,
-                old_fingerprint != fingerprint
-            );
-
-            // Resolve series name → series_id
-            let update_series_id = if let Some(ref series_name) = parsed.series {
-                Some(
-                    get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
-                        .await?,
-                )
-            } else {
-                None
-            };
-
-            books_to_update.push(BookUpdate {
-                book_id,
-                title: parsed.title,
-                kind: utils::kind_from_format(format).to_string(),
-                format: format.as_str().to_string(),
-                series_id: update_series_id,
-                volume: parsed.volume,
-                volume_type: parsed.volume_type.as_str().to_string(),
-                // Reset page_count so analyzer re-processes this book
-                page_count: None,
-                clear_thumbnail: true,
-                analysis_status: AnalysisStatus::Discovered,
-            });
-
-            files_to_update.push(FileUpdate {
-                file_id,
-                format: format.as_str().to_string(),
-                size_bytes: metadata.len() as i64,
-                mtime,
-                fingerprint,
-            });
-
-            events_to_insert.push(EventInsert {
-                job_id,
-                event_type: "book_updated".to_string(),
-                level: "info".to_string(),
-                entity_type: Some("book".to_string()),
-                entity_id: Some(book_id),
-                entity_name: Some(abs_path.clone()),
-                message: Some(format!("Book updated (fingerprint changed): {}", file_name)),
-                detail: None,
-            });
-
-            stats.indexed_files += 1;
-
-            if books_to_update.len() >= BATCH_SIZE || files_to_update.len() >= BATCH_SIZE {
-                flush_all_batches(
-                    &state.pool,
-                    &mut books_to_update,
-                    &mut files_to_update,
-                    &mut books_to_insert,
-                    &mut files_to_insert,
-                    &mut errors_to_insert,
-                    &mut events_to_insert,
-                )
+            let observation = Observation::of(existing_file, file);
+            let reconciliation = reconcile(existing_file, &parsed, observation);
+            writer
+                .apply(reconciliation, &abs_path, &file_name, stats)
                 .await?;
-            }
-
             continue;
         }
 
         // New file — insert with page_count = NULL (analyzer fills it in)
         debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
-        let book_id = Uuid::new_v4();
-        let file_id = Uuid::new_v4();
         let new_book_title = parsed.title.clone();
 
         // Track new series
@@ -721,81 +450,14 @@ pub async fn scan_library_discovery(
             );
         }
 
-        // Resolve series name → series_id
-        let insert_series_id = if let Some(ref series_name) = parsed.series {
-            Some(
-                get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
-                    .await?,
-            )
-        } else {
-            None
-        };
-
-        books_to_insert.push(BookInsert {
-            book_id,
-            library_id,
-            kind: utils::kind_from_format(format).to_string(),
-            format: format.as_str().to_string(),
-            title: parsed.title,
-            series_id: insert_series_id,
-            volume: parsed.volume,
-            volume_type: parsed.volume_type.as_str().to_string(),
-            page_count: None,
-            thumbnail_path: None,
-            analysis_status: AnalysisStatus::Discovered,
-        });
-
-        files_to_insert.push(FileInsert {
-            file_id,
-            book_id,
-            format: format.as_str().to_string(),
-            abs_path: abs_path.clone(),
-            size_bytes: metadata.len() as i64,
-            mtime,
-            fingerprint,
-            parse_status: "ok".to_string(),
-            parse_error: None,
-        });
-
-        events_to_insert.push(EventInsert {
-            job_id,
-            event_type: "book_added".to_string(),
-            level: "info".to_string(),
-            entity_type: Some("book".to_string()),
-            entity_id: Some(book_id),
-            entity_name: Some(abs_path.clone()),
-            message: Some(format!("New book discovered: {}", file_name)),
-            detail: None,
-        });
-
-        stats.indexed_files += 1;
-        push_capped_item(&mut stats.new_book_titles, new_book_title);
-
-        if books_to_insert.len() >= BATCH_SIZE || files_to_insert.len() >= BATCH_SIZE {
-            flush_all_batches(
-                &state.pool,
-                &mut books_to_update,
-                &mut files_to_update,
-                &mut books_to_insert,
-                &mut files_to_insert,
-                &mut errors_to_insert,
-                &mut events_to_insert,
-            )
+        writer
+            .insert_new(parsed, file, &abs_path, &file_name, stats)
             .await?;
-        }
+        push_capped_item(&mut stats.new_book_titles, new_book_title);
     }
 
     // Flush remaining batches
-    flush_all_batches(
-        &state.pool,
-        &mut books_to_update,
-        &mut files_to_update,
-        &mut books_to_insert,
-        &mut files_to_insert,
-        &mut errors_to_insert,
-        &mut events_to_insert,
-    )
-    .await?;
+    writer.flush().await?;
 
     if !skipped_dir_prefixes.is_empty() {
         info!(
