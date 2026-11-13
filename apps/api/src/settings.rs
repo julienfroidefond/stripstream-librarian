@@ -10,6 +10,7 @@ use std::path::Path as FsPath;
 use std::time::Duration;
 use stripstream_core::paths::normalize_lexically;
 use stripstream_core::settings::load_setting;
+use stripstream_thumbnails::{ThumbnailSettings, DEFAULT_DIRECTORY as DEFAULT_THUMBNAIL_DIRECTORY};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -204,10 +205,11 @@ fn validate_setting(
     key: &str,
     value: &Value,
     library_root: &stripstream_core::paths::LibraryRoot,
+    thumbnail_directory: &FsPath,
 ) -> Result<(), ApiError> {
     match key {
         "limits" => validate_limits(value),
-        "cache" => validate_cache(value, library_root),
+        "cache" => validate_cache(value, library_root, thumbnail_directory),
         _ => Ok(()),
     }
 }
@@ -284,6 +286,7 @@ fn validate_limits(value: &Value) -> Result<(), ApiError> {
 fn validate_cache(
     value: &Value,
     library_root: &stripstream_core::paths::LibraryRoot,
+    thumbnail_directory: &FsPath,
 ) -> Result<(), ApiError> {
     if let Some(max_mb) = value.get("memory_max_size_mb") {
         let max_mb = max_mb
@@ -299,7 +302,7 @@ fn validate_cache(
         let dir = dir
             .as_str()
             .ok_or_else(|| ApiError::bad_request("cache.directory must be a string"))?;
-        if !is_safe_cache_directory(dir, library_root) {
+        if !is_safe_cache_directory(dir, library_root, thumbnail_directory) {
             return Err(ApiError::bad_request(
                 "cache.directory must be an absolute path outside protected directories",
             ));
@@ -309,10 +312,12 @@ fn validate_cache(
 }
 
 /// Reject cache directories that would make `clear_cache` destructive if pointed
-/// at a system or data root (`remove_dir_all` runs on this path).
+/// at a system or data root (`remove_dir_all` runs on this path). The thumbnail
+/// store (configured and default directories) is protected too.
 fn is_safe_cache_directory(
     path: &str,
     library_root: &stripstream_core::paths::LibraryRoot,
+    thumbnail_directory: &FsPath,
 ) -> bool {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -330,8 +335,9 @@ fn is_safe_cache_directory(
     }
 
     let protected = [
-        library_root.local_root().to_string_lossy().into_owned(),
-        std::env::var("THUMBNAIL_DIRECTORY").unwrap_or_else(|_| "/data/thumbnails".to_string()),
+        library_root.local_root(),
+        thumbnail_directory,
+        FsPath::new(DEFAULT_THUMBNAIL_DIRECTORY),
     ];
 
     const SYSTEM_ROOTS: &[&str] = &[
@@ -340,8 +346,8 @@ fn is_safe_cache_directory(
 
     !SYSTEM_ROOTS
         .iter()
-        .copied()
-        .chain(protected.iter().map(|s| s.as_str()))
+        .map(FsPath::new)
+        .chain(protected)
         .any(|root| normalized.starts_with(root))
 }
 
@@ -366,7 +372,8 @@ pub async fn update_setting(
     let mut value = body.value;
     // Empty/redacted secrets keep the stored value (the form never receives it).
     preserve_secrets(&state.pool, &key, &mut value).await?;
-    validate_setting(&key, &value, &state.library_root)?;
+    let thumbnail_directory = ThumbnailSettings::load(&state.pool).await?.directory;
+    validate_setting(&key, &value, &state.library_root, &thumbnail_directory)?;
 
     let row = sqlx::query(
         r#"
@@ -432,7 +439,8 @@ pub async fn clear_cache(
     state.page_cache.lock().await.clear();
     let cache_dir = state.settings.read().await.cache_directory.clone();
 
-    if !is_safe_cache_directory(&cache_dir, &state.library_root) {
+    let thumbnail_directory = ThumbnailSettings::load(&state.pool).await?.directory;
+    if !is_safe_cache_directory(&cache_dir, &state.library_root, &thumbnail_directory) {
         return Err(ApiError::bad_request(format!(
             "refusing to clear unsafe cache directory '{cache_dir}'"
         )));
@@ -586,9 +594,13 @@ pub(crate) fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
     security(("Bearer" = []))
 )]
 pub async fn get_thumbnail_stats(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<ThumbnailStats>, ApiError> {
-    let directory = thumbnail_directory(&_state.pool).await;
+    let directory = ThumbnailSettings::load_or_default(&state.pool)
+        .await
+        .directory
+        .to_string_lossy()
+        .into_owned();
 
     let directory_clone = directory.clone();
     let stats = tokio::task::spawn_blocking(move || {
@@ -613,25 +625,6 @@ pub async fn get_thumbnail_stats(
     .map_err(|e| ApiError::internal(format!("thumbnail stats failed: {}", e)))?;
 
     Ok(Json(stats))
-}
-
-/// Directory the indexer writes thumbnails to: the `thumbnail` setting, falling
-/// back to the legacy container path.
-///
-/// Never fails: diagnostics must stay readable even when the settings row is
-/// missing or the database is degraded.
-pub(crate) async fn thumbnail_directory(pool: &sqlx::PgPool) -> String {
-    load_setting::<serde_json::Value>(pool, "thumbnail")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|value| {
-            value
-                .get("directory")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "/data/thumbnails".to_string())
 }
 
 // ---------------------------------------------------------------------------

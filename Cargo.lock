@@ -106,6 +106,7 @@ dependencies = [
  "sqlx",
  "stripstream-core",
  "stripstream-jobs",
+ "stripstream-thumbnails",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -1596,7 +1597,6 @@ dependencies = [
  "chrono",
  "futures",
  "image",
- "jpeg-decoder",
  "notifications",
  "num_cpus",
  "parsers",
@@ -1606,13 +1606,13 @@ dependencies = [
  "sqlx",
  "stripstream-core",
  "stripstream-jobs",
+ "stripstream-thumbnails",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
  "walkdir",
- "webp",
  "zip",
 ]
 
@@ -3371,6 +3371,23 @@ dependencies = [
  "sqlx",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "stripstream-thumbnails"
+version = "3.32.148"
+dependencies = [
+ "anyhow",
+ "image",
+ "jpeg-decoder",
+ "serde_json",
+ "sqlx",
+ "stripstream-core",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "webp",
 ]
 
 [[package]]

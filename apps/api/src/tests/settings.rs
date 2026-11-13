@@ -38,11 +38,20 @@ fn test_library_root() -> stripstream_core::paths::LibraryRoot {
 
 /// Local wrappers keep the many validation tests focused on their input.
 fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
-    super::validate_setting(key, value, &test_library_root())
+    super::validate_setting(
+        key,
+        value,
+        &test_library_root(),
+        std::path::Path::new("/srv/thumbs"),
+    )
 }
 
 fn is_safe_cache_directory(path: &str) -> bool {
-    super::is_safe_cache_directory(path, &test_library_root())
+    super::is_safe_cache_directory(
+        path,
+        &test_library_root(),
+        std::path::Path::new("/srv/thumbs"),
+    )
 }
 
 fn key_path(key: &str) -> AxumPath<String> {
@@ -744,6 +753,15 @@ fn is_safe_cache_directory_rejects_protected_roots() {
     assert!(!is_safe_cache_directory("/"));
     assert!(!is_safe_cache_directory("/etc"));
     assert!(!is_safe_cache_directory(""));
+}
+
+#[test]
+fn is_safe_cache_directory_protects_the_thumbnail_store() {
+    // The configured thumbnail directory (here `/srv/thumbs`) and the default one.
+    assert!(!is_safe_cache_directory("/srv/thumbs"));
+    assert!(!is_safe_cache_directory("/srv/thumbs/cache"));
+    assert!(!is_safe_cache_directory("/data/thumbnails"));
+    assert!(is_safe_cache_directory("/srv/cache"));
 }
 
 // ---------------------------------------------------------------------------

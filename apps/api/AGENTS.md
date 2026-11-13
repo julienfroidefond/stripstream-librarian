@@ -85,8 +85,11 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Rate limit lecture** : middleware `read_rate_limit` sur les routes read, fenêtre de 1s **par client** (clé = token `Authorization`), limite `rate_limit_per_second` (défaut 120). Dépassement → `429` JSON `{"error":"rate limit exceeded"}` + `Retry-After: 1`.
 - **Métriques** : `/metrics` expose `requests_total`, `page_cache_hits`, `page_cache_misses` (atomics dans `AppState.metrics`).
 - **Thumbnails** : la génération en masse est faite par l'indexer (phase 2), mais `GET
-  /books/{id}/thumbnail` peut rendre et persister une miniature à la demande. Cette persistance ne
-  promeut que `cover_pending` → `complete` ; elle n'écrase jamais `analyzing` ou `failed`.
+  /books/{id}/thumbnail` peut rendre et persister une miniature à la demande
+  (`pages::render_book_cover` + `ThumbnailStore::publish`, mêmes format/dimensions/qualité/répertoire
+  que l'indexer via `ThumbnailSettings::load`). Cette persistance ne promeut que `cover_pending` →
+  `complete` ; elle n'écrase jamais `analyzing` ou `failed`. Le répertoire des miniatures (configuré
+  et défaut) est protégé contre `cache.directory`.
 - **Swagger** : accessible sur `/swagger-ui`, spec JSON sur `/openapi.json`.
 - **Torrent import, mode replace** : quand `replace_existing = true`, ne PAS filtrer par
   `expected_volumes` — importer tous les fichiers du torrent.

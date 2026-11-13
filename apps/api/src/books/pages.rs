@@ -21,6 +21,8 @@ use tracing::{error, info, instrument, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use stripstream_thumbnails::{fast_jpeg_decode, EncodedThumbnail, ThumbnailStore};
+
 use crate::{error::ApiError, state::AppState};
 
 fn parse_filter(s: &str) -> image::imageops::FilterType {
@@ -578,14 +580,13 @@ fn image_response(
     (StatusCode::OK, headers, Body::from(body_bytes)).into_response()
 }
 
-/// Render page 1 of a book (for thumbnail fallback or thumbnail checkup). Uses thumbnail dimensions by default.
-/// Render page 1 as a thumbnail fallback. Returns (bytes, content_type).
-pub async fn render_book_page_1(
+/// Extract page 1 of a book and encode it with the thumbnail store settings
+/// (the on-the-fly fallback of `GET /books/{id}/thumbnail`).
+pub async fn render_book_cover(
     state: &AppState,
     book_id: Uuid,
-    width: u32,
-    quality: u8,
-) -> Result<(Vec<u8>, &'static str), ApiError> {
+    store: &ThumbnailStore,
+) -> Result<EncodedThumbnail, ApiError> {
     let row = sqlx::query(
         r#"SELECT abs_path, format FROM book_files WHERE book_id = $1 ORDER BY updated_at DESC LIMIT 1"#,
     )
@@ -601,7 +602,7 @@ pub async fn render_book_page_1(
         .resolve(&abs_path)?
         .to_local()
         .to_string();
-    let input_format: String = row.get("format");
+    let format = parse_book_format(&row.get::<String, _>("format"))?;
 
     if !std::path::Path::new(&abs_path).exists() {
         return Err(ApiError::not_found("source file not accessible"));
@@ -614,34 +615,33 @@ pub async fn render_book_page_1(
         .await
         .map_err(|_| ApiError::internal("render limiter unavailable"))?;
 
-    let (timeout_secs, filter_str) = {
-        let s = state.settings.read().await;
-        (s.timeout_seconds, s.image_filter.clone())
-    };
-    let filter = parse_filter(&filter_str);
+    let timeout_secs = state.settings.read().await.timeout_seconds;
+    let store = store.clone();
+    let pdf_scale = store.settings().width.max(store.settings().height);
 
-    let abs_path_clone = abs_path.clone();
-    let bytes = tokio::time::timeout(
+    tokio::time::timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            render_page(
-                &abs_path_clone,
-                &input_format,
-                1,
-                &OutputFormat::Original,
-                quality,
-                width,
-                filter,
-            )
+            let page = parsers::extract_page(Path::new(&abs_path), format, 1, pdf_scale)
+                .map_err(|e| ApiError::internal(format!("page extraction failed: {e}")))?;
+            store
+                .encode(&page)
+                .map_err(|e| ApiError::internal(format!("thumbnail encode failed: {e}")))
         }),
     )
     .await
     .map_err(|_| ApiError::internal("page rendering timeout"))?
-    .map_err(|e| ApiError::internal(format!("render task failed: {e}")))?;
+    .map_err(|e| ApiError::internal(format!("render task failed: {e}")))?
+}
 
-    let bytes = bytes?;
-    let content_type = detect_content_type(&bytes);
-    Ok((bytes, content_type))
+fn parse_book_format(input_format: &str) -> Result<parsers::BookFormat, ApiError> {
+    match input_format {
+        "cbz" => Ok(parsers::BookFormat::Cbz),
+        "cbr" => Ok(parsers::BookFormat::Cbr),
+        "pdf" => Ok(parsers::BookFormat::Pdf),
+        "epub" => Ok(parsers::BookFormat::Epub),
+        _ => Err(ApiError::bad_request("unsupported source format")),
+    }
 }
 
 fn render_page(
@@ -653,13 +653,7 @@ fn render_page(
     width: u32,
     filter: image::imageops::FilterType,
 ) -> Result<Vec<u8>, ApiError> {
-    let format = match input_format {
-        "cbz" => parsers::BookFormat::Cbz,
-        "cbr" => parsers::BookFormat::Cbr,
-        "pdf" => parsers::BookFormat::Pdf,
-        "epub" => parsers::BookFormat::Epub,
-        _ => return Err(ApiError::bad_request("unsupported source format")),
-    };
+    let format = parse_book_format(input_format)?;
 
     let pdf_render_width = if width > 0 { width } else { 1200 };
     let page_bytes = parsers::extract_page(
@@ -689,31 +683,6 @@ fn render_page(
     }
 
     transcode_image(&page_bytes, out_format, quality, width, filter)
-}
-
-/// Fast JPEG decode with DCT scaling: decodes directly at reduced resolution.
-fn fast_jpeg_decode(input: &[u8], target_w: u32, target_h: u32) -> Option<image::DynamicImage> {
-    if image::guess_format(input).ok()? != ImageFormat::Jpeg {
-        return None;
-    }
-    let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(input));
-    decoder.read_info().ok()?;
-    decoder.scale(target_w as u16, target_h as u16).ok()?;
-    let pixels = decoder.decode().ok()?;
-    let info = decoder.info()?;
-    let w = info.width as u32;
-    let h = info.height as u32;
-    match info.pixel_format {
-        jpeg_decoder::PixelFormat::RGB24 => {
-            let buf = image::RgbImage::from_raw(w, h, pixels)?;
-            Some(image::DynamicImage::ImageRgb8(buf))
-        }
-        jpeg_decoder::PixelFormat::L8 => {
-            let buf = image::GrayImage::from_raw(w, h, pixels)?;
-            Some(image::DynamicImage::ImageLuma8(buf))
-        }
-        _ => None,
-    }
 }
 
 fn transcode_image(
@@ -746,6 +715,7 @@ fn transcode_image(
     // For JPEG with resize: use DCT scaling to decode at ~target size (much faster)
     let mut image = if width > 0 {
         fast_jpeg_decode(input, width, u32::MAX)
+            .map(|decoded| decoded.image)
             .unwrap_or_else(|| image::load_from_memory(input).unwrap_or_default())
     } else {
         image::load_from_memory(input)

@@ -19,6 +19,7 @@ lru.workspace = true
 notifications = { path = "../../crates/notifications" }
 stripstream-core = { path = "../../crates/core" }
 stripstream-jobs = { path = "../../crates/jobs" }
+stripstream-thumbnails = { path = "../../crates/thumbnails" }
 parsers = { path = "../../crates/parsers" }
 rand.workspace = true
 tokio-stream = "0.1"
