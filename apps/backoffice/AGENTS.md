@@ -192,6 +192,15 @@ un module pur : `lib/series/editForm.ts` (`seriesEditDefaults`) et `lib/librarie
 `applyLibraryWrites` les applique séquentiellement et s'arrête au premier échec). Après une
 écriture : `router.refresh()`, jamais `window.location.reload()`.
 
+## Filtres de catalogue
+
+`lib/catalogFilters.ts` (pur) possède les tables d'options des selects de `LiveSearchForm`
+(`seriesStatusLabels`/`seriesStatusOptions`, `readingStatusOptions`, `libraryOptions`,
+`missingBooksOptions`, `metadataOptions`, `sortOptions(t, kind)`) et la règle
+`hasActiveFilters(values, fields)`. Une page construit `filterValues` / `filterFields` une fois,
+les passe au formulaire et choisit son message d'état vide avec la même règle que le bouton
+« effacer » du formulaire ; pas de table `KNOWN_STATUSES` ni de `hasFilters` recopiés.
+
 ## Fraîcheur du cache (Cache invalidation)
 
 `lib/cache/` est la seule porte du cache de données Next ([ADR 0021](../../docs/adr/0021-backoffice-cache-invalidation.md)) :

@@ -8,7 +8,8 @@ import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchPar
 import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
-import { LiveSearchForm } from "@/app/components/LiveSearchForm";
+import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
+import { hasActiveFilters, libraryOptions, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalogFilters";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
@@ -88,55 +89,13 @@ export default async function SeriesPage({
 
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
-  const sortOptions = [
-    { value: "", label: t("books.sortTitle") },
-    { value: "latest", label: t("books.sortLatest") },
-    { value: "release_date", label: t("series.sortReleaseDate") },
-    { value: "community_score", label: t("series.sortCommunityScore") },
-  ];
-
-  const hasFilters = Boolean(
-    catalogQuery.search || catalogQuery.libraryId || catalogQuery.readingStatus ||
-    catalogQuery.sort || catalogQuery.seriesStatus || catalogQuery.hasMissing ||
-    catalogQuery.shelf || catalogQuery.volumeType || catalogQuery.metadataProvider ||
-    catalogQuery.rating
-  );
-
-  const libraryOptions = [
-    { value: "", label: t("books.allLibraries") },
-    ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
-  ];
-
-  const statusOptions = [
-    { value: "", label: t("common.all") },
-    { value: "unread", label: t("status.unread") },
-    { value: "reading", label: t("status.reading") },
-    { value: "read", label: t("status.read") },
-  ];
-
-  const KNOWN_STATUSES: Record<string, string> = {
-    ongoing: t("seriesStatus.ongoing"),
-    ended: t("seriesStatus.ended"),
-    hiatus: t("seriesStatus.hiatus"),
-    cancelled: t("seriesStatus.cancelled"),
-    upcoming: t("seriesStatus.upcoming"),
-  };
+  const KNOWN_STATUSES = seriesStatusLabels(t);
   const RECOMMENDATION_REASON_LABELS: Record<string, string> = {
     same_author: t("series.recommendationReason.same_author"),
     same_genre: t("series.recommendationReason.same_genre"),
     same_publisher: t("series.recommendationReason.same_publisher"),
     same_reading_list: t("series.recommendationReason.same_reading_list"),
   };
-  const seriesStatusOptions = [
-    { value: "", label: t("seriesStatus.allStatuses") },
-    ...dbStatuses.map((s) => ({ value: s, label: KNOWN_STATUSES[s] || s })),
-  ];
-
-  const missingOptions = [
-    { value: "", label: t("common.all") },
-    { value: "true", label: t("series.missingBooks") },
-  ];
-
   const wishlistOptions = [
     { value: "", label: t("common.all") },
     { value: "wishlist", label: t("series.wishlistOnly") },
@@ -151,12 +110,31 @@ export default async function SeriesPage({
     { value: "integral", label: t("volumeType.integral") },
   ];
 
-  const metadataOptions = [
-    { value: "", label: t("series.metadataAll") },
-    { value: "linked", label: t("series.metadataLinked") },
-    { value: "unlinked", label: t("series.metadataUnlinked") },
-    ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
+  const filterValues: Record<string, string> = {
+    q: catalogQuery.search || "",
+    library: catalogQuery.libraryId || "",
+    status: catalogQuery.readingStatus || "",
+    series_status: catalogQuery.seriesStatus || "",
+    has_missing: catalogQuery.hasMissing ? "true" : "",
+    books_filter: catalogQuery.shelf || "",
+    volume_type: catalogQuery.volumeType || "",
+    metadata_provider: catalogQuery.metadataProvider || "",
+    sort: catalogQuery.sort || "",
+    ...(hasActiveUser ? { rated_only: catalogQuery.rating === "rated" ? "true" : catalogQuery.rating || "" } : {}),
+  };
+  const filterFields: LiveSearchField[] = [
+    { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
+    { name: "library", type: "select", label: t("books.library"), options: libraryOptions(t, libraries) },
+    ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: readingStatusOptions(t) }] : []),
+    { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions(t, dbStatuses) },
+    { name: "has_missing", type: "select", label: t("series.missing"), options: missingBooksOptions(t) },
+    { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
+    { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
+    { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions(t, metadataProviders) },
+    { name: "sort", type: "select", label: t("books.sort"), options: sortOptions(t, "series") },
+    ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.myRatings"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }, { value: "unrated", label: t("series.unratedOnly") }] }] : []),
   ];
+  const hasFilters = hasActiveFilters(filterValues, filterFields);
 
   return (
     <>
@@ -220,30 +198,8 @@ export default async function SeriesPage({
         <LiveSearchForm
           className="mb-6"
           basePath="/series"
-          initialValues={{
-            q: catalogQuery.search || "",
-            library: catalogQuery.libraryId || "",
-            status: catalogQuery.readingStatus || "",
-            series_status: catalogQuery.seriesStatus || "",
-            has_missing: catalogQuery.hasMissing ? "true" : "",
-            books_filter: catalogQuery.shelf || "",
-            volume_type: catalogQuery.volumeType || "",
-            metadata_provider: catalogQuery.metadataProvider || "",
-            sort: catalogQuery.sort || "",
-            ...(hasActiveUser ? { rated_only: catalogQuery.rating === "rated" ? "true" : catalogQuery.rating || "" } : {}),
-          }}
-          fields={[
-            { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
-            { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-            ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
-            { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
-            { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
-            { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
-            { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
-            { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
-            { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-            ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.myRatings"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }, { value: "unrated", label: t("series.unratedOnly") }] }] : []),
-          ]}
+          initialValues={filterValues}
+          fields={filterFields}
         />
       )}
 

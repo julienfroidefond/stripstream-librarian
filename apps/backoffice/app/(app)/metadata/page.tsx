@@ -12,7 +12,8 @@ import {
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramInt, paramString, paramStringOr } from "@/lib/searchParams";
 import { gapsForTab, isGapTab, isValidGap, totalCountKey, type GapTab } from "@/lib/metadataGaps";
-import { LiveSearchForm } from "@/app/components/LiveSearchForm";
+import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
+import { hasActiveFilters, libraryOptions, seriesStatusLabels } from "@/lib/catalogFilters";
 import { MetadataBooksTable, MetadataSeriesTable } from "@/app/components/MetadataTable";
 import { Card, CardContent, Icon, OffsetPagination, PendingCount } from "@/app/components/ui";
 
@@ -91,20 +92,15 @@ export default async function MetadataPage({
 
   const gaps = gapsForTab(tab);
 
-  const knownStatuses: Record<string, string> = {
-    ongoing: t("seriesStatus.ongoing"),
-    ended: t("seriesStatus.ended"),
-    hiatus: t("seriesStatus.hiatus"),
-    cancelled: t("seriesStatus.cancelled"),
-    upcoming: t("seriesStatus.upcoming"),
-  };
+  const knownStatuses = seriesStatusLabels(t);
 
-  const libraryOptions = [
-    { value: "", label: t("books.allLibraries") },
-    ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
+  const filterValues: Record<string, string> = { q: searchQuery, library: libraryId || "" };
+  const filterFields: LiveSearchField[] = [
+    { name: "q", type: "text", label: t("common.search"), placeholder: t("metadata.gapsSearchPlaceholder") },
+    { name: "library", type: "select", label: t("books.library"), options: libraryOptions(t, libraries) },
   ];
-
-  const hasFilter = Boolean(gap || searchQuery || libraryId);
+  // `gap` comes from the summary cards, not from the form.
+  const hasFilter = Boolean(gap) || hasActiveFilters(filterValues, filterFields);
 
   return (
     <>
@@ -137,11 +133,8 @@ export default async function MetadataPage({
         className="mb-6"
         basePath="/metadata"
         hiddenValues={{ tab }}
-        initialValues={{ q: searchQuery, library: libraryId || "" }}
-        fields={[
-          { name: "q", type: "text", label: t("common.search"), placeholder: t("metadata.gapsSearchPlaceholder") },
-          { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-        ]}
+        initialValues={filterValues}
+        fields={filterFields}
       />
 
       {summaryFailed && (

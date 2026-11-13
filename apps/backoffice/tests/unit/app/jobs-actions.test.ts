@@ -24,8 +24,10 @@ vi.mock("@/lib/api", () => api);
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
+import { ApiError } from "@/lib/api/errors";
 import {
   triggerMetadataRematch,
+  triggerReadingStatusPush,
   triggerRebuild,
   triggerTelegramSync,
 } from "@/app/(app)/jobs/actions";
@@ -84,5 +86,43 @@ describe("jobs server actions", () => {
 
     expect(api.startTelegramSync).toHaveBeenCalledTimes(1);
     expect(redirect).toHaveBeenCalledWith("/jobs?highlight=job-3");
+  });
+
+  it("redirects with the upstream error detail of an ApiError", async () => {
+    api.rebuildIndex.mockRejectedValue(
+      new ApiError(400, 'API /index/rebuild failed (400): {"error":"library is busy"}', "library is busy"),
+    );
+
+    await triggerRebuild(formDataWithLibraries("lib-1"));
+
+    expect(redirect).toHaveBeenCalledWith(`/jobs?error=${encodeURIComponent("library is busy")}`);
+  });
+
+  it("falls back to the error message without an upstream detail", async () => {
+    api.startReadingStatusPush.mockRejectedValue(new Error("fetch failed"));
+
+    await triggerReadingStatusPush(formDataWithLibraries("lib-1"));
+
+    expect(redirect).toHaveBeenCalledWith(`/jobs?error=${encodeURIComponent("fetch failed")}`);
+  });
+
+  it("redirects global actions on failure too", async () => {
+    api.startTelegramSync.mockRejectedValue(new ApiError(503, "API /telegram failed (503): down"));
+
+    await triggerTelegramSync(new FormData());
+
+    expect(redirect).toHaveBeenCalledWith(
+      `/jobs?error=${encodeURIComponent("API /telegram failed (503): down")}`,
+    );
+  });
+
+  it("rethrows Next's navigation signal instead of reporting it as an error", async () => {
+    const navigation = Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/jobs" });
+    vi.mocked(redirect).mockImplementationOnce(() => {
+      throw navigation;
+    });
+
+    await expect(triggerRebuild(formDataWithLibraries("lib-1"))).rejects.toBe(navigation);
+    expect(redirect).toHaveBeenCalledTimes(1);
   });
 });

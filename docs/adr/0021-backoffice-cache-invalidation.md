@@ -22,8 +22,8 @@ Les routes et server actions disent *ce qui s'est passé*, jamais *quoi expirer*
 
 - Un test de garde (`tests/unit/lib/cache/guard.test.ts`) et une règle ESLint
   (`no-restricted-imports`) interdisent `revalidateTag` / `revalidatePath` / `updateTag` et les
-  tags littéraux hors de `lib/cache`. Seule exception tracée : `TokensTab` (settings, migration à
-  faire).
+  tags littéraux hors de `lib/cache`. Seule exception tracée à l'origine, `TokensTab` a depuis
+  été migré (`tokens.changed`, `users.changed`) : la liste d'exceptions est vide.
 - Les server actions de `app/actions/cache.ts` passent de `updateTag` à
   `revalidateTag(tag, { expire: 0 })`, de sémantique équivalente (la requête suivante attend des
   données fraîches) et utilisable partout.

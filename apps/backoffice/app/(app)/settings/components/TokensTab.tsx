@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+import { invalidateAfter } from "@/lib/cache";
 import { redirect } from "next/navigation";
 import { listTokens, createToken, revokeToken, deleteToken, updateToken, fetchUsers, createUser, deleteUser, updateUser, TokenDto, UserDto, fetchAllGenres, fetchUserGenreRestrictions, setUserGenreRestrictions } from "@/lib/api";
 import { SettingsCard, Button, Badge, FormField, FormInput, FormSelect, FormRow } from "@/app/components/ui";
@@ -28,7 +28,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     const userId = (formData.get("user_id") as string) || undefined;
     if (name) {
       const result = await createToken(name, scope, userId);
-      revalidatePath("/settings");
+      invalidateAfter({ type: "tokens.changed" });
       redirect(`/settings?tab=tokens&created=${encodeURIComponent(result.token)}`);
     }
   }
@@ -37,14 +37,14 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     "use server";
     const id = formData.get("id") as string;
     await revokeToken(id);
-    revalidatePath("/settings");
+    invalidateAfter({ type: "tokens.changed" });
   }
 
   async function deleteTokenAction(formData: FormData) {
     "use server";
     const id = formData.get("id") as string;
     await deleteToken(id);
-    revalidatePath("/settings");
+    invalidateAfter({ type: "tokens.changed" });
   }
 
   async function createUserAction(formData: FormData) {
@@ -52,7 +52,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     const username = formData.get("username") as string;
     if (username) {
       await createUser(username);
-      revalidatePath("/settings");
+      invalidateAfter({ type: "users.changed" });
     }
   }
 
@@ -60,7 +60,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     "use server";
     const id = formData.get("id") as string;
     await deleteUser(id);
-    revalidatePath("/settings");
+    invalidateAfter({ type: "users.changed" });
   }
 
   async function renameUserAction(formData: FormData) {
@@ -69,7 +69,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     const username = formData.get("username") as string;
     if (username?.trim()) {
       await updateUser(id, username.trim());
-      revalidatePath("/settings");
+      invalidateAfter({ type: "users.changed" });
     }
   }
 
@@ -79,7 +79,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     const raw = formData.get("blocked_genres") as string;
     const blockedGenres: string[] = raw ? JSON.parse(raw) : [];
     await setUserGenreRestrictions(id, blockedGenres);
-    revalidatePath("/settings");
+    invalidateAfter({ type: "users.changed" });
   }
 
   async function reassignTokenAction(formData: FormData) {
@@ -87,7 +87,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     const id = formData.get("id") as string;
     const userId = (formData.get("user_id") as string) || null;
     await updateToken(id, userId);
-    revalidatePath("/settings");
+    invalidateAfter({ type: "tokens.changed" });
   }
 
   return (

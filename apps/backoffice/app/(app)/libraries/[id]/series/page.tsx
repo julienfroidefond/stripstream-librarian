@@ -5,7 +5,8 @@ import { OffsetPagination } from "@/app/components/ui";
 import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
-import { LiveSearchForm } from "@/app/components/LiveSearchForm";
+import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
+import { hasActiveFilters, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalogFilters";
 import { notFound } from "next/navigation";
 import { LibrarySubPageHeader } from "@/app/components/LibrarySubPageHeader";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -57,51 +58,23 @@ export default async function LibrarySeriesPage({
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
 
-  const KNOWN_STATUSES: Record<string, string> = {
-    ongoing: t("seriesStatus.ongoing"),
-    ended: t("seriesStatus.ended"),
-    hiatus: t("seriesStatus.hiatus"),
-    cancelled: t("seriesStatus.cancelled"),
-    upcoming: t("seriesStatus.upcoming"),
+  const KNOWN_STATUSES = seriesStatusLabels(t);
+
+  const filterValues: Record<string, string> = {
+    status: catalogQuery.readingStatus || "",
+    series_status: catalogQuery.seriesStatus || "",
+    has_missing: catalogQuery.hasMissing ? "true" : "",
+    metadata_provider: catalogQuery.metadataProvider || "",
+    sort: catalogQuery.sort || "",
   };
-
-  const sortOptions = [
-    { value: "", label: t("books.sortTitle") },
-    { value: "latest", label: t("books.sortLatest") },
-    { value: "release_date", label: t("series.sortReleaseDate") },
+  const filterFields: LiveSearchField[] = [
+    ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: readingStatusOptions(t) }] : []),
+    { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions(t, dbStatuses) },
+    { name: "has_missing", type: "select", label: t("series.missing"), options: missingBooksOptions(t) },
+    { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions(t, metadataProviders) },
+    { name: "sort", type: "select", label: t("books.sort"), options: sortOptions(t, "librarySeries") },
   ];
-
-  const statusOptions = [
-    { value: "", label: t("common.all") },
-    { value: "unread", label: t("status.unread") },
-    { value: "reading", label: t("status.reading") },
-    { value: "read", label: t("status.read") },
-  ];
-
-  const seriesStatusOptions = [
-    { value: "", label: t("seriesStatus.allStatuses") },
-    ...dbStatuses.map((s) => ({ value: s, label: KNOWN_STATUSES[s] || s })),
-  ];
-
-  const missingOptions = [
-    { value: "", label: t("common.all") },
-    { value: "true", label: t("series.missingBooks") },
-  ];
-
-  const metadataOptions = [
-    { value: "", label: t("series.metadataAll") },
-    { value: "linked", label: t("series.metadataLinked") },
-    { value: "unlinked", label: t("series.metadataUnlinked") },
-    ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
-  ];
-
-  const hasFilters = Boolean(
-    catalogQuery.readingStatus ||
-    catalogQuery.sort ||
-    catalogQuery.seriesStatus ||
-    catalogQuery.hasMissing ||
-    catalogQuery.metadataProvider
-  );
+  const hasFilters = hasActiveFilters(filterValues, filterFields);
 
   return (
     <div className="space-y-6">
@@ -118,20 +91,8 @@ export default async function LibrarySeriesPage({
 
       <LiveSearchForm
         basePath={`/libraries/${id}/series`}
-        initialValues={{
-          status: catalogQuery.readingStatus || "",
-          series_status: catalogQuery.seriesStatus || "",
-          has_missing: catalogQuery.hasMissing ? "true" : "",
-          metadata_provider: catalogQuery.metadataProvider || "",
-          sort: catalogQuery.sort || "",
-        }}
-        fields={[
-          ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
-          { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
-          { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
-          { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
-          { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-        ]}
+        initialValues={filterValues}
+        fields={filterFields}
       />
 
       {/* Results count */}

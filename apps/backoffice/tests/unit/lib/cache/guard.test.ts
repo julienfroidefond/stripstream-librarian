@@ -11,11 +11,7 @@ const SCANNED = ["app", "lib"];
  * Files still allowed to call Next's invalidation primitives directly.
  * Keep this list empty; each entry is debt with a reason.
  */
-const ALLOWED = new Set<string>([
-  // Token server actions: `app/(app)/settings/*` was being reworked in a
-  // parallel change when the cache seam landed. Migrate to `invalidateAfter`.
-  "app/(app)/settings/components/TokensTab.tsx",
-]);
+const ALLOWED = new Set<string>([]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

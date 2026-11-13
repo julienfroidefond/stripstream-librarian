@@ -1,6 +1,7 @@
 "use server";
 
 import { invalidateAfter } from "@/lib/cache";
+import { ApiError } from "@/lib/api/errors";
 import { redirect } from "next/navigation";
 
 import {
@@ -41,12 +42,15 @@ function jobRedirect(resultId: string | undefined | null, libraryIds: string[]):
   redirect(qs ? `/jobs?${qs}` : "/jobs");
 }
 
+/** The upstream `error` field of an API failure, else the error's own message. */
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.detail) return error.detail;
+  if (error instanceof Error) return error.message;
+  return "An error occurred";
+}
+
 function errorRedirect(error: unknown): never {
-  const msg = error instanceof Error ? error.message : "An error occurred";
-  // Extract the API error message if present (format: "API /path failed (400): message")
-  const match = msg.match(/\(\d+\):\s*(.+)/);
-  const cleanMsg = match ? match[1] : msg;
-  redirect(`/jobs?error=${encodeURIComponent(cleanMsg)}`);
+  redirect(`/jobs?error=${encodeURIComponent(errorMessage(error))}`);
 }
 
 function isNextNavigationError(error: unknown): boolean {
@@ -54,132 +58,89 @@ function isNextNavigationError(error: unknown): boolean {
 }
 
 /**
+ * Runs a job launch and turns any failure into a redirect to `/jobs?error=`.
+ * Next's own navigation signal (the success `redirect`) is rethrown as is.
+ */
+async function redirectOnError(launch: () => Promise<never>): Promise<never> {
+  try {
+    return await launch();
+  } catch (e) {
+    if (isNextNavigationError(e)) throw e;
+    errorRedirect(e);
+  }
+}
+
+/**
  * Runs the action once per selected library.
  * No selection ids means "all libraries": the API handles the fan-out itself.
  */
-async function runPerLibrary(formData: FormData, run: LibraryJobRunner): Promise<never> {
-  const libraryIds = getLibraryIds(formData);
-  const targets: Array<string | undefined> = libraryIds.length > 0 ? libraryIds : [undefined];
-  const results: JobResult[] = [];
-  for (const libraryId of targets) {
-    results.push(await run(libraryId));
-  }
-  invalidateAfter({ type: "jobs.started" });
-  const highlightId = results.find((result) => result.id)?.id ?? undefined;
-  jobRedirect(highlightId, libraryIds);
+function runPerLibrary(formData: FormData, run: LibraryJobRunner): Promise<never> {
+  return redirectOnError(async () => {
+    const libraryIds = getLibraryIds(formData);
+    const targets: Array<string | undefined> = libraryIds.length > 0 ? libraryIds : [undefined];
+    const results: JobResult[] = [];
+    for (const libraryId of targets) {
+      results.push(await run(libraryId));
+    }
+    invalidateAfter({ type: "jobs.started" });
+    const highlightId = results.find((result) => result.id)?.id ?? undefined;
+    jobRedirect(highlightId, libraryIds);
+  });
 }
 
-async function runGlobal(run: () => Promise<JobResult>): Promise<never> {
-  try {
+function runGlobal(run: () => Promise<JobResult>): Promise<never> {
+  return redirectOnError(async () => {
     const result = await run();
     invalidateAfter({ type: "jobs.started" });
     jobRedirect(result.id, []);
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  });
 }
 
 export async function triggerRebuild(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId));
 }
 
 export async function triggerFullRebuild(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId, true));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId, true));
 }
 
 export async function triggerRescan(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId, false, true));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => rebuildIndex(libraryId, false, true));
 }
 
 export async function triggerThumbnailsRebuild(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => rebuildThumbnails(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => rebuildThumbnails(libraryId));
 }
 
 export async function triggerThumbnailsRegenerate(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => regenerateThumbnails(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => regenerateThumbnails(libraryId));
 }
 
 export async function triggerMetadataBatch(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startMetadataBatch(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startMetadataBatch(libraryId));
 }
 
 export async function triggerMetadataRematch(formData: FormData) {
   if (getLibraryIds(formData).length === 0) {
     return redirect("/jobs");
   }
-  try {
-    await runPerLibrary(formData, (libraryId) => startMetadataBatch(libraryId, true));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startMetadataBatch(libraryId, true));
 }
 
 export async function triggerMetadataRefresh(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startMetadataRefresh(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startMetadataRefresh(libraryId));
 }
 
 export async function triggerMetadataRefreshAll(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startMetadataRefreshAll(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startMetadataRefreshAll(libraryId));
 }
 
 export async function triggerReadingStatusMatch(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startReadingStatusMatch(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startReadingStatusMatch(libraryId));
 }
 
 export async function triggerReadingStatusPush(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startReadingStatusPush(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startReadingStatusPush(libraryId));
 }
 
 export async function triggerRatingPull(_formData: FormData) {
@@ -187,21 +148,11 @@ export async function triggerRatingPull(_formData: FormData) {
 }
 
 export async function triggerDownloadDetection(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startDownloadDetection(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startDownloadDetection(libraryId));
 }
 
 export async function triggerRssPoll(formData: FormData) {
-  try {
-    await runPerLibrary(formData, (libraryId) => startRssPoll(libraryId));
-  } catch (e) {
-    if (isNextNavigationError(e)) throw e;
-    errorRedirect(e);
-  }
+  await runPerLibrary(formData, (libraryId) => startRssPoll(libraryId));
 }
 
 export async function triggerTelegramSync(_formData: FormData) {
