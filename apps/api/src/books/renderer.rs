@@ -808,7 +808,9 @@ mod tests {
         let fixture = Fixture::new(FakePages::slow(red_png(), Duration::from_millis(100)));
         let renderer = fixture.renderer(Duration::from_secs(5));
         // Two permits so that only the render lock can prevent a second extraction.
-        fixture.limit.set_limit(std::num::NonZeroUsize::new(2).unwrap());
+        fixture
+            .limit
+            .set_limit(std::num::NonZeroUsize::new(2).unwrap());
         let spec = fixture.spec(3);
 
         let (reader, prefetch) = tokio::join!(renderer.get(&spec, Urgency::Foreground), async {
