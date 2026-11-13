@@ -4,6 +4,20 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.149 — 2026-11-13
+
+### Corrections
+
+- **discovery** — report owned volumes through the shared coverage rule ([#292](https://github.com/julienfroidefond/stripstream-librarian/pull/292))
+
+### Refactoring
+
+- **jobs** — one job-type descriptor and one live-job seam ([#284](https://github.com/julienfroidefond/stripstream-librarian/pull/284))
+
+### Documentation
+
+- **adr** — record the architecture-review decisions ([#287](https://github.com/julienfroidefond/stripstream-librarian/pull/287))
+
 ## v3.32.148 — 2026-11-13
 
 ### Refactoring
