@@ -63,37 +63,3 @@ pub(crate) async fn resolve_provider_name(pool: &PgPool, lib_provider: Option<&s
 
     "google_books".to_string()
 }
-
-/// Boost candidate confidence when local book count matches total_volumes.
-///
-/// - Exact match: +0.30
-/// - Close match (±2): +0.15
-///
-/// Re-sorts candidates by confidence after boosting.
-pub(crate) fn boost_confidence_by_book_count(
-    candidates: &mut [metadata_providers::SeriesCandidate],
-    local_count: i64,
-) {
-    if local_count > 0 {
-        for c in candidates.iter_mut() {
-            if let Some(ext_total) = c.total_volumes {
-                if ext_total > 0 {
-                    if local_count == ext_total as i64 {
-                        c.confidence = (c.confidence + 0.3).min(1.0);
-                    } else if (local_count - ext_total as i64).abs() <= 2 {
-                        c.confidence = (c.confidence + 0.15).min(1.0);
-                    }
-                }
-            }
-        }
-    }
-    candidates.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-}
-
-#[cfg(test)]
-#[path = "tests/config.rs"]
-mod tests;

@@ -62,39 +62,26 @@ pub(super) fn has_approved_link(links: &ApprovedLinks, series_name: &str, provid
 pub(super) enum SearchOutcome {
     AutoMatch(metadata_providers::SeriesCandidate),
     NoResults,
-    TooManyResults(i32, Option<metadata_providers::SeriesCandidate>),
     LowConfidence(metadata_providers::SeriesCandidate),
     Error(String),
 }
 
-/// The prudence rule shared by every provider: only a perfect confidence is
-/// auto-approved. Anything below stays for manual review.
-pub(super) fn is_confident_match(confidence: f32) -> bool {
-    (confidence - 1.0).abs() < f32::EPSILON
-}
-
 /// Turn raw candidates into an outcome without touching the network or the DB.
+///
+/// Candidates arrive best first. Only the best one can be auto-matched, and
+/// only when its [`Score`](metadata_providers::scoring::Score) passes the
+/// shared auto-match verdict; anything else stays for manual review.
 pub(super) fn evaluate_candidates(
     candidates: Vec<metadata_providers::SeriesCandidate>,
 ) -> SearchOutcome {
-    // Only auto-match if exactly 1 result with confidence == 1.0
-    if candidates.len() == 1 && is_confident_match(candidates[0].confidence) {
-        return SearchOutcome::AutoMatch(candidates.into_iter().next().unwrap());
-    }
-
-    // Check if best candidate has perfect confidence
     let Some(best) = candidates.into_iter().next() else {
         return SearchOutcome::NoResults;
     };
-    if is_confident_match(best.confidence) {
-        return SearchOutcome::AutoMatch(best);
+    if best.score.is_auto_match() {
+        SearchOutcome::AutoMatch(best)
+    } else {
+        SearchOutcome::LowConfidence(best)
     }
-
-    if best.confidence < 1.0 {
-        return SearchOutcome::LowConfidence(best);
-    }
-
-    SearchOutcome::TooManyResults(0, None)
 }
 
 pub(super) async fn search_and_evaluate(
@@ -125,7 +112,7 @@ pub(super) async fn search_and_evaluate(
         return SearchOutcome::NoResults;
     }
 
-    // Boost confidence based on local book count vs candidate total_volumes
+    // Book-count bonus, added before each score's cap (see `scoring`)
     let local_count: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
@@ -140,7 +127,7 @@ pub(super) async fn search_and_evaluate(
 
     let mut candidates = candidates;
     if let Some(count) = local_count {
-        super::config::boost_confidence_by_book_count(&mut candidates, count);
+        metadata_providers::scoring::apply_book_count(&mut candidates, count);
     }
 
     evaluate_candidates(candidates)
@@ -276,7 +263,7 @@ fn candidate_detail(
             "cover_url": candidate.cover_url,
             "total_volumes": candidate.total_volumes,
             "start_year": candidate.start_year,
-            "confidence": candidate.confidence,
+            "confidence": candidate.score.value(),
         })
     } else {
         serde_json::json!({
@@ -307,7 +294,7 @@ pub(super) async fn evaluate_provider(
                     provider: provider_name.to_string(),
                     fallback_used,
                     candidates_count: 1,
-                    best_confidence: Some(candidate.confidence),
+                    best_confidence: Some(candidate.score.value()),
                     best_candidate: Some(candidate_detail(&candidate, false)),
                     link_id: Some(link_id),
                     message: None,
@@ -317,7 +304,7 @@ pub(super) async fn evaluate_provider(
                     provider: provider_name.to_string(),
                     fallback_used,
                     candidates_count: 1,
-                    best_confidence: Some(candidate.confidence),
+                    best_confidence: Some(candidate.score.value()),
                     best_candidate: None,
                     link_id: None,
                     message: Some(format!("Auto-apply failed: {e}")),
@@ -334,27 +321,17 @@ pub(super) async fn evaluate_provider(
             link_id: None,
             message: Some("No results found".to_string()),
         },
-        SearchOutcome::TooManyResults(count, best) => ProviderOutcome {
-            status: "too_many_results",
-            provider: provider_name.to_string(),
-            fallback_used,
-            candidates_count: count,
-            best_confidence: best.as_ref().map(|c| c.confidence),
-            best_candidate: best.as_ref().map(|c| candidate_detail(c, true)),
-            link_id: None,
-            message: Some(format!("{count} results, manual review needed")),
-        },
         SearchOutcome::LowConfidence(candidate) => ProviderOutcome {
             status: "low_confidence",
             provider: provider_name.to_string(),
             fallback_used,
             candidates_count: 1,
-            best_confidence: Some(candidate.confidence),
+            best_confidence: Some(candidate.score.value()),
             best_candidate: Some(candidate_detail(&candidate, true)),
             link_id: None,
             message: Some(format!(
                 "Best confidence: {:.0}%",
-                candidate.confidence * 100.0
+                candidate.score.value() * 100.0
             )),
         },
         SearchOutcome::Error(e) => ProviderOutcome {
@@ -419,7 +396,7 @@ pub(super) async fn auto_apply(
     .bind(provider_name)
     .bind(&candidate.external_id)
     .bind(&candidate.external_url)
-    .bind(candidate.confidence)
+    .bind(candidate.score.value())
     .bind(metadata_json)
     .bind(candidate.total_volumes)
     .bind(pr_rating)

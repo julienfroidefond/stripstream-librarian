@@ -865,7 +865,7 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
     assert!(crate::metadata::batch::provider_outcome_from_detail(&linked_only).is_none());
 }
 
-// boost_confidence_by_book_count tests moved to super::config::tests
+// Book-count bonus tests live in metadata_providers::scoring::tests
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn finish_batch_job_classifies_partial_and_empty_runs(pool: sqlx::PgPool) {
