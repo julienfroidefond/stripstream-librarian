@@ -6,6 +6,7 @@ mod field_policy;
 pub(crate) use field_policy::{sanitize_book_locks, sanitize_series_locks};
 pub mod gaps;
 pub mod handlers;
+pub(crate) mod links;
 pub mod refresh;
 pub(crate) mod refresh_sync;
 pub(crate) mod shared_sync;

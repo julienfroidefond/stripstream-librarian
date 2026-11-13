@@ -118,5 +118,11 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
   (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
   Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
   écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
+- **Liens de métadonnées** : `metadata/links.rs` est le seul écrivain de
+  `external_metadata_links` (ADR 0017) : `propose`, `approve`, `approve_existing`,
+  `set_primary`, `remove(Removal::…)`, `reassign`, `record_provider_snapshot`, `mark_synced`.
+  Il garde l'invariant « un seul primaire approuvé par série » et applique une politique unique
+  après retrait d'un lien approuvé (promotion, puis refusion des champs de série ou effacement).
+  Ne pas écrire `INSERT`/`UPDATE`/`DELETE external_metadata_links` ailleurs.
 - **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
   `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

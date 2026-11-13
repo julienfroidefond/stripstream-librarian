@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use super::shared_sync;
+use super::links;
 
 // Re-exported for sibling modules; also brings the symbol into this module's scope.
 pub(crate) use super::sync::sync_series_from_links;
@@ -297,48 +297,21 @@ pub async fn create_metadata_match(
     let series_id =
         crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
 
-    let (pr_rating, pr_rating_count, pr_rating_scale) =
-        crate::metadata::shared_sync::extract_provider_rating(&body.metadata_json);
-
-    let row = sqlx::query(
-        r#"
-        INSERT INTO external_metadata_links
-            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external,
-             provider_rating, provider_rating_count, provider_rating_scale)
-        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
-        ON CONFLICT (series_id, provider)
-        DO UPDATE SET
-            external_id = EXCLUDED.external_id,
-            external_url = EXCLUDED.external_url,
-            status = 'pending',
-            confidence = EXCLUDED.confidence,
-            metadata_json = EXCLUDED.metadata_json,
-            total_volumes_external = EXCLUDED.total_volumes_external,
-            provider_rating = EXCLUDED.provider_rating,
-            provider_rating_count = EXCLUDED.provider_rating_count,
-            provider_rating_scale = EXCLUDED.provider_rating_scale,
-            matched_at = NOW(),
-            updated_at = NOW(),
-            approved_at = NULL,
-            synced_at = NULL
-        RETURNING id
-        "#,
+    let link_id = links::propose(
+        &state.pool,
+        &links::LinkCandidate {
+            library_id,
+            series_id,
+            provider: &body.provider,
+            external_id: &body.external_id,
+            external_url: body.external_url.as_deref(),
+            confidence: body.confidence,
+            metadata_json: &body.metadata_json,
+            total_volumes: body.total_volumes,
+        },
     )
-    .bind(library_id)
-    .bind(series_id)
-    .bind(&body.provider)
-    .bind(&body.external_id)
-    .bind(&body.external_url)
-    .bind(body.confidence)
-    .bind(&body.metadata_json)
-    .bind(body.total_volumes)
-    .bind(pr_rating)
-    .bind(pr_rating_count)
-    .bind(pr_rating_scale)
-    .fetch_one(&state.pool)
     .await?;
 
-    let link_id: Uuid = row.get("id");
     // Re-fetch with JOIN to get series_name for the DTO
     let full_row = sqlx::query(
         r#"
@@ -377,35 +350,17 @@ pub async fn approve_metadata(
     AxumPath(id): AxumPath<Uuid>,
     Json(body): Json<ApproveRequest>,
 ) -> Result<Json<ApproveResponse>, ApiError> {
-    // Mark this link approved.
-    let row = sqlx::query(
-        r#"
-        UPDATE external_metadata_links
-        SET status = 'approved', approved_at = NOW(), updated_at = NOW()
-        WHERE id = $1
-        RETURNING library_id, series_id, provider
-        "#,
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("link not found"))?;
-
-    let library_id: Uuid = row.get("library_id");
-    let series_id: Uuid = row.get("series_id");
-    let provider_name: String = row.get("provider");
+    // Approve the link; it becomes primary if forced, or automatically when
+    // the series has no approved primary yet (multiple approved links allowed).
+    let links::ApprovedLink {
+        library_id,
+        series_id,
+        provider: provider_name,
+    } = links::approve_existing(&state.pool, id, body.is_primary == Some(true)).await?;
     let series_name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
         .bind(series_id)
         .fetch_one(&state.pool)
         .await?;
-
-    // Multiple approved links per series are allowed. This link becomes primary
-    // if forced, or automatically when the series has no approved primary yet.
-    if body.is_primary == Some(true) {
-        shared_sync::set_primary_link(&state.pool, series_id, id).await?;
-    } else {
-        shared_sync::promote_if_no_primary(&state.pool, series_id, id).await?;
-    }
 
     // Sync the whole series from all approved links (primary first, secondaries
     // as fallback), so approving a secondary never overwrites the primary.
@@ -472,18 +427,9 @@ pub async fn reject_metadata(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<crate::responses::StatusResponse>, ApiError> {
-    let row = sqlx::query(
-        "UPDATE external_metadata_links SET status = 'rejected', is_primary = false, updated_at = NOW() \
-         WHERE id = $1 RETURNING series_id",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("link not found"))?;
-
-    // If the rejected link was primary, promote the oldest approved link left.
-    let series_id: Uuid = row.get("series_id");
-    shared_sync::promote_oldest_approved(&state.pool, series_id).await?;
+    // Rejecting an approved link applies the single after-removal policy
+    // (promotion + series re-merge or clear), see `links`.
+    links::remove(&state.pool, links::Removal::Reject(id)).await?;
 
     Ok(Json(crate::responses::StatusResponse::new("rejected")))
 }
@@ -510,23 +456,15 @@ pub async fn patch_metadata_link(
     AxumPath(id): AxumPath<Uuid>,
     Json(body): Json<PatchLinkRequest>,
 ) -> Result<Json<PatchLinkResponse>, ApiError> {
-    let link = sqlx::query("SELECT series_id, status FROM external_metadata_links WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("link not found"))?;
-
-    let series_id: Uuid = link.get("series_id");
-    let status: String = link.get("status");
-
-    if body.is_primary == Some(true) {
-        if status != "approved" {
-            return Err(ApiError::unprocessable_entity(
-                "only approved links can be set as primary",
-            ));
-        }
-        shared_sync::set_primary_link(&state.pool, series_id, id).await?;
-    }
+    let series_id: Uuid = if body.is_primary == Some(true) {
+        links::set_primary(&state.pool, id).await?
+    } else {
+        sqlx::query_scalar("SELECT series_id FROM external_metadata_links WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("link not found"))?
+    };
 
     let report =
         sync_series_from_links(&state.pool, series_id, body.sync_series, body.sync_books).await?;
@@ -720,41 +658,9 @@ pub async fn delete_metadata_link(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
-    let mut tx = state.pool.begin().await?;
-
-    // Fetch series_id before deleting so we can clear cover_url
-    let row = sqlx::query(
-        "DELETE FROM external_metadata_links WHERE id = $1 RETURNING series_id, is_primary",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::not_found("link not found"))?;
-
-    let series_id: uuid::Uuid = row.get("series_id");
-    let was_primary: bool = row.get("is_primary");
-
-    tx.commit().await?;
-
-    // If the deleted link was primary, promote the oldest approved link left.
-    if was_primary {
-        shared_sync::promote_oldest_approved(&state.pool, series_id).await?;
-    }
-
-    // If approved links remain, re-sync the series from them (no provider fetch
-    // needed for the series fields). Otherwise clear stale external fields.
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND status = 'approved'",
-    )
-    .bind(series_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if remaining > 0 {
-        let _ = sync_series_from_links(&state.pool, series_id, true, false).await;
-    } else {
-        super::field_policy::clear_series_metadata(&state.pool, series_id).await?;
-    }
+    // Promotion + series re-merge (or clear when no approved link remains)
+    // follow the single after-removal policy, see `links`.
+    links::remove(&state.pool, links::Removal::Delete(id)).await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
