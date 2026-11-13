@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AvailableDownloadsSection } from "@/app/(app)/downloads/DownloadsPage";
+import { DownloadActionsProvider } from "@/app/(app)/downloads/useDownloadActions";
 import type { LatestFoundPerLibraryDto } from "@/lib/api";
 
 const fetchMock = vi.fn();
@@ -55,11 +56,12 @@ function expandSeries(name: string) {
 describe("AvailableDownloadsSection — DDL releases", () => {
   it("labels DDL releases with their provider instead of Prowlarr", async () => {
     render(
-      <AvailableDownloadsSection
-        latestFound={latestFound(ddlRelease() as never)}
-        telegramAvailable={[]}
-        onRefresh={() => {}}
-      />
+      <DownloadActionsProvider onRefresh={() => {}}>
+        <AvailableDownloadsSection
+          latestFound={latestFound(ddlRelease() as never)}
+          telegramAvailable={[]}
+        />
+      </DownloadActionsProvider>
     );
 
     expandSeries("Astérix");
@@ -73,11 +75,12 @@ describe("AvailableDownloadsSection — DDL releases", () => {
     const onRefresh = vi.fn();
 
     render(
-      <AvailableDownloadsSection
-        latestFound={latestFound(ddlRelease() as never)}
-        telegramAvailable={[]}
-        onRefresh={onRefresh}
-      />
+      <DownloadActionsProvider onRefresh={onRefresh}>
+        <AvailableDownloadsSection
+          latestFound={latestFound(ddlRelease() as never)}
+          telegramAvailable={[]}
+        />
+      </DownloadActionsProvider>
     );
 
     expandSeries("Astérix");
@@ -104,18 +107,19 @@ describe("AvailableDownloadsSection — DDL releases", () => {
 
   it("keeps Prowlarr releases on the Prowlarr label", async () => {
     render(
-      <AvailableDownloadsSection
-        latestFound={latestFound(
-          ddlRelease({
-            provider: null,
-            external_id: null,
-            download_url: "https://indexer/download",
-            indexer: "IndexerA",
-          }) as never
-        )}
-        telegramAvailable={[]}
-        onRefresh={() => {}}
-      />
+      <DownloadActionsProvider onRefresh={() => {}}>
+        <AvailableDownloadsSection
+          latestFound={latestFound(
+            ddlRelease({
+              provider: null,
+              external_id: null,
+              download_url: "https://indexer/download",
+              indexer: "IndexerA",
+            }) as never
+          )}
+          telegramAvailable={[]}
+        />
+      </DownloadActionsProvider>
     );
 
     expandSeries("Astérix");

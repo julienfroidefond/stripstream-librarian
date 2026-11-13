@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DownloadRow } from "@/app/(app)/downloads/DownloadsPage";
+import { DownloadActionsProvider } from "@/app/(app)/downloads/useDownloadActions";
 import type { TorrentDownloadDto } from "@/lib/api";
 
 const fetchMock = vi.fn();
@@ -40,9 +41,14 @@ function torrentDownload(overrides: Partial<TorrentDownloadDto> = {}): TorrentDo
   };
 }
 
-function renderRow(dl: TorrentDownloadDto, onRetried = vi.fn()) {
-  render(<DownloadRow dl={dl} onDeleted={vi.fn()} onRetried={onRetried} />);
-  return onRetried;
+function renderRow(dl: TorrentDownloadDto) {
+  const onRefresh = vi.fn();
+  render(
+    <DownloadActionsProvider onRefresh={onRefresh}>
+      <DownloadRow dl={dl} />
+    </DownloadActionsProvider>
+  );
+  return onRefresh;
 }
 
 function clickRetry() {
@@ -52,7 +58,7 @@ function clickRetry() {
 describe("DownloadRow — retry routing", () => {
   it("restarts the magnet for a failed AllDebrid download without local files", async () => {
     fetchMock.mockResolvedValue(ok({ ok: true }));
-    const onRetried = renderRow(torrentDownload({ client: "alldebrid", status: "error", content_path: null }));
+    const onRefresh = renderRow(torrentDownload({ client: "alldebrid", status: "error", content_path: null }));
 
     clickRetry();
 
@@ -62,7 +68,7 @@ describe("DownloadRow — retry routing", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
-    await waitFor(() => expect(onRetried).toHaveBeenCalled());
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
   it("retries the import for an AllDebrid download that already has local files", async () => {
@@ -95,7 +101,7 @@ describe("DownloadRow — retry routing", () => {
 
   it("does not report success when the restart fails", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "magnet expired" }) });
-    const onRetried = renderRow(torrentDownload({ client: "alldebrid", status: "error", content_path: null }));
+    const onRefresh = renderRow(torrentDownload({ client: "alldebrid", status: "error", content_path: null }));
 
     clickRetry();
 
@@ -105,7 +111,7 @@ describe("DownloadRow — retry routing", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
-    expect(onRetried).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 });
 

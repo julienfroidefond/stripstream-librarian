@@ -107,6 +107,28 @@ fournisseurs DDL, surveillance Telegram, tokens, archives, orphelins) gardent le
 dédiés. Les tests de cartes utilisent `tests/unit/helpers/settingsDraft.tsx`
 (`renderWithSettingsDraft`), qui monte le provider avec un writer contrôlable.
 
+## Écritures de téléchargements (Download actions)
+
+`lib/downloadActions.ts` est la seule porte d'écriture des lignes d'acquisition (relancer,
+démarrer, supprimer, masquer). Le module est pur, sans React :
+
+- il porte le vocabulaire (`DownloadTarget` : `torrent`, `alldebrid`, `ddl`, `telegram`, plus
+  `release` et `entries` pour la section « disponibilités ») et le routage par cible
+  (`actionFor`) vers `browserApi` ;
+- il expose la politique de confirmation comme donnée (`needsConfirmation`) ;
+- il tient un état par ligne (`idle | pending(verb)`) : une rafale de clics sur une même ligne
+  donne une seule requête, deux lignes distinctes partent en parallèle ;
+- une seule politique d'échec : la ligne redevient `idle`, l'erreur remonte au toast et la liste
+  **n'est pas** rafraîchie ; seul un succès déclenche le rafraîchissement.
+
+`app/(app)/downloads/useDownloadActions.tsx` expose le store aux composants
+(`DownloadActionsProvider`, `useDownloadActions`, `busy/state/run`) via `useSyncExternalStore`.
+Les lignes (`DownloadRow`, `TelegramDownloadRow`, `DdlProviderDownloadRow`,
+`AvailableDownloadsSection`) sont des adaptateurs de présentation : pas de booléen
+`retrying`/`deleting` local, pas de confirmation locale, pas d'appel `browserApi` d'écriture
+direct. `DownloadClientButton` garde son flux d'ajout manuel (ce n'est pas une action de ligne) et
+`ProwlarrSearchModal` ne fait que chercher.
+
 ## Composants UI
 
 Les composants génériques sont dans `app/components/ui/`. Utiliser ces composants plutôt que des éléments HTML bruts :
