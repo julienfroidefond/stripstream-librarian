@@ -24,8 +24,7 @@ pub use helpers::{
 };
 pub use lifecycle::{
     begin_analysis, begin_extraction, begin_thumbnail_generation, begin_thumbnail_job, cancel_job,
-    classify_job, complete_job, fail_job, finish_job, finish_success, start_job, JobScope,
-    JobStatus,
+    classify_job, complete_job, fail_job, finish_job, start_job, JobScope, JobStatus,
 };
 pub use registry::{
     claimable_types, definition, definitions, exclusive_types, optional_library_types,

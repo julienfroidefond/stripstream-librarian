@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
+import { hasActiveFilters } from "@/lib/catalogFilters";
 import { Icon } from "./ui";
 
 // SVG path data for filter icons, keyed by field name
@@ -31,7 +32,7 @@ const FILTER_ICONS: Record<string, string> = {
   rated_only: "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.098 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z",
 };
 
-interface FieldDef {
+export interface LiveSearchField {
   name: string;
   type: "text" | "select";
   placeholder?: string;
@@ -41,7 +42,7 @@ interface FieldDef {
 }
 
 interface LiveSearchFormProps {
-  fields: FieldDef[];
+  fields: LiveSearchField[];
   basePath: string;
   debounceMs?: number;
   initialValues?: Record<string, string>;
@@ -70,7 +71,7 @@ function FilterPill({
   value,
   onChange,
 }: {
-  field: FieldDef;
+  field: LiveSearchField;
   value: string;
   onChange: (name: string, value: string) => void;
 }) {
@@ -275,7 +276,7 @@ export function LiveSearchForm({
     navigate(true);
   }, [cookieName, fields, navigate]);
 
-  const hasFilters = fields.some((field) => (values[field.name] ?? "").trim() !== "");
+  const hasFilters = hasActiveFilters(values, fields);
   const textFields = fields.filter((field) => field.type === "text");
   const selectFields = fields.filter((field) => field.type === "select");
   const activeFilterCount = selectFields.filter((field) => (values[field.name] ?? "").trim() !== "").length;

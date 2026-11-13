@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,7 +18,8 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => api);
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const { invalidateAfter } = vi.hoisted(() => ({ invalidateAfter: vi.fn() }));
+vi.mock("@/lib/cache", () => ({ invalidateAfter }));
 vi.mock("@/lib/i18n/server", () => ({
   getServerTranslations: async () => ({ t: (key: string) => key, locale: "en", setLocale: vi.fn() }),
 }));
@@ -121,7 +121,8 @@ describe("TokensTab", () => {
     expect(api.setUserGenreRestrictions).toHaveBeenCalledWith("t1", ["Action"]);
     expect(api.updateToken).toHaveBeenCalledWith("t1", "u1");
     expect(redirect).toHaveBeenCalledWith(expect.stringContaining("/settings?tab=tokens&created="));
-    expect(revalidatePath).toHaveBeenCalledWith("/settings");
+    expect(invalidateAfter).toHaveBeenCalledWith({ type: "tokens.changed" });
+    expect(invalidateAfter).toHaveBeenCalledWith({ type: "users.changed" });
   });
 
   it("skips actions with missing required fields", async () => {

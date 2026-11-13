@@ -26,7 +26,6 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 jpeg-decoder = "0.3"
 libc = "0.2"
 lru = "0.19"
-rayon = "1.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "form", "query", "rustls", "webpki-roots"] }
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
@@ -51,9 +50,6 @@ scraper = "0.29"
 grammers-client = "0.7"
 grammers-session = "0.7"
 zip = { version = "9", default-features = false, features = ["deflate"] }
-
-[patch.crates-io]
-core2 = { path = "crates/core2-shim" }
 
 # Keep local and CI build artifacts small. Line tables are enough for useful
 # backtraces; dependency debug info is not needed day to day. Override once with

@@ -43,14 +43,14 @@ use axum::{
 };
 use sqlx::postgres::PgPoolOptions;
 use stripstream_core::config::ApiConfig;
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, RwLock};
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::settings::limits::Limits;
 use crate::state::{
-    load_concurrent_renders, load_dynamic_settings, AppState, Metrics, PageRenderLocks,
-    ReadRateLimit,
+    load_dynamic_settings, AppState, Metrics, PageRenderLocks, ReadRateLimit, RenderLimit,
 };
 
 #[tokio::main]
@@ -68,11 +68,14 @@ async fn main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
 
-    // Load concurrent_renders from settings, default to 8
-    let concurrent_renders = load_concurrent_renders(&pool).await;
-    info!("Using concurrent_renders limit: {}", concurrent_renders);
+    // `limits` is re-applied at runtime by `settings::apply` whenever it is saved.
+    let limits = Limits::load(&pool).await;
+    info!(
+        "Using concurrent_renders limit: {}",
+        limits.concurrent_renders
+    );
 
-    let download_settings = crate::downloads::settings::DownloadSettings::load(&pool).await;
+    let download_settings = crate::downloads::settings::DownloadSettings::from(&limits);
     info!(
         "Using download limits: telegram_concurrency={}, ddl_concurrency={}",
         download_settings.telegram_concurrency, download_settings.ddl_concurrency
@@ -101,8 +104,7 @@ async fn main() -> anyhow::Result<()> {
         ))),
         disk_cache_stats: Arc::new(Mutex::new(None)),
         page_render_locks: Arc::new(PageRenderLocks::new(512)),
-        page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
-        page_render_limit_total: concurrent_renders,
+        page_render_limit: Arc::new(RenderLimit::new(limits.concurrent_renders)),
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
         stats_cache: Arc::new(crate::stats::StatsCache::new()),
@@ -596,6 +598,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/genres", get(genres::list_genres))
         .route("/genres/assign", axum::routing::post(genres::assign_genre))
         .route("/genres/untagged-series", get(genres::untagged_series))
+        .route("/genres/browse", get(genres::browse_genres))
         .route(
             "/genres/ai-suggest",
             axum::routing::post(ai_tagging::suggest_tags),

@@ -6,6 +6,7 @@ use axum::{
 };
 use sqlx::Row;
 
+use crate::books::files::current_book_file_join;
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 use super::period;
@@ -103,17 +104,11 @@ pub async fn get_stats(
             "#,
         )
         .fetch_one(pool),
-        sqlx::query(
-            r#"
-            SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count
-            FROM books b
-            LEFT JOIN LATERAL (
-                SELECT format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
-            ) bf ON TRUE
-            GROUP BY fmt
-            ORDER BY count DESC
-            "#,
-        )
+        sqlx::query(concat!(
+            "SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count FROM books b ",
+            current_book_file_join!("format"),
+            " GROUP BY fmt ORDER BY count DESC"
+        ))
         .fetch_all(pool),
         sqlx::query(
             r#"
@@ -124,7 +119,7 @@ pub async fn get_stats(
             "#,
         )
         .fetch_all(pool),
-        sqlx::query(
+        sqlx::query(concat!(
             r#"
             SELECT
                 l.name AS library_name,
@@ -137,13 +132,13 @@ pub async fn get_stats(
             LEFT JOIN books b ON b.library_id = l.id
             LEFT JOIN book_reading_progress brp
               ON brp.book_id = b.id AND $1::uuid IS NOT NULL AND brp.user_id = $1
-            LEFT JOIN LATERAL (
-                SELECT size_bytes FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
-            ) bf ON TRUE
+            "#,
+            current_book_file_join!("size_bytes"),
+            r#"
             GROUP BY l.id, l.name
             ORDER BY book_count DESC
-            "#,
-        )
+            "#
+        ))
         .bind(user_id)
         .fetch_all(pool),
         sqlx::query(

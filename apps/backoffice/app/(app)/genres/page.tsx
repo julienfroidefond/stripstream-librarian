@@ -1,18 +1,25 @@
-import { apiFetch, fetchLibraries } from "@/lib/api";
-import type { SeriesDto, LibraryDto } from "@/lib/api";
+import { fetchGenreBrowse, fetchLibraries } from "@/lib/api";
+import type { GenreBrowsePage, LibraryDto } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { GenresClient, type GenreDto } from "./GenresClient";
+import { GENRES_PAGE_SIZE, INITIAL_GENRE_BROWSE } from "@/lib/genres/browse";
+import { GenresClient } from "./GenresClient";
 
 export const dynamic = "force-dynamic";
+
+const EMPTY_BROWSE: GenreBrowsePage = {
+  items: [],
+  total: 0,
+  page: 1,
+  limit: GENRES_PAGE_SIZE,
+  facets: { genres: [], untagged: 0, total: 0 },
+};
 
 export default async function GenresPage() {
   const { t } = await getServerTranslations();
 
-  const [genres, untagged, libraries, seriesPage] = await Promise.all([
-    apiFetch<GenreDto[]>("/genres").catch(() => [] as GenreDto[]),
-    apiFetch<SeriesDto[]>("/genres/untagged-series").catch(() => [] as SeriesDto[]),
+  const [initialBrowse, libraries] = await Promise.all([
+    fetchGenreBrowse({ ...INITIAL_GENRE_BROWSE, limit: GENRES_PAGE_SIZE }).catch(() => EMPTY_BROWSE),
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    apiFetch<{ total: number }>("/series?limit=1").catch(() => ({ total: 0 })),
   ]);
 
   return (
@@ -25,7 +32,7 @@ export default async function GenresPage() {
           {t("genres.title")}
         </h1>
       </div>
-      <GenresClient initialGenres={genres} initialUntagged={untagged} libraries={libraries} initialTotalSeries={seriesPage.total} />
+      <GenresClient initialBrowse={initialBrowse} libraries={libraries} />
     </div>
   );
 }

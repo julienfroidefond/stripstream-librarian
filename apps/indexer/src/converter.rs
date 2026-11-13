@@ -3,7 +3,7 @@ use sqlx::Row;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use stripstream_jobs::{finish_success, insert_entity_event, set_current_file};
+use stripstream_jobs::{insert_entity_event, set_current_file};
 
 use crate::AppState;
 
@@ -15,7 +15,8 @@ use crate::AppState;
 /// 3. Convert CBR → CBZ via `parsers::convert_cbr_to_cbz`
 /// 4. Update `book_files` and `books` in DB
 /// 5. Delete the original CBR (failure here does not fail the job)
-/// 6. Mark job as success
+///
+/// The job's terminal status is written by the worker from the job outcome.
 pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Result<()> {
     info!(
         "[CONVERTER] Starting CBR→CBZ conversion for book {} (job {})",
@@ -138,10 +139,7 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
         info!("[CONVERTER] Deleted original CBR {}", cbr_path.display());
     }
 
-    // Mark job success
-    finish_success(&state.pool, job_id).await?;
-
-    info!("[CONVERTER] Job {} completed successfully", job_id);
+    info!("[CONVERTER] Job {} converted book {}", job_id, book_id);
     Ok(book_name)
 }
 

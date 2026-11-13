@@ -45,7 +45,7 @@ interface Props {
 
 export function SeriesActionsToolbar({ model }: Props) {
   const { t } = useTranslation();
-  const { metadata, renameFormats } = model;
+  const { renameFormats } = model;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -57,21 +57,7 @@ export function SeriesActionsToolbar({ model }: Props) {
           booksReadCount={model.booksReadCount}
         />
       )}
-      <EditSeriesForm
-        libraryId={model.libraryId}
-        seriesId={model.seriesId}
-        seriesName={model.seriesName}
-        currentAuthors={metadata?.authors ?? []}
-        currentGenres={metadata?.genres ?? []}
-        currentPublishers={metadata?.publishers ?? []}
-        currentBookAuthor={model.editBookAuthor}
-        currentBookLanguage={model.editBookLanguage}
-        currentDescription={metadata?.description ?? null}
-        currentStartYear={metadata?.start_year ?? null}
-        currentTotalVolumes={metadata?.total_volumes ?? null}
-        currentStatus={metadata?.status ?? null}
-        currentLockedFields={metadata?.locked_fields ?? {}}
-      />
+      <EditSeriesForm model={model} />
       <RefreshButton target="series-detail" seriesId={model.seriesId} />
       <ActionsMenu label={t("common.more")}>
         <ActionsMenuSection label={t("actionsMenu.metadata")}>

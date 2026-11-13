@@ -6,37 +6,41 @@ import Image from "next/image";
 import Link from "next/link";
 import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
-import { browserApi, browserErrorMessage, type GenreDto, type GenreSuggestion } from "@/lib/api/browser";
+import {
+  browserApi,
+  browserErrorMessage,
+  type GenreBrowsePage,
+  type GenreCover,
+  type GenreSuggestion,
+} from "@/lib/api/browser";
+import {
+  ALL_SERIES,
+  UNTAGGED_SERIES,
+  browseQuery,
+  isAllSeries,
+  removeGenreFromSelection,
+  renameGenreInSelection,
+  toggleGenre,
+  type GenreFilterMode,
+  type GenreSelection,
+} from "@/lib/genres/browse";
 import { matchesSearchText } from "@/lib/search";
 import { useTranslation } from "@/lib/i18n/context";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { toast } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
-export type { GenreDto } from "@/lib/api/browser";
-
 type Props = {
-  initialGenres: GenreDto[];
-  initialUntagged: SeriesDto[];
+  /** Server-loaded first view (untagged series, every library). */
+  initialBrowse: GenreBrowsePage;
   libraries: LibraryDto[];
-  initialTotalSeries: number;
 };
 
-// null = "sans genre", [] = aucun filtre de genre
-type GenreFilter = string[] | null;
 type SeriesView = "cards" | "table";
-type GenreFilterMode = "include" | "exclude";
 type AiSuggestion = GenreSuggestion;
+type CoverSource = Pick<GenreCover, "name" | "first_book_id" | "first_book_updated_at" | "cover_url">;
 
-function mergeGenreCounts(groups: GenreDto[][]): GenreDto[] {
-  const counts = new Map<string, number>();
-  for (const group of groups) {
-    for (const genre of group) counts.set(genre.name, (counts.get(genre.name) ?? 0) + genre.series_count);
-  }
-  return Array.from(counts, ([name, series_count]) => ({ name, series_count }));
-}
-
-function SeriesCoverImage({ series }: { series: SeriesDto }) {
+function SeriesCoverImage({ series }: { series: CoverSource }) {
   if (series.first_book_id) {
     return (
       <Image
@@ -79,8 +83,8 @@ function GenreSeriesModal({
 
   useEffect(() => {
     let active = true;
-    browserApi.series
-      .list({ genre, limit: 200 })
+    browserApi.genres
+      .browse({ genres: [genre], limit: 200 })
       .then(data => { if (!active) return; setSeries(data.items); setTotal(data.total); })
       .catch(() => { if (active) setSeries([]); })
       .finally(() => { if (active) setLoading(false); });
@@ -192,43 +196,20 @@ function GenreSeriesModal({
   );
 }
 
-export function GenresClient({ initialGenres, initialUntagged, libraries, initialTotalSeries }: Props) {
+export function GenresClient({ initialBrowse, libraries }: Props) {
   const { t } = useTranslation();
-  const [genres, setGenres] = useState<GenreDto[]>(initialGenres);
   const [busy, setBusy] = useState(false);
   const [activeGenreModal, setActiveGenreModal] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState("");
 
-  // Genre covers for cards
-  const [genreCovers, setGenreCovers] = useState<Record<string, SeriesDto[]>>({});
-
-  // Stats
-  const [totalSeries] = useState(initialTotalSeries);
-
-  // Fetch preview covers for all genres once on mount
-  useEffect(() => {
-    if (initialGenres.length === 0) return;
-    Promise.all(
-      initialGenres.map(g =>
-        browserApi.series.list({ genre: g.name, limit: 4 })
-          .then(d => [g.name, d.items] as const)
-          .catch(() => [g.name, []] as const)
-      )
-    ).then(pairs => setGenreCovers(Object.fromEntries(pairs)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Series browser
-  const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null);
-  const [excludedGenres, setExcludedGenres] = useState<string[]>([]);
+  // One server query drives the list, its total and the facets (ADR 0028).
+  const [selection, setSelection] = useState<GenreSelection>(UNTAGGED_SERIES);
   const [genreFilterMode, setGenreFilterMode] = useState<GenreFilterMode>("include");
   const [libraryFilter, setLibraryFilter] = useState<string[]>([]);
-  const [filteredLibrariesTotal, setFilteredLibrariesTotal] = useState(initialTotalSeries);
-  const [browserGenres, setBrowserGenres] = useState<GenreDto[]>(initialGenres);
-  const [seriesList, setSeriesList] = useState<SeriesDto[]>(initialUntagged);
-  const [seriesTotal, setSeriesTotal] = useState(initialUntagged.length);
-  const [untaggedCount, setUntaggedCount] = useState(initialUntagged.length);
+  const [browse, setBrowse] = useState<GenreBrowsePage>(initialBrowse);
+  const [seriesList, setSeriesList] = useState<SeriesDto[]>(initialBrowse.items);
   const [seriesLoading, setSeriesLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [seriesSearch, setSeriesSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [seriesView, setSeriesView] = useState<SeriesView>("cards");
@@ -238,108 +219,82 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const [aiLoading, setAiLoading] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const didFetchRef = useRef(false);
+  const requestRef = useRef<AbortController | null>(null);
 
-  const refreshGenres = useCallback(async () => {
-    const [genresResult, ...libraryGroups] = await Promise.all([
-      browserApi.genres.list().catch(() => null),
-      ...(libraryFilter.length > 0
-        ? libraryFilter.map(libraryId => browserApi.genres.list(libraryId).catch(() => [] as GenreDto[]))
-        : [browserApi.genres.list().catch(() => [] as GenreDto[])]),
-    ]);
-    if (genresResult) setGenres(genresResult);
-    setBrowserGenres(mergeGenreCounts(libraryGroups));
-  }, [libraryFilter]);
+  const genres = browse.facets.genres;
 
-  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[], excluded: string[] = [], q = "") => {
+  /** Reloads page 1 for a selection; a newer request aborts the previous one. */
+  const loadSeries = useCallback(async (next: GenreSelection, libraryIds: string[], q: string) => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setSeriesLoading(true);
     setSelected(new Set());
     try {
-      const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
-      if (genre === null) {
-        const results = await Promise.all(requestedLibraries.map(async libraryId => {
-          return browserApi.genres
-            .untagged(libraryId ?? undefined, q || undefined)
-            .catch(() => [] as SeriesDto[]);
-        }));
-        const series = results.flat();
-        setSeriesList(series);
-        setSeriesTotal(series.length);
-        // Only the unfiltered listing reflects the real untagged count.
-        if (!q) setUntaggedCount(series.length);
-      } else {
-        const genreFilters = genre.length > 0 ? genre : [null];
-        const results = await Promise.all(requestedLibraries.flatMap(libraryId => genreFilters.map(async genreName => {
-          return browserApi.series.list({
-            limit: 500,
-            genre: genreName ?? undefined,
-            libraryId: libraryId ?? undefined,
-            q: q || undefined,
-          }).catch(() => ({ items: [] as SeriesDto[] }));
-        })));
-        const series = Array.from(new Map(results.flatMap(result => result.items).map(item => [item.series_id, item])).values())
-          .filter(series => !excluded.some(excludedGenre => series.genres.includes(excludedGenre)));
-        setSeriesList(series);
-        setSeriesTotal(series.length);
-      }
+      const page = await browserApi.genres.browse(browseQuery(next, libraryIds, q), controller.signal);
+      if (controller.signal.aborted) return;
+      setBrowse(page);
+      setSeriesList(page.items);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      toast(browserErrorMessage(error, t("common.error")), "error");
     } finally {
-      setSeriesLoading(false);
+      if (requestRef.current === controller) setSeriesLoading(false);
     }
-  }, []);
+  }, [t]);
+
+  const reload = () => loadSeries(selection, libraryFilter, debouncedSearch);
+
+  /** After a genre write: apply the new selection (the effect reloads) or reload as is. */
+  const refreshWith = async (next: GenreSelection) => {
+    const changed = next.genres.join("\u0000") !== selection.genres.join("\u0000")
+      || next.exclude.join("\u0000") !== selection.exclude.join("\u0000");
+    if (changed) setSelection(next);
+    else await reload();
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const page = await browserApi.genres.browse(browseQuery(selection, libraryFilter, debouncedSearch, browse.page + 1));
+      setBrowse(page);
+      setSeriesList(prev => [...prev, ...page.items.filter(item => !prev.some(s => s.series_id === item.series_id))]);
+    } catch (error) {
+      toast(browserErrorMessage(error, t("common.error")), "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(seriesSearch.trim()), 300);
     return () => clearTimeout(handle);
   }, [seriesSearch]);
 
-  // Skip the mount run: the server component already provided the initial list.
+  // Skip the mount run: the server component already provided the initial page.
   useEffect(() => {
     if (!didFetchRef.current) {
       didFetchRef.current = true;
       return;
     }
-    fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seriesFilter, libraryFilter, excludedGenres, debouncedSearch]);
+    void loadSeries(selection, libraryFilter, debouncedSearch);
+  }, [selection, libraryFilter, debouncedSearch, loadSeries]);
 
-  const handleFilterChange = (genres: GenreFilter, excluded = excludedGenres) => {
-    setSeriesFilter(genres);
-    setExcludedGenres(excluded);
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const handleFilterChange = (next: GenreSelection) => {
+    setSelection(next);
     setSeriesSearch("");
     setDebouncedSearch("");
     filterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
   const toggleGenreFilter = (genre: string) => {
-    if (genreFilterMode === "exclude") {
-      handleFilterChange(seriesFilter, excludedGenres.includes(genre)
-        ? excludedGenres.filter(excludedGenre => excludedGenre !== genre)
-        : [...excludedGenres, genre]);
-      return;
-    }
-    const selectedGenres = Array.isArray(seriesFilter) ? seriesFilter : [];
-    handleFilterChange(selectedGenres.includes(genre)
-      ? selectedGenres.filter(selectedGenre => selectedGenre !== genre)
-      : [...selectedGenres, genre]);
+    handleFilterChange(toggleGenre(selection, genre, genreFilterMode));
   };
-
-  const fetchBrowserGenres = useCallback(async (libraryIds: string[]) => {
-    const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
-    const results = await Promise.all(requestedLibraries.map(async libraryId => {
-      const [genres, untagged, total] = await Promise.all([
-        browserApi.genres.list(libraryId ?? undefined).catch(() => [] as GenreDto[]),
-        browserApi.genres.untagged(libraryId ?? undefined).catch(() => [] as SeriesDto[]),
-        browserApi.series.count({ libraryId: libraryId ?? undefined }).catch(() => 0),
-      ]);
-      return { genres, untagged, total };
-    }));
-    setBrowserGenres(mergeGenreCounts(results.map(result => result.genres)));
-    setUntaggedCount(results.reduce((count, result) => count + result.untagged.length, 0));
-    setFilteredLibrariesTotal(results.reduce((count, result) => count + result.total, 0));
-  }, []);
 
   const handleLibraryChange = (libraryIds: string[]) => {
     setLibraryFilter(libraryIds);
-    fetchBrowserGenres(libraryIds);
   };
 
   const handleRename = async (oldName: string, requestedName: string) => {
@@ -348,19 +303,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     setBusy(true);
     try {
       await browserApi.genres.rename(oldName, newName);
-      if (Array.isArray(seriesFilter) && seriesFilter.includes(oldName)) {
-        setSeriesFilter(seriesFilter.map(genre => genre === oldName ? newName : genre));
-      }
-      if (excludedGenres.includes(oldName)) {
-        setExcludedGenres(excludedGenres.map(genre => genre === oldName ? newName : genre));
-      }
-      setGenreCovers(prev => {
-        const next = { ...prev };
-        next[newName] = next[oldName] ?? [];
-        delete next[oldName];
-        return next;
-      });
-      await refreshGenres();
+      await refreshWith(renameGenreInSelection(selection, oldName, newName));
       toast(t("genres.renameSuccess"));
       return true;
     } catch (error) {
@@ -376,21 +319,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     setBusy(true);
     try {
       await browserApi.genres.remove(name);
-      setGenreCovers(prev => {
-        const next = { ...prev };
-        delete next[name];
-        return next;
-      });
-      const nextFilters = Array.isArray(seriesFilter) && seriesFilter.includes(name)
-        ? seriesFilter.filter(genre => genre !== name)
-        : seriesFilter;
-      if (nextFilters !== seriesFilter) setSeriesFilter(nextFilters);
-      // Always refetch the visible list: deleting a genre adds its series back
-      // to the untagged view, and removing an active filter changes the list.
-      await Promise.all([
-        refreshGenres(),
-        fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres, debouncedSearch),
-      ]);
+      // Always refetch: deleting a genre adds its series back to the untagged
+      // view, and removing an active filter changes the list.
+      await refreshWith(removeGenreFromSelection(selection, name));
       toast(t("genres.deleteSuccess"));
       return true;
     } catch (error) {
@@ -408,7 +339,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     try {
       await browserApi.genres.assign(genre, Array.from(selected));
       const count = selected.size;
-      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
+      await reload();
       setAssignInput("");
       toast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
     } catch (error) {
@@ -437,7 +368,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     try {
       await browserApi.genres.assign(genre, [seriesId]);
       setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
-      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
+      await reload();
       toast(t("genres.assignSuccess", { count: "1", plural: "" }));
     } catch (error) {
       toast(browserErrorMessage(error, t("genres.aiError")), "error");
@@ -476,13 +407,15 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   const filteredGenres = (genreFilter
     ? genres.filter(g => matchesSearchText(g.name, genreFilter))
-    : genres
+    : [...genres]
   ).sort((a, b) => b.series_count - a.series_count);
-  const availableGenreNames = browserGenres.filter(g => g.series_count > 0).map(g => g.name);
-  // Stats
+  // Stats (library scope of the facets)
+  const totalSeries = browse.facets.total;
+  const untaggedCount = browse.facets.untagged;
   const tagged = totalSeries > 0 ? totalSeries - untaggedCount : 0;
   const pct = totalSeries > 0 ? Math.round((tagged / totalSeries) * 100) : 0;
   const topGenre = [...genres].sort((a, b) => b.series_count - a.series_count)[0];
+  const hasMore = seriesList.length < browse.total;
 
   return (
     <div className="space-y-6">
@@ -553,13 +486,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         ) : (
           <div className="grid max-h-[calc(100vh-18rem)] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-4 xl:grid-cols-2">
             {filteredGenres.map(g => {
-              const covers = genreCovers[g.name] ?? [];
               return (
                 <div key={g.name} className="group relative min-h-[60px] rounded-lg bg-muted/50 p-2 transition-colors hover:bg-muted">
                   <button onClick={() => setActiveGenreModal(g.name)} className="absolute left-2 top-2 block h-11 w-8 overflow-hidden rounded-md bg-background focus:outline-none">
                     <div className="relative h-full w-full">
-                      {covers.length > 0 ? (
-                        <SeriesCoverImage series={covers[Math.floor(covers.length * (g.name.length % 4) / 4)]} />
+                      {g.cover ? (
+                        <SeriesCoverImage series={g.cover} />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/25">
                           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -646,37 +578,37 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
             </button>
           </div>
           <button
-            onClick={() => handleFilterChange([], [])}
+            onClick={() => handleFilterChange(ALL_SERIES)}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              Array.isArray(seriesFilter) && seriesFilter.length === 0 && excludedGenres.length === 0
+              isAllSeries(selection)
                 ? "bg-foreground text-background border-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             }`}
           >
             {t("common.all")}
             <span className="ml-1.5 opacity-70">
-              ({filteredLibrariesTotal})
+              ({totalSeries})
             </span>
           </button>
           <button
-            onClick={() => handleFilterChange(null)}
+            onClick={() => handleFilterChange(UNTAGGED_SERIES)}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              seriesFilter === null
+              selection.untagged
                 ? "bg-foreground text-background border-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             }`}
           >
             {t("genres.untaggedSeries")}
             <span className="ml-1.5 opacity-70">
-              ({seriesFilter === null ? seriesTotal : untaggedCount})
+              ({untaggedCount})
             </span>
           </button>
-          {[...browserGenres].sort((a, b) => b.series_count - a.series_count).filter(g => g.series_count > 0).map(g => (
+          {[...genres].sort((a, b) => b.series_count - a.series_count).filter(g => g.series_count > 0).map(g => (
             <button
               key={g.name}
               onClick={() => toggleGenreFilter(g.name)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                (genreFilterMode === "include" ? Array.isArray(seriesFilter) && seriesFilter.includes(g.name) : excludedGenres.includes(g.name))
+                (genreFilterMode === "include" ? selection.genres.includes(g.name) : selection.exclude.includes(g.name))
                   ? genreFilterMode === "include" ? "bg-success/15 text-success border-success/40" : "bg-destructive/10 text-destructive border-destructive/40"
                   : "border-border text-muted-foreground hover:border-success/30 hover:text-foreground"
               }`}
@@ -794,7 +726,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           <div className="py-12 text-center text-muted-foreground text-sm">{t("common.loading")}</div>
         ) : displayedSeries.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground text-sm">
-            {seriesFilter === null ? t("genres.noUntagged") : t("common.noData")}
+            {selection.untagged ? t("genres.noUntagged") : t("common.noData")}
           </div>
         ) : seriesView === "cards" ? (
           <JacketGrid className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
@@ -914,6 +846,19 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {!seriesLoading && hasMore && (
+          <div className="mt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+            <span>{seriesList.length} / {browse.total}</span>
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="h-9 rounded-xl border border-border px-4 font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              {loadingMore ? t("common.loading") : t("genres.loadMore")}
+            </button>
           </div>
         )}
       </section>

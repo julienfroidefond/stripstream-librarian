@@ -2,24 +2,33 @@
 
 import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
-import type { ReadingListDetailDto, ReadingListSeriesDto, SeriesDto } from "@/lib/api";
+import type { ReadingListDetailDto, SeriesDto } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
+import { ReadingListsProvider, useReadingLists } from "@/app/components/ReadingListsProvider";
 
 type Props = {
   list: ReadingListDetailDto;
 };
 
-export function ReadingListDetailClient({ list: initialList }: Props) {
+/** The detail page: the list lives in the reading-lists store, not in local state. */
+export function ReadingListDetailClient({ list }: Props) {
+  return (
+    <ReadingListsProvider detail={list}>
+      <ReadingListDetailView initialList={list} />
+    </ReadingListsProvider>
+  );
+}
+
+function ReadingListDetailView({ initialList }: { initialList: ReadingListDetailDto }) {
   const { t } = useTranslation();
-  const router = useRouter();
-  const [list, setList] = useState<ReadingListDetailDto>(initialList);
-  const [items, setItems] = useState<ReadingListSeriesDto[]>(initialList.items);
-  const [saving, setSaving] = useState(false);
+  const readingLists = useReadingLists();
+  const list = readingLists.detail(initialList.id) ?? initialList;
+  const items = list.items;
+  const saving = readingLists.pending(`list:${list.id}`);
 
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState(list.name);
@@ -34,21 +43,15 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
   const alreadyInList = new Set(items.map((i) => i.id));
 
   async function handleSaveEdit() {
-    if (!editName.trim()) return;
-    setSaving(true);
-    try {
-      const updated = await browserApi.readingLists.update(list.id, {
-        name: editName.trim(),
-        description: editDescription.trim() || null,
-      });
-      setList((prev) => ({ ...prev, ...updated }));
-      setEditMode(false);
-      router.refresh();
-    } catch {
-      // keep the edit form open so the reader can retry
-    } finally {
-      setSaving(false);
-    }
+    if (!editName.trim() || saving) return;
+    const outcome = await readingLists.run({
+      type: "rename",
+      listId: list.id,
+      name: editName.trim(),
+      description: editDescription.trim() || null,
+    });
+    // On failure the form stays open so the reader can retry.
+    if (outcome.ok) setEditMode(false);
   }
 
   const searchSeries = useCallback((q: string) => {
@@ -67,55 +70,17 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
     }, 300);
   }, []);
 
-  async function handleAdd(series: SeriesDto) {
-    try {
-      await browserApi.readingLists.addSeries(list.id, series.series_id);
-      const newItem: ReadingListSeriesDto = {
-        id: series.series_id,
-        name: series.name,
-        cover_url: series.cover_url,
-        first_book_id: series.first_book_id,
-        first_book_updated_at: series.first_book_updated_at,
-        provider: series.metadata_provider,
-        external_id: null,
-        external_url: null,
-        library_id: series.library_id,
-        library_name: "",
-        position: items.length,
-        book_count: series.book_count,
-        books_read_count: series.books_read_count,
-        is_empty: series.book_count === 0,
-      };
-      setItems((prev) => [...prev, newItem]);
-      alreadyInList.add(series.series_id);
-      router.refresh();
-    } catch {
-      // silently fail
-    }
+  function handleAdd(series: SeriesDto) {
+    // The API answers 204: the new row appears once the store re-reads the list.
+    void readingLists.run({ type: "add", listId: list.id, seriesId: series.series_id });
   }
 
-  async function handleRemove(seriesId: string) {
-    try {
-      await browserApi.readingLists.removeSeries(list.id, seriesId);
-      setItems((prev) => prev.filter((i) => i.id !== seriesId));
-      router.refresh();
-    } catch {
-      // silently fail
-    }
+  function handleRemove(seriesId: string) {
+    void readingLists.run({ type: "remove", listId: list.id, seriesId });
   }
 
-  async function handleMove(index: number, direction: "up" | "down") {
-    const newItems = [...items];
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    if (swapIndex < 0 || swapIndex >= newItems.length) return;
-    [newItems[index], newItems[swapIndex]] = [newItems[swapIndex], newItems[index]];
-    setItems(newItems);
-    try {
-      await browserApi.readingLists.reorder(list.id, newItems.map((i) => i.id));
-      router.refresh();
-    } catch {
-      setItems(items);
-    }
+  function handleMove(seriesId: string, direction: "up" | "down") {
+    void readingLists.run({ type: "move", listId: list.id, seriesId, direction });
   }
 
   return (
@@ -266,7 +231,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
               {/* Controls */}
               <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
-                  onClick={() => handleMove(index, "up")}
+                  onClick={() => handleMove(item.id, "up")}
                   disabled={index === 0}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
                   title={t("readingLists.moveUp")}
@@ -276,7 +241,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
                   </svg>
                 </button>
                 <button
-                  onClick={() => handleMove(index, "down")}
+                  onClick={() => handleMove(item.id, "down")}
                   disabled={index === items.length - 1}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
                   title={t("readingLists.moveDown")}
@@ -287,6 +252,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
                 </button>
                 <button
                   onClick={() => handleRemove(item.id)}
+                  disabled={readingLists.pending(`item:${list.id}:${item.id}`)}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors ml-0.5"
                   title={t("readingLists.removeSeries")}
                 >
@@ -325,12 +291,13 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
             <div className="space-y-1 max-h-72 overflow-y-auto -mx-1 px-1">
               {searchResults.map((series) => {
                 const inList = alreadyInList.has(series.series_id);
+                const adding = readingLists.pending(`item:${list.id}:${series.series_id}`);
                 return (
                   <button
                     key={series.series_id}
                     type="button"
-                    disabled={inList}
-                    onClick={() => !inList && handleAdd(series)}
+                    disabled={inList || adding}
+                    onClick={() => !inList && !adding && handleAdd(series)}
                     className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-accent transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <div className="w-9 h-12 rounded-md overflow-hidden shrink-0 bg-muted shadow-sm">

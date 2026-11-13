@@ -1484,6 +1484,7 @@ const fr = {
 
   // Genres management page
   "genres.title": "Gestion des genres",
+  "genres.loadMore": "Charger plus",
   "genres.allGenres": "Tous les genres",
   "genres.seriesCount": "{{count}} série{{plural}}",
   "genres.rename": "Renommer",
@@ -1572,6 +1573,7 @@ const fr = {
   "readingLists.created": "Liste créée.",
   "readingLists.updated": "Liste mise à jour.",
   "readingLists.deleted": "Liste supprimée.",
+  "readingLists.writeError": "La liste de lecture n'a pas pu être mise à jour.",
   "readingLists.alreadyInList": "Déjà dans la liste",
   "readingLists.noResults": "Aucun résultat",
   "readingLists.addToList": "Ajouter à une liste de lecture",

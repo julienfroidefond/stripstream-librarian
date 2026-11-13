@@ -16,7 +16,7 @@ const config = [
   {
     // Cache invalidation goes through `invalidateAfter` (lib/cache, ADR 0021).
     files: ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
-    ignores: ["lib/cache/**", "app/(app)/settings/components/TokensTab.tsx"],
+    ignores: ["lib/cache/**"],
     rules: {
       "no-restricted-imports": [
         "error",

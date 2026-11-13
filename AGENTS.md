@@ -107,8 +107,8 @@ cd apps/docs && npm install && npm run dev -- --port 7083
   `utoipa` for OpenAPI; `Option<T>` for nullable fields, public structs documented briefly.
 - **Logging (`RUST_LOG`)**: targets `indexer`, `scan`, `extraction`, `thumbnail`, `watcher`.
   Default: `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`.
-- **Performance**: batch DB writes (100 items recommended); `rayon::par_iter()` for CPU-intensive
-  scans; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
+- **Performance**: batch DB writes (100 items recommended); bound CPU-intensive
+  work with `spawn_blocking` + a concurrency limit; cache expensive operations (see `apps/api/src/books/renderer.rs` for the memory-LRU + disk
   cache); stream large data.
 
 ### Naming Conventions
@@ -160,9 +160,11 @@ libraries/             # book storage (mounted volume)
 | File | Purpose |
 |------|---------|
 | `apps/api/src/main.rs` | Router, AppState init, Swagger UI (client + admin) |
-| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, `page_render_limit` semaphore |
+| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, resizable `page_render_limit` |
+| `apps/api/src/settings/limits.rs` | Typed `app_settings.limits` schema (`Limits::parse` / `load`, ADR 0026) |
 | `apps/api/src/error.rs` | `ApiError` + constructors |
-| `apps/api/src/books/pages.rs` | Page rendering + double cache (memory LRU + disk) |
+| `apps/api/src/books/renderer.rs` | `PageRenderer`: the one page-rendering pipeline + double cache (memory LRU + disk), ADR 0023 |
+| `apps/api/src/books/files.rs` | `current_book_file` / `current_book_file_join!`: the current file of a book |
 | `apps/api/src/books/thumbnails.rs` | Thumbnail rebuild/regenerate job endpoints |
 | `apps/api/src/metadata/shared_sync.rs` | Factored sync used by approve + batch + refresh |
 | `apps/api/src/metadata_providers/mod.rs` | `MetadataProvider` trait + `available_providers()` |
@@ -228,11 +230,14 @@ release JSON filtering in the API or the indexer.
 
 ### Series Identity (`crates/core/src/series_identity.rs`)
 
-The SQL `norm_text(name)` key (lowercase + unaccent) is the only series-name key. `find` /
-`find_id`, `find_many`, `resolve_many` and `existing_names` own point and batch lookups; all but
-`existing_names` are library-scoped. Callers pass **raw names** and get series rows back — never
-hand-write `LOWER(name)` or a new `norm_text` join. The database normalizes the raw side, so the
-Rust and SQL keys cannot drift on accents. Set-based joins that already use `norm_text` stay as-is;
+The SQL `norm_text` key (lowercase + unaccent) is the only series-name key. A raw name matches a
+series whose `norm_text(name)` **or** `norm_text(original_name)` equals it (a current-name match
+wins), so a renamed series keeps owning its folder name. `find` / `find_id`, `find_many`,
+`resolve_many` and `existing_names` own point and batch lookups; all but `existing_names` are
+library-scoped. `find_or_create` is the only get-or-create: it serializes creation per normalized
+name with an advisory lock (ADR 0022) — never write `INSERT INTO series ... ON CONFLICT (library_id,
+name)` to resolve a name. Callers pass **raw names** and get series rows back — never hand-write
+`LOWER(name)` or a new `norm_text` join. Set-based joins that already use `norm_text` stay as-is;
 any new lookup must go through this module.
 
 ### Metadata Providers
@@ -260,7 +265,9 @@ verdict. Never compute a confidence or compare it to `1.0` by hand.
 Path handling uses typed `LibraryRoot` / `LibraryPath` values from `crates/core/src/paths.rs`
 (`resolve`, `to_local`, `to_db`) — never join `/libraries` by hand. The 2-phase indexer
 architecture (discovery then analysis) and the `books.analysis_status` lifecycle are documented in
-`apps/indexer/AGENTS.md`.
+`apps/indexer/AGENTS.md`. Every `analysis_status` transition (claim, release, failure, page counts,
+covers from the indexer or the API, cover reset) goes through `crates/core/src/analysis.rs`;
+never write that column in SQL elsewhere (discovery only inserts `discovered`).
 
 ---
 

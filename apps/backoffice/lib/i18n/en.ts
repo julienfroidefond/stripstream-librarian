@@ -1486,6 +1486,7 @@ const en: Record<TranslationKey, string> = {
 
   // Genres management page
   "genres.title": "Genre management",
+  "genres.loadMore": "Load more",
   "genres.allGenres": "All genres",
   "genres.seriesCount": "{{count}} series",
   "genres.rename": "Rename",
@@ -1574,6 +1575,7 @@ const en: Record<TranslationKey, string> = {
   "readingLists.created": "List created.",
   "readingLists.updated": "List updated.",
   "readingLists.deleted": "List deleted.",
+  "readingLists.writeError": "The reading list could not be updated.",
   "readingLists.alreadyInList": "Already in list",
   "readingLists.noResults": "No results",
   "readingLists.addToList": "Add to reading list",

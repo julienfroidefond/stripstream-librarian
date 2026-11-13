@@ -20,7 +20,7 @@ pub use activity::*;
 pub use archive::*;
 pub use create::*;
 pub use favorites::*;
-pub(crate) use helpers::{get_or_create_series, resolve_library_id};
+pub(crate) use helpers::resolve_library_id;
 pub use list::*;
 pub use merge::*;
 pub use ongoing::*;

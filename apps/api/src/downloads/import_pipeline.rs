@@ -555,12 +555,12 @@ async fn load_existing_files_by_volume(
 /// When a download contains the same volume in multiple formats (e.g. T01.cbz and T01.pdf),
 /// keep only the best format per volume. Priority: cbz > cbr > pdf > epub.
 pub(super) fn format_priority(ext: &str) -> u8 {
-    match ext.to_ascii_lowercase().as_str() {
-        "cbz" => 0,
-        "cbr" => 1,
-        "pdf" => 2,
-        "epub" => 3,
-        _ => 4,
+    match ext.parse::<parsers::BookFormat>() {
+        Ok(parsers::BookFormat::Cbz) => 0,
+        Ok(parsers::BookFormat::Cbr) => 1,
+        Ok(parsers::BookFormat::Pdf) => 2,
+        Ok(parsers::BookFormat::Epub) => 3,
+        Err(_) => 4,
     }
 }
 

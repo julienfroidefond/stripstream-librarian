@@ -7,13 +7,14 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | Chemin | Rôle |
 |--------|------|
 | `main.rs` | Routes, initialisation `AppState`, Swagger UI (client + admin) |
-| `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (Semaphore), `load_concurrent_renders` |
+| `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (`RenderLimit`, redimensionnable à chaud) |
+| `settings.rs`, `settings/limits.rs` | Endpoints `/settings`, `apply` (unique point de rechargement à chaud) ; schéma typé `Limits` de `app_settings.limits` (ADR 0026) |
 | `coverage.rs` | Adaptateurs DB de `stripstream_core::coverage::SeriesCoverage` : CTE canonique des manquants, chargement par lot/unité, volumes possédés par nom de série |
 | `api_middleware.rs` | Middlewares `require_admin` / `require_read`, rate limiting lecture |
 | `error.rs` | `ApiError` avec constructeurs `bad_request`, `not_found`, `internal`, etc. |
 | `handlers.rs` | `/health`, `/ready`, `/version`, `/metrics` |
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
-| `books/` | `mod.rs` (CRUD livres), `pages.rs` (rendu + double cache), `thumbnails.rs` (jobs), `rename.rs` |
+| `books/` | `mod.rs` (CRUD livres), `pages.rs` (handlers page + miniature à la volée), `renderer.rs` (`PageRenderer` : double cache, verrou, permis, timeout), `files.rs` (fichier courant d'un livre), `download.rs`, `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
 | `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
@@ -64,15 +65,26 @@ async fn get_book(...) { }
 ```
 - Client : `/openapi.json` + UI `/swagger-ui` — Admin : `/admin/openapi.json` + UI `/admin/swagger-ui`
 
-### Cache pages (`books/pages.rs`)
+### Rendu et cache des pages (`books/renderer.rs`, ADR 0023)
+- `PageRenderer::get(&PageSpec, Urgency)` est le seul chemin de rendu : cache mémoire → cache disque → verrou par clé → permis → timeout → `spawn_blocking`. `Urgency::Prefetch` ne rend jamais une page déjà en cache ou en cours de rendu. `PageRenderer::run` (permis + timeout + `spawn_blocking`) sert au travail non caché (miniature à la volée).
+- Archives derrière le trait `PageSource` (`ArchivePages` en prod, `FakePages` en test) : ne pas appeler `parsers::extract_page` depuis un handler.
 - **Cache mémoire** : LRU limité en octets (`cache.memory_max_size_mb`, 128 Mo par défaut), redimensionné à chaud
-- **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256
-- Concurrence limitée par `AppState.page_render_limit` (Semaphore, configurable en DB)
+- **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256 (chemin, mtime, page, options)
+- Concurrence limitée par `AppState.page_render_limit` (`RenderLimit` : sémaphore redimensionné à chaud par `limits.concurrent_renders`)
 - `spawn_blocking` pour le rendu image (CPU-bound)
 
-### Paramètre concurrent_renders
-Stocké en DB : `SELECT value FROM app_settings WHERE key = 'limits'` → JSON `{"concurrent_renders": N}`.
-Chargé au démarrage dans `state.rs::load_concurrent_renders`.
+### Fichier courant d'un livre (`books/files.rs`)
+- `current_book_file(pool, &library_root, book_id)` → `BookFile { db_path, local_path, format: BookFormat }` (404 sans fichier). Le format vient toujours de la base, jamais de l'extension.
+- Requêtes ensemblistes : `concat!(…, current_book_file_join!("size_bytes"), …)` (alias `b` pour `books`, `bf` pour le fichier). Ne pas réécrire `ORDER BY updated_at DESC LIMIT 1` sur `book_files`.
+
+### Réglage `limits` (ADR 0026)
+`settings/limits.rs` est le seul schéma de `app_settings.limits` : chaque champ y a un `Spec`
+(défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture
+(`POST /settings/limits` → 400 listant chaque champ fautif) ; `Limits::load` / `from_stored` lit
+la ligne (un champ invalide stocké retombe sur son défaut). Ne pas relire le JSON `limits` à la
+main ni re-clamper une valeur : dériver de `Limits` (`DownloadSettings::from(&limits)`,
+`DynamicSettings::apply_limits`). Tout rechargement à chaud passe par `settings::apply(state, key)`,
+y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
 
 ## Gotchas
 
@@ -125,7 +137,9 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Identité de série** : `stripstream_core::series_identity` possède la clé normalisée
   (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
   Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
-  écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
+  écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main. Pour trouver ou créer
+  une série à partir d'un nom, `series_identity::find_or_create` (ADR 0022), jamais un
+  `INSERT INTO series ... ON CONFLICT (library_id, name)`.
 - **Liens de métadonnées** : `metadata/links.rs` est le seul écrivain de
   `external_metadata_links` (ADR 0017) : `propose`, `approve`, `approve_existing`,
   `set_primary`, `remove(Removal::…)`, `reassign`, `record_provider_snapshot`, `mark_synced`.

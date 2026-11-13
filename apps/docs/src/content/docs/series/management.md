@@ -111,7 +111,7 @@ Les séries qui n'ont plus aucun livre après un scan sont automatiquement suppr
 
 **Verrouillage** : stocké dans la colonne JSONB `locked_fields` sous forme de booléens stricts (ex: `{"description": true}`). Les valeurs héritées de type chaîne ou nombre sont normalisées par migration, et les clés inconnues sont supprimées : seuls les champs du [catalogue des champs synchronisables](/metadata/sync/#champs-verrouillables) sont conservés.
 
-**Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `norm_text()` sur les deux champs.
+**Déduplication** : `series_identity::find_or_create` (crate `core`) vérifie `name` et `original_name` pour éviter les doublons (matching `norm_text()`, casse et accents ignorés) ; la même règle vaut pour le scanner, la création de série, le rattachement de métadonnées et l'édition du champ série d'un livre.
 
 **Fusion** : transfère livres, metadata links, downloads disponibles, liens AniList. Conserve les metadata links de la cible en cas de conflit (même provider). Supprime la série source après fusion.
 
