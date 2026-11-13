@@ -2,14 +2,12 @@
 //!
 //! Telegram media downloads and download-provider HTTP downloads both land a file
 //! directly inside the series directory (rather than staging in `/downloads`) and
-//! rely on a scan job to index it. These helpers centralize the directory
-//! resolution, the filename sanitization and the rename-template rendering so both
-//! flows stay consistent.
+//! rely on a scan job to index it. These helpers centralize the filename
+//! sanitization and the rename-template rendering; series-directory resolution
+//! lives in the `library_target` module.
 
 use std::path::{Path, PathBuf};
 
-use sqlx::Row;
-use tracing::info;
 use uuid::Uuid;
 
 use parsers::{detect_format, parse_metadata_fast};
@@ -18,76 +16,7 @@ use stripstream_core::paths::LibraryRoot;
 use crate::books::rename::{
     load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
 };
-use crate::downloads::import_pipeline::find_existing_series_dir;
-
-/// Find the physical target directory for a series in a library,
-/// matching existing book files first, then existing directories, then fallback to new.
-pub async fn resolve_target_dir(
-    pool: &sqlx::PgPool,
-    library_root: &LibraryRoot,
-    library_id: Uuid,
-    series_name: &str,
-) -> anyhow::Result<String> {
-    // 1. Try DB: find existing book files for this series
-    let any_row = sqlx::query(
-        "SELECT bf.abs_path FROM book_files bf \
-         JOIN books b ON b.id = bf.book_id \
-         LEFT JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 \
-           AND norm_text(s.name) = norm_text($2) \
-         LIMIT 1",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await?;
-
-    if let Some(r) = any_row {
-        let abs_path: String = r.get("abs_path");
-        let physical = library_root.resolve(&abs_path)?.to_local().to_string();
-        let parent = std::path::Path::new(&physical)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or(physical);
-        info!("[download] Series '{}' DB match → {}", series_name, parent);
-        return Ok(parent);
-    }
-
-    // 2. No DB match: look for existing directory in library root
-    let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_one(pool)
-        .await?;
-    let root_path: String = lib_row.get("root_path");
-    let physical_root = library_root.resolve(&root_path)?.to_local().to_string();
-
-    // The series name comes from user input (a DDL download request) and is used
-    // as a directory component below, so it must not escape the library root.
-    let series_component = validated_series_dir_name(series_name)?;
-
-    let dir = find_existing_series_dir(&physical_root, series_component).unwrap_or_else(|| {
-        format!(
-            "{}/{}",
-            physical_root.trim_end_matches('/'),
-            series_component
-        )
-    });
-
-    info!("[download] Series '{}' dir → {}", series_name, dir);
-    Ok(dir)
-}
-
-/// The fallback target directory is `<library_root>/<series_name>`, so the series
-/// name must be a single, safe path component.
-fn validated_series_dir_name(series_name: &str) -> anyhow::Result<&str> {
-    let name = series_name.trim();
-    anyhow::ensure!(!name.is_empty(), "series name is empty");
-    anyhow::ensure!(
-        !name.contains("..") && !name.contains('/') && !name.contains('\\') && !name.contains('\0'),
-        "series name '{series_name}' is not a valid directory name"
-    );
-    Ok(name)
-}
+use crate::downloads::library_target;
 
 pub fn sanitize_filename(name: &str) -> String {
     let safe: String = name
@@ -205,7 +134,8 @@ pub async fn prepare_destination(
     filename: &str,
     volume_override: Option<i32>,
 ) -> anyhow::Result<DownloadDestination> {
-    let target_dir = resolve_target_dir(pool, library_root, library_id, series_name).await?;
+    let target = library_target::resolve(pool, library_root, library_id, series_name).await?;
+    let target_dir = target.directory;
     tokio::fs::create_dir_all(&target_dir).await?;
 
     let safe_name = build_target_filename(pool, library_id, series_name, filename, volume_override)
@@ -311,25 +241,6 @@ mod tests {
                 .unwrap();
 
         assert_eq!(name, "Astérix - T3.cbz");
-    }
-
-    /// `series_name` is user input; a traversal component must be rejected before
-    /// it is joined to the library root.
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn resolve_target_dir_rejects_series_name_traversal(pool: sqlx::PgPool) {
-        let library_id = seed_library(&pool, "{series_name}").await;
-
-        assert!(
-            resolve_target_dir(
-                &pool,
-                &LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT),
-                library_id,
-                "../../etc",
-            )
-            .await
-            .is_err(),
-            "a series name must not escape the library root"
-        );
     }
 
     /// A re-import must not delete the previous good file up front: the transfer

@@ -5,6 +5,7 @@ pub mod detection;
 mod http_error;
 pub mod http_range;
 mod import_pipeline;
+mod library_target;
 pub mod limit;
 mod missing;
 

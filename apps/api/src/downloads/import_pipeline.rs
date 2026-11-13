@@ -2,13 +2,14 @@ use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use parsers::{detect_format, extract_volumes, fold_accents, parse_metadata_fast, VolumeType};
+use parsers::{detect_format, extract_volumes, parse_metadata_fast, VolumeType};
 use stripstream_core::paths::LibraryRoot;
 
 use crate::books::rename::{
     load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
 };
 
+use super::library_target;
 use super::torrent_import::{ImportResult, ImportedFile, SkippedFile};
 
 pub(super) async fn do_import(
@@ -22,58 +23,34 @@ pub(super) async fn do_import(
 ) -> anyhow::Result<ImportResult> {
     let physical_content = remap_downloads_path(content_path);
 
-    // Find the target directory and a naming reference from existing book_files.
-    // First find ANY existing book to determine the target directory, then pick a
-    // reference file (preferring one outside expected_volumes for naming consistency).
-    let any_row = sqlx::query(
-        "SELECT bf.abs_path, b.volume \
-         FROM book_files bf \
-         JOIN books b ON b.id = bf.book_id \
-         LEFT JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 \
-           AND norm_text(s.name) = norm_text($2) \
-           AND b.volume IS NOT NULL \
-         ORDER BY b.volume DESC LIMIT 1",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await?;
+    // Resolve the destination directory and a naming reference through the
+    // shared library-target seam. A database match wins; the fallback validates
+    // the series name before using it as a directory component.
+    let target = library_target::resolve(pool, library_root, library_id, series_name).await?;
+    let target_dir = target.directory;
+    let reference = target
+        .reference
+        .map(|reference| (reference.abs_path, reference.volume));
 
-    let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_one(pool)
-        .await?;
-    let root_path: String = lib_row.get("root_path");
-    let physical_root = library_root.resolve(&root_path)?.to_local().to_string();
-
-    let (target_dir, reference) = if let Some(r) = any_row {
-        let abs_path: String = r.get("abs_path");
-        let volume: i32 = r.get("volume");
-        let physical = library_root.resolve(&abs_path)?.to_local().to_string();
-        let parent = std::path::Path::new(&physical)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or(physical);
+    if let Some((abs_path, volume)) = &reference {
         info!(
             "[IMPORT] DB reference found: {} (volume {}), target_dir={}",
-            abs_path, volume, parent
+            abs_path, volume, target_dir
         );
-        (parent, Some((abs_path, volume)))
     } else {
-        // No existing files in DB: look for an existing directory (case-insensitive)
-        // inside the library root, then fall back to creating one.
         info!(
             "[IMPORT] No DB reference for series '{}' in library {}",
             series_name, library_id
         );
-        let dir = find_existing_series_dir(&physical_root, series_name)
-            .unwrap_or_else(|| format!("{}/{}", physical_root.trim_end_matches('/'), series_name));
-        info!("[IMPORT] Target directory: {}", dir);
-        (dir, None)
-    };
+        info!("[IMPORT] Target directory: {}", target_dir);
+    }
 
     std::fs::create_dir_all(&target_dir)?;
+
+    // Incoming files are parsed relative to the library root (oneshot-folder
+    // detection); resolve it once through the library-target module.
+    let physical_root =
+        library_target::resolve_physical_root(pool, library_root, library_id).await?;
 
     let mut expected_set: std::collections::HashSet<i32> =
         expected_volumes.iter().copied().collect();
@@ -571,38 +548,6 @@ async fn load_existing_files_by_volume(
             .push(row.get("abs_path"));
     }
     Ok(by_volume)
-}
-
-// ─── Directory matching ───────────────────────────────────────────────────────
-
-/// Find an existing directory in `root` whose name matches `series_name`
-/// case-insensitively and accent-insensitively (e.g. "les géants" matches "les geants").
-pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
-    let target_norm = fold_accents(&series_name.to_lowercase());
-    let entries = std::fs::read_dir(root).ok()?;
-    let mut best: Option<(String, bool)> = None; // (path, is_exact_case_match)
-    for entry in entries.flatten() {
-        if !entry.file_type().ok().is_some_and(|t| t.is_dir()) {
-            continue;
-        }
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        let name_lower = name_str.to_lowercase();
-        let name_norm = fold_accents(&name_lower);
-        if name_norm == target_norm {
-            let path = entry.path().to_string_lossy().into_owned();
-            let exact = name_lower == series_name.to_lowercase();
-            info!(
-                "[IMPORT] Found existing directory (normalized match): {} (exact={})",
-                path, exact
-            );
-            // Prefer exact case match over accent-stripped match
-            if exact || best.is_none() {
-                best = Some((path, exact));
-            }
-        }
-    }
-    best.map(|(p, _)| p)
 }
 
 // ─── Format deduplication ─────────────────────────────────────────────────────
