@@ -96,8 +96,10 @@ Fingerprint = SHA256(taille + mtime + filename) pour détecter les changements s
 Traitement progressif en background, piloté par `books.analysis_status` (voir ci-dessous) :
 - Analyse complète : claim `discovered`, `failed` et `analyzing` (reprise après job interrompu).
 - Miniatures seules (`thumbnail_only`) : claim `cover_pending` uniquement.
-- Concurrence bornée via `buffer_unordered(concurrency)` — défaut `(num_cpus / 2).clamp(1, 2)` soit
-  1–2, surchargeable par `app_settings.limits.concurrent_renders`
+- Concurrence bornée via `buffer_unordered(concurrency)` = `Limits::load(pool).concurrent_renders`
+  (`stripstream_core::limits`, 1–64, défaut 8) ; délai d'ouverture d'un livre =
+  `limits.analysis_timeout_seconds` (défaut 120 s), **pas** `timeout_seconds` (rendu de page API).
+  Ne pas relire le JSON `limits` à la main (ADR 0026)
 - Par livre : `parsers::analyze_book(path, format, pdf_render_scale)` → `(page_count, first_page_bytes)`
 - Si `analyze_book` échoue (rendu de la 1re page impossible, timeout…), `extract_page_count`
   retente via `parsers::page_count_only` : le livre conserve son `page_count` (donc reste visible)
@@ -137,7 +139,7 @@ séparément (`failed_analysis`).
 - **Env** : `INDEXER_LISTEN_ADDR` (défaut `0.0.0.0:7081`), `INDEXER_SCAN_INTERVAL_SECONDS` (5)
 - **DB** : `app_settings.thumbnail` (seule source des réglages de miniatures, sur les défauts
   `enabled=true`, `webp`, 300×400, qualité 80, `/data/thumbnails` ; aucune variable `THUMBNAIL_*`),
-  `limits.concurrent_renders`, `limits.timeout_seconds`
+  `limits.concurrent_renders`, `limits.analysis_timeout_seconds` (via `Limits::load`)
 - **Logs** : `RUST_LOG` — défaut `indexer=info,axum=info,scan=info,extraction=info,thumbnail=warn,watcher=info`
 
 ## Path remapping

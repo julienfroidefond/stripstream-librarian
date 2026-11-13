@@ -21,6 +21,7 @@ import { DOWNLOAD_CLIENTS, type DownloadClientSetting } from "./downloadClient";
 export interface LimitsSettings {
   concurrent_renders: number;
   timeout_seconds: number;
+  analysis_timeout_seconds: number;
   rate_limit_per_second: number;
   concurrent_telegram_downloads: number;
   telegram_download_connections: number;
@@ -232,6 +233,7 @@ export const SETTINGS_SECTION_DEFAULTS: Record<string, unknown> = {
   limits: {
     concurrent_renders: 4,
     timeout_seconds: 12,
+    analysis_timeout_seconds: 120,
     rate_limit_per_second: 120,
     concurrent_telegram_downloads: 2,
     telegram_download_connections: 4,

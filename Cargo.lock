@@ -1597,7 +1597,6 @@ dependencies = [
  "futures",
  "image",
  "notifications",
- "num_cpus",
  "parsers",
  "reqwest",
  "serde",

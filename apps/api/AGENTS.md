@@ -8,7 +8,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 |--------|------|
 | `main.rs` | Routes, initialisation `AppState`, Swagger UI (client + admin) |
 | `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (`RenderLimit`, redimensionnable à chaud) |
-| `settings.rs`, `settings/limits.rs` | Endpoints `/settings`, `apply` (unique point de rechargement à chaud) ; schéma typé `Limits` de `app_settings.limits` (ADR 0026) |
+| `settings.rs`, `settings/limits.rs` | Endpoints `/settings`, `apply` (unique point de rechargement à chaud) ; `settings/limits.rs` réexporte le schéma typé `stripstream_core::limits` (ADR 0026) |
 | `coverage.rs` | Adaptateurs DB de `stripstream_core::coverage::SeriesCoverage` : CTE canonique des manquants, chargement par lot/unité, volumes possédés par nom de série |
 | `api_middleware.rs` | Middlewares `require_admin` / `require_read`, rate limiting lecture |
 | `error.rs` | `ApiError` avec constructeurs `bad_request`, `not_found`, `internal`, etc. |
@@ -78,7 +78,7 @@ async fn get_book(...) { }
 - Requêtes ensemblistes : `concat!(…, current_book_file_join!("size_bytes"), …)` (alias `b` pour `books`, `bf` pour le fichier). Ne pas réécrire `ORDER BY updated_at DESC LIMIT 1` sur `book_files`.
 
 ### Réglage `limits` (ADR 0026)
-`settings/limits.rs` est le seul schéma de `app_settings.limits` : chaque champ y a un `Spec`
+`stripstream_core::limits` (réexporté par `settings/limits.rs`) est le seul schéma de `app_settings.limits`, partagé avec l'indexer : chaque champ y a un `Spec`
 (défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture
 (`POST /settings/limits` → 400 listant chaque champ fautif) ; `Limits::load` / `from_stored` lit
 la ligne (un entier stocké hors plage est borné, un champ illisible retombe sur son défaut). Ne pas relire le JSON `limits` à la
