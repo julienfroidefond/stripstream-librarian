@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.153 — 2026-11-13
+
+### Refactoring
+
+- **metadata** — one owner module for external_metadata_links ([#294](https://github.com/julienfroidefond/stripstream-librarian/pull/294))
+
 ## v3.32.152 — 2026-11-13
 
 ### Corrections
