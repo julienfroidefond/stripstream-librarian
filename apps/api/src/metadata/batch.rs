@@ -8,9 +8,8 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::jobs::lifecycle::{
-    cancel_job, classify_job, fail_job, finish_job, job_in_flight, start_job, JobScope, JobStatus,
-};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, start_job, JobStatus};
 use crate::metadata_providers;
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{
@@ -18,6 +17,7 @@ use crate::{
     job_helpers::{insert_event, is_job_cancelled, set_total_files, update_progress},
     state::AppState,
 };
+use notifications::NotificationEvent;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -162,7 +162,7 @@ pub struct BatchResultsQuery {
     tag = "metadata",
     request_body = MetadataBatchRequest,
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "Bad request"),
     ),
     security(("Bearer" = []))
@@ -170,144 +170,73 @@ pub struct BatchResultsQuery {
 pub async fn start_batch(
     State(state): State<AppState>,
     Json(body): Json<MetadataBatchRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<JobLaunchResponse>, ApiError> {
+    let spec = if body.force_rematch {
+        &METADATA_BATCH_REMATCH
+    } else {
+        &METADATA_BATCH
+    };
+
     // All libraries case
-    if body.library_id.is_none() {
+    let Some(library_id) = body.library_id else {
         let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name"
+            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name",
         )
         .fetch_all(&state.pool)
         .await?;
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let existing = job_in_flight(
-                &state.pool,
-                JobScope::Library(library_id),
-                &["metadata_batch"],
-            )
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            let library_name: Option<String> =
-                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                    .bind(library_id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            tokio::spawn(async move {
-                if let Err(e) = process_metadata_batch(&pool, job_id, library_id).await {
-                    warn!("[METADATA_BATCH] job {job_id} failed: {e}");
-                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-                    notifications::notify(
-                        pool.clone(),
-                        notifications::NotificationEvent::MetadataBatchFailed {
-                            library_name,
-                            error: e.to_string(),
-                        },
-                    );
-                }
-            });
-            last_job_id = Some(job_id);
-        }
-        return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
-            "status": "started",
-        })));
-    }
+        let fan_out = launcher::launch_each(&state.pool, library_ids, spec, run_batch).await?;
+        return Ok(Json(fan_out.into()));
+    };
 
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
+    let library_id: Uuid = library_id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
-    // Verify library exists
-    sqlx::query("SELECT 1 FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("library not found"))?;
-
-    // Check library provider -- if "none", refuse batch
-    let lib_row = sqlx::query("SELECT metadata_provider FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_one(&state.pool)
-        .await?;
-    let lib_provider: Option<String> = lib_row.get("metadata_provider");
+    // Verify library exists and check its provider -- if "none", refuse batch
+    let lib_provider: Option<String> =
+        sqlx::query_scalar("SELECT metadata_provider FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("library not found"))?;
     if lib_provider.as_deref() == Some("none") {
         return Err(ApiError::bad_request(
             "This library has metadata disabled (provider set to 'none')",
         ));
     }
 
-    // Check no existing running metadata_batch job for this library
-    let existing = job_in_flight(
-        &state.pool,
-        JobScope::Library(library_id),
-        &["metadata_batch", "metadata_batch_rematch"],
-    )
+    let launched = launcher::launch(&state.pool, Some(library_id), spec, move |pool, job_id| {
+        run_batch(pool, job_id, library_id)
+    })
     .await?;
+    Ok(Json(launched.into()))
+}
 
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
+/// `metadata_batch` and `metadata_batch_rematch` exclude each other on a library,
+/// whether launched for one library or for all of them.
+pub(crate) const METADATA_BATCH: JobSpec = JobSpec {
+    job_type: "metadata_batch",
+    conflicts: &["metadata_batch_rematch"],
+    failure: Some(batch_failed),
+    partial_stats: None,
+};
+
+pub(crate) const METADATA_BATCH_REMATCH: JobSpec = JobSpec {
+    job_type: "metadata_batch_rematch",
+    conflicts: &["metadata_batch"],
+    failure: Some(batch_failed),
+    partial_stats: None,
+};
+
+fn batch_failed(library_name: Option<String>, error: String) -> NotificationEvent {
+    NotificationEvent::MetadataBatchFailed {
+        library_name,
+        error,
     }
+}
 
-    let job_type = if body.force_rematch {
-        "metadata_batch_rematch"
-    } else {
-        "metadata_batch"
-    };
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, $3, 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(job_type)
-    .execute(&state.pool)
-    .await?;
-
-    // Spawn the background processing task (status already 'running' to avoid poller race)
-    let pool = state.pool.clone();
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-    tokio::spawn(async move {
-        if let Err(e) = process_metadata_batch(&pool, job_id, library_id).await {
-            warn!("[METADATA_BATCH] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-            notifications::notify(
-                pool.clone(),
-                notifications::NotificationEvent::MetadataBatchFailed {
-                    library_name,
-                    error: e.to_string(),
-                },
-            );
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "pending",
-    })))
+async fn run_batch(pool: PgPool, job_id: Uuid, library_id: Uuid) -> Result<(), String> {
+    process_metadata_batch(&pool, job_id, library_id).await
 }
 
 // ---------------------------------------------------------------------------

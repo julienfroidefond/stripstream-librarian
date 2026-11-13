@@ -431,6 +431,8 @@ pub struct ClientApiDoc;
             crate::metadata::MissingBooksDto,
             crate::metadata::MissingBookItem,
             crate::metadata::GapSummary,
+            crate::jobs::launcher::JobLaunchResponse,
+            crate::jobs::launcher::JobLaunchStatus,
             crate::metadata::MetadataBatchRequest,
             crate::metadata::MetadataBatchReportDto,
             crate::metadata::MetadataBatchResultDto,
