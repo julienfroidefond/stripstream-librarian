@@ -52,12 +52,6 @@ pub struct FileInsert {
     pub parse_error: Option<String>,
 }
 
-pub struct ErrorInsert {
-    pub job_id: Uuid,
-    pub file_path: String,
-    pub error_message: String,
-}
-
 pub struct EventInsert {
     pub job_id: Uuid,
     pub event_type: String,
@@ -262,249 +256,346 @@ pub async fn flush_parse_errors(pool: &PgPool, updates: &mut Vec<(Uuid, String)>
     Ok(())
 }
 
-pub async fn flush_all_batches(
-    pool: &PgPool,
-    books_update: &mut Vec<BookUpdate>,
-    files_update: &mut Vec<FileUpdate>,
-    books_insert: &mut Vec<BookInsert>,
-    files_insert: &mut Vec<FileInsert>,
-    errors_insert: &mut Vec<ErrorInsert>,
-    events_insert: &mut Vec<EventInsert>,
-) -> Result<()> {
-    if books_update.is_empty()
-        && files_update.is_empty()
-        && books_insert.is_empty()
-        && files_insert.is_empty()
-        && errors_insert.is_empty()
-        && events_insert.is_empty()
-    {
-        return Ok(());
+/// A `books` correction for a file whose content did not change: only the fields
+/// derived from the filename move, and `series_id` is kept when none is resolved.
+pub struct BookCorrection {
+    pub book_id: Uuid,
+    pub title: String,
+    pub volume: Option<i32>,
+    pub volume_type: String,
+    pub series_id: Option<Uuid>,
+}
+
+/// Pending discovery writes, flushed together in one transaction with `UNNEST`.
+#[derive(Default)]
+pub struct ScanBatch {
+    pub books_update: Vec<BookUpdate>,
+    pub files_update: Vec<FileUpdate>,
+    pub books_insert: Vec<BookInsert>,
+    pub files_insert: Vec<FileInsert>,
+    pub book_corrections: Vec<BookCorrection>,
+    pub events: Vec<EventInsert>,
+}
+
+impl ScanBatch {
+    pub fn is_empty(&self) -> bool {
+        self.books_update.is_empty()
+            && self.files_update.is_empty()
+            && self.books_insert.is_empty()
+            && self.files_insert.is_empty()
+            && self.book_corrections.is_empty()
+            && self.events.is_empty()
     }
 
-    let start = std::time::Instant::now();
-    let mut tx = pool.begin().await?;
-
-    // Batch update books using UNNEST
-    if !books_update.is_empty() {
-        let book_ids: Vec<Uuid> = books_update.iter().map(|b| b.book_id).collect();
-        let titles: Vec<String> = books_update.iter().map(|b| b.title.clone()).collect();
-        let kinds: Vec<String> = books_update.iter().map(|b| b.kind.clone()).collect();
-        let formats: Vec<String> = books_update.iter().map(|b| b.format.clone()).collect();
-        let series_ids: Vec<Option<Uuid>> = books_update.iter().map(|b| b.series_id).collect();
-        let volumes: Vec<Option<i32>> = books_update.iter().map(|b| b.volume).collect();
-        let volume_types: Vec<String> =
-            books_update.iter().map(|b| b.volume_type.clone()).collect();
-        let page_counts: Vec<Option<i32>> = books_update.iter().map(|b| b.page_count).collect();
-        let clear_thumbnails: Vec<bool> = books_update.iter().map(|b| b.clear_thumbnail).collect();
-        let analysis_statuses: Vec<String> = books_update
-            .iter()
-            .map(|b| b.analysis_status.as_str().to_string())
-            .collect();
-
-        sqlx::query(
-            r#"
-            UPDATE books SET
-                title = data.title,
-                kind = data.kind,
-                format = data.format,
-                series_id = data.series_id,
-                volume = data.volume,
-                volume_type = data.volume_type,
-                page_count = data.page_count,
-                thumbnail_path = CASE WHEN data.clear_thumbnail THEN NULL ELSE books.thumbnail_path END,
-                analysis_status = data.analysis_status,
-                updated_at = NOW()
-            FROM (
-                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[], $9::bool[], $10::text[])
-                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count, clear_thumbnail, analysis_status)
-            ) AS data
-            WHERE books.id = data.book_id
-            "#
-        )
-        .bind(&book_ids)
-        .bind(&titles)
-        .bind(&kinds)
-        .bind(&formats)
-        .bind(&series_ids)
-        .bind(&volumes)
-        .bind(&volume_types)
-        .bind(&page_counts)
-        .bind(&clear_thumbnails)
-        .bind(&analysis_statuses)
-        .execute(&mut *tx)
-        .await?;
-
-        books_update.clear();
+    /// Whether a row buffer reached `limit` (events ride along with their rows).
+    pub fn is_full(&self, limit: usize) -> bool {
+        self.books_update.len() >= limit
+            || self.files_update.len() >= limit
+            || self.books_insert.len() >= limit
+            || self.files_insert.len() >= limit
+            || self.book_corrections.len() >= limit
     }
 
-    // Batch update files using UNNEST
-    if !files_update.is_empty() {
-        let file_ids: Vec<Uuid> = files_update.iter().map(|f| f.file_id).collect();
-        let formats: Vec<String> = files_update.iter().map(|f| f.format.clone()).collect();
-        let sizes: Vec<i64> = files_update.iter().map(|f| f.size_bytes).collect();
-        let mtimes: Vec<DateTime<Utc>> = files_update.iter().map(|f| f.mtime).collect();
-        let fingerprints: Vec<String> =
-            files_update.iter().map(|f| f.fingerprint.clone()).collect();
+    /// Write every pending row in one transaction and empty the buffers.
+    pub async fn flush(&mut self, pool: &PgPool) -> Result<()> {
+        if self.is_empty() {
+            return Ok(());
+        }
 
-        sqlx::query(
-            r#"
-            UPDATE book_files SET 
-                format = data.format,
-                size_bytes = data.size,
-                mtime = data.mtime,
-                fingerprint = data.fp,
-                parse_status = 'ok',
-                parse_error_opt = NULL,
-                updated_at = NOW()
-            FROM (
-                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::bigint[], $4::timestamptz[], $5::text[])
-                AS t(file_id, format, size, mtime, fp)
-            ) AS data
-            WHERE book_files.id = data.file_id
-            "#
-        )
-        .bind(&file_ids)
-        .bind(&formats)
-        .bind(&sizes)
-        .bind(&mtimes)
-        .bind(&fingerprints)
-        .execute(&mut *tx)
-        .await?;
+        let start = std::time::Instant::now();
+        let mut tx = pool.begin().await?;
 
-        files_update.clear();
+        // Batch update books using UNNEST
+        if !self.books_update.is_empty() {
+            let book_ids: Vec<Uuid> = self.books_update.iter().map(|b| b.book_id).collect();
+            let titles: Vec<String> = self.books_update.iter().map(|b| b.title.clone()).collect();
+            let kinds: Vec<String> = self.books_update.iter().map(|b| b.kind.clone()).collect();
+            let formats: Vec<String> = self.books_update.iter().map(|b| b.format.clone()).collect();
+            let series_ids: Vec<Option<Uuid>> =
+                self.books_update.iter().map(|b| b.series_id).collect();
+            let volumes: Vec<Option<i32>> = self.books_update.iter().map(|b| b.volume).collect();
+            let volume_types: Vec<String> = self
+                .books_update
+                .iter()
+                .map(|b| b.volume_type.clone())
+                .collect();
+            let page_counts: Vec<Option<i32>> =
+                self.books_update.iter().map(|b| b.page_count).collect();
+            let clear_thumbnails: Vec<bool> = self
+                .books_update
+                .iter()
+                .map(|b| b.clear_thumbnail)
+                .collect();
+            let analysis_statuses: Vec<String> = self
+                .books_update
+                .iter()
+                .map(|b| b.analysis_status.as_str().to_string())
+                .collect();
+
+            sqlx::query(
+                r#"
+                UPDATE books SET
+                    title = data.title,
+                    kind = data.kind,
+                    format = data.format,
+                    series_id = data.series_id,
+                    volume = data.volume,
+                    volume_type = data.volume_type,
+                    page_count = data.page_count,
+                    thumbnail_path = CASE WHEN data.clear_thumbnail THEN NULL ELSE books.thumbnail_path END,
+                    analysis_status = data.analysis_status,
+                    updated_at = NOW()
+                FROM (
+                    SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[], $9::bool[], $10::text[])
+                    AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count, clear_thumbnail, analysis_status)
+                ) AS data
+                WHERE books.id = data.book_id
+                "#
+            )
+            .bind(&book_ids)
+            .bind(&titles)
+            .bind(&kinds)
+            .bind(&formats)
+            .bind(&series_ids)
+            .bind(&volumes)
+            .bind(&volume_types)
+            .bind(&page_counts)
+            .bind(&clear_thumbnails)
+            .bind(&analysis_statuses)
+            .execute(&mut *tx)
+            .await?;
+
+            self.books_update.clear();
+        }
+
+        // Batch the in-place corrections (title/volume/type, series only when known)
+        if !self.book_corrections.is_empty() {
+            let book_ids: Vec<Uuid> = self.book_corrections.iter().map(|c| c.book_id).collect();
+            let titles: Vec<String> = self
+                .book_corrections
+                .iter()
+                .map(|c| c.title.clone())
+                .collect();
+            let volumes: Vec<Option<i32>> =
+                self.book_corrections.iter().map(|c| c.volume).collect();
+            let volume_types: Vec<String> = self
+                .book_corrections
+                .iter()
+                .map(|c| c.volume_type.clone())
+                .collect();
+            let series_ids: Vec<Option<Uuid>> =
+                self.book_corrections.iter().map(|c| c.series_id).collect();
+
+            sqlx::query(
+                r#"
+                UPDATE books SET
+                    title = data.title,
+                    volume = data.volume,
+                    volume_type = data.volume_type,
+                    series_id = COALESCE(data.series_id, books.series_id),
+                    updated_at = NOW()
+                FROM (
+                    SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::int[], $4::text[], $5::uuid[])
+                    AS t(book_id, title, volume, volume_type, series_id)
+                ) AS data
+                WHERE books.id = data.book_id
+                "#,
+            )
+            .bind(&book_ids)
+            .bind(&titles)
+            .bind(&volumes)
+            .bind(&volume_types)
+            .bind(&series_ids)
+            .execute(&mut *tx)
+            .await?;
+
+            self.book_corrections.clear();
+        }
+
+        // Batch update files using UNNEST
+        if !self.files_update.is_empty() {
+            let file_ids: Vec<Uuid> = self.files_update.iter().map(|f| f.file_id).collect();
+            let formats: Vec<String> = self.files_update.iter().map(|f| f.format.clone()).collect();
+            let sizes: Vec<i64> = self.files_update.iter().map(|f| f.size_bytes).collect();
+            let mtimes: Vec<DateTime<Utc>> = self.files_update.iter().map(|f| f.mtime).collect();
+            let fingerprints: Vec<String> = self
+                .files_update
+                .iter()
+                .map(|f| f.fingerprint.clone())
+                .collect();
+
+            sqlx::query(
+                r#"
+                UPDATE book_files SET 
+                    format = data.format,
+                    size_bytes = data.size,
+                    mtime = data.mtime,
+                    fingerprint = data.fp,
+                    parse_status = 'ok',
+                    parse_error_opt = NULL,
+                    updated_at = NOW()
+                FROM (
+                    SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::bigint[], $4::timestamptz[], $5::text[])
+                    AS t(file_id, format, size, mtime, fp)
+                ) AS data
+                WHERE book_files.id = data.file_id
+                "#
+            )
+            .bind(&file_ids)
+            .bind(&formats)
+            .bind(&sizes)
+            .bind(&mtimes)
+            .bind(&fingerprints)
+            .execute(&mut *tx)
+            .await?;
+
+            self.files_update.clear();
+        }
+
+        // Batch insert books using UNNEST
+        if !self.books_insert.is_empty() {
+            let book_ids: Vec<Uuid> = self.books_insert.iter().map(|b| b.book_id).collect();
+            let library_ids: Vec<Uuid> = self.books_insert.iter().map(|b| b.library_id).collect();
+            let kinds: Vec<String> = self.books_insert.iter().map(|b| b.kind.clone()).collect();
+            let formats: Vec<String> = self.books_insert.iter().map(|b| b.format.clone()).collect();
+            let titles: Vec<String> = self.books_insert.iter().map(|b| b.title.clone()).collect();
+            let series_ids: Vec<Option<Uuid>> =
+                self.books_insert.iter().map(|b| b.series_id).collect();
+            let volumes: Vec<Option<i32>> = self.books_insert.iter().map(|b| b.volume).collect();
+            let page_counts: Vec<Option<i32>> =
+                self.books_insert.iter().map(|b| b.page_count).collect();
+            let volume_types: Vec<String> = self
+                .books_insert
+                .iter()
+                .map(|b| b.volume_type.clone())
+                .collect();
+            let thumbnail_paths: Vec<Option<String>> = self
+                .books_insert
+                .iter()
+                .map(|b| b.thumbnail_path.clone())
+                .collect();
+            let analysis_statuses: Vec<String> = self
+                .books_insert
+                .iter()
+                .map(|b| b.analysis_status.as_str().to_string())
+                .collect();
+
+            sqlx::query(
+                r#"
+                INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
+                SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[], $10::text[], $11::text[])
+                AS t(id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
+                "#
+            )
+            .bind(&book_ids)
+            .bind(&library_ids)
+            .bind(&kinds)
+            .bind(&formats)
+            .bind(&titles)
+            .bind(&series_ids)
+            .bind(&volumes)
+            .bind(&page_counts)
+            .bind(&volume_types)
+            .bind(&thumbnail_paths)
+            .bind(&analysis_statuses)
+            .execute(&mut *tx)
+            .await?;
+
+            self.books_insert.clear();
+        }
+
+        // Batch insert files using UNNEST
+        if !self.files_insert.is_empty() {
+            let file_ids: Vec<Uuid> = self.files_insert.iter().map(|f| f.file_id).collect();
+            let book_ids: Vec<Uuid> = self.files_insert.iter().map(|f| f.book_id).collect();
+            let formats: Vec<String> = self.files_insert.iter().map(|f| f.format.clone()).collect();
+            let abs_paths: Vec<String> = self
+                .files_insert
+                .iter()
+                .map(|f| f.abs_path.clone())
+                .collect();
+            let sizes: Vec<i64> = self.files_insert.iter().map(|f| f.size_bytes).collect();
+            let mtimes: Vec<DateTime<Utc>> = self.files_insert.iter().map(|f| f.mtime).collect();
+            let fingerprints: Vec<String> = self
+                .files_insert
+                .iter()
+                .map(|f| f.fingerprint.clone())
+                .collect();
+            let statuses: Vec<String> = self
+                .files_insert
+                .iter()
+                .map(|f| f.parse_status.clone())
+                .collect();
+            let errors: Vec<Option<String>> = self
+                .files_insert
+                .iter()
+                .map(|f| f.parse_error.clone())
+                .collect();
+
+            sqlx::query(
+                r#"
+                INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
+                SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::bigint[], $6::timestamptz[], $7::text[], $8::text[], $9::text[])
+                AS t(id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
+                "#
+            )
+            .bind(&file_ids)
+            .bind(&book_ids)
+            .bind(&formats)
+            .bind(&abs_paths)
+            .bind(&sizes)
+            .bind(&mtimes)
+            .bind(&fingerprints)
+            .bind(&statuses)
+            .bind(&errors)
+            .execute(&mut *tx)
+            .await?;
+
+            self.files_insert.clear();
+        }
+
+        // Batch insert events using UNNEST
+        if !self.events.is_empty() {
+            let job_ids: Vec<Uuid> = self.events.iter().map(|e| e.job_id).collect();
+            let event_types: Vec<String> =
+                self.events.iter().map(|e| e.event_type.clone()).collect();
+            let levels: Vec<String> = self.events.iter().map(|e| e.level.clone()).collect();
+            let entity_types: Vec<Option<String>> =
+                self.events.iter().map(|e| e.entity_type.clone()).collect();
+            let entity_ids: Vec<Option<Uuid>> = self.events.iter().map(|e| e.entity_id).collect();
+            let entity_names: Vec<Option<String>> =
+                self.events.iter().map(|e| e.entity_name.clone()).collect();
+            let messages: Vec<Option<String>> =
+                self.events.iter().map(|e| e.message.clone()).collect();
+            let details: Vec<Option<serde_json::Value>> =
+                self.events.iter().map(|e| e.detail.clone()).collect();
+
+            sqlx::query(
+                r#"
+                INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
+                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::text[], $7::text[], $8::jsonb[])
+                AS t(job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
+                "#,
+            )
+            .bind(&job_ids)
+            .bind(&event_types)
+            .bind(&levels)
+            .bind(&entity_types)
+            .bind(&entity_ids)
+            .bind(&entity_names)
+            .bind(&messages)
+            .bind(&details)
+            .execute(&mut *tx)
+            .await?;
+
+            self.events.clear();
+        }
+
+        tx.commit().await?;
+        tracing::info!("[BATCH] Flushed all batches in {:?}", start.elapsed());
+
+        Ok(())
     }
-
-    // Batch insert books using UNNEST
-    if !books_insert.is_empty() {
-        let book_ids: Vec<Uuid> = books_insert.iter().map(|b| b.book_id).collect();
-        let library_ids: Vec<Uuid> = books_insert.iter().map(|b| b.library_id).collect();
-        let kinds: Vec<String> = books_insert.iter().map(|b| b.kind.clone()).collect();
-        let formats: Vec<String> = books_insert.iter().map(|b| b.format.clone()).collect();
-        let titles: Vec<String> = books_insert.iter().map(|b| b.title.clone()).collect();
-        let series_ids: Vec<Option<Uuid>> = books_insert.iter().map(|b| b.series_id).collect();
-        let volumes: Vec<Option<i32>> = books_insert.iter().map(|b| b.volume).collect();
-        let page_counts: Vec<Option<i32>> = books_insert.iter().map(|b| b.page_count).collect();
-        let volume_types: Vec<String> =
-            books_insert.iter().map(|b| b.volume_type.clone()).collect();
-        let thumbnail_paths: Vec<Option<String>> = books_insert
-            .iter()
-            .map(|b| b.thumbnail_path.clone())
-            .collect();
-        let analysis_statuses: Vec<String> = books_insert
-            .iter()
-            .map(|b| b.analysis_status.as_str().to_string())
-            .collect();
-
-        sqlx::query(
-            r#"
-            INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[], $10::text[], $11::text[])
-            AS t(id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path, analysis_status)
-            "#
-        )
-        .bind(&book_ids)
-        .bind(&library_ids)
-        .bind(&kinds)
-        .bind(&formats)
-        .bind(&titles)
-        .bind(&series_ids)
-        .bind(&volumes)
-        .bind(&page_counts)
-        .bind(&volume_types)
-        .bind(&thumbnail_paths)
-        .bind(&analysis_statuses)
-        .execute(&mut *tx)
-        .await?;
-
-        books_insert.clear();
-    }
-
-    // Batch insert files using UNNEST
-    if !files_insert.is_empty() {
-        let file_ids: Vec<Uuid> = files_insert.iter().map(|f| f.file_id).collect();
-        let book_ids: Vec<Uuid> = files_insert.iter().map(|f| f.book_id).collect();
-        let formats: Vec<String> = files_insert.iter().map(|f| f.format.clone()).collect();
-        let abs_paths: Vec<String> = files_insert.iter().map(|f| f.abs_path.clone()).collect();
-        let sizes: Vec<i64> = files_insert.iter().map(|f| f.size_bytes).collect();
-        let mtimes: Vec<DateTime<Utc>> = files_insert.iter().map(|f| f.mtime).collect();
-        let fingerprints: Vec<String> =
-            files_insert.iter().map(|f| f.fingerprint.clone()).collect();
-        let statuses: Vec<String> = files_insert
-            .iter()
-            .map(|f| f.parse_status.clone())
-            .collect();
-        let errors: Vec<Option<String>> =
-            files_insert.iter().map(|f| f.parse_error.clone()).collect();
-
-        sqlx::query(
-            r#"
-            INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::bigint[], $6::timestamptz[], $7::text[], $8::text[], $9::text[])
-            AS t(id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
-            "#
-        )
-        .bind(&file_ids)
-        .bind(&book_ids)
-        .bind(&formats)
-        .bind(&abs_paths)
-        .bind(&sizes)
-        .bind(&mtimes)
-        .bind(&fingerprints)
-        .bind(&statuses)
-        .bind(&errors)
-        .execute(&mut *tx)
-        .await?;
-
-        files_insert.clear();
-    }
-
-    // Errors are now tracked via index_job_events (no longer written to index_job_errors)
-    errors_insert.clear();
-
-    // Batch insert events using UNNEST
-    if !events_insert.is_empty() {
-        let job_ids: Vec<Uuid> = events_insert.iter().map(|e| e.job_id).collect();
-        let event_types: Vec<String> = events_insert.iter().map(|e| e.event_type.clone()).collect();
-        let levels: Vec<String> = events_insert.iter().map(|e| e.level.clone()).collect();
-        let entity_types: Vec<Option<String>> = events_insert
-            .iter()
-            .map(|e| e.entity_type.clone())
-            .collect();
-        let entity_ids: Vec<Option<Uuid>> = events_insert.iter().map(|e| e.entity_id).collect();
-        let entity_names: Vec<Option<String>> = events_insert
-            .iter()
-            .map(|e| e.entity_name.clone())
-            .collect();
-        let messages: Vec<Option<String>> =
-            events_insert.iter().map(|e| e.message.clone()).collect();
-        let details: Vec<Option<serde_json::Value>> =
-            events_insert.iter().map(|e| e.detail.clone()).collect();
-
-        sqlx::query(
-            r#"
-            INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
-            SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::text[], $7::text[], $8::jsonb[])
-            AS t(job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
-            "#,
-        )
-        .bind(&job_ids)
-        .bind(&event_types)
-        .bind(&levels)
-        .bind(&entity_types)
-        .bind(&entity_ids)
-        .bind(&entity_names)
-        .bind(&messages)
-        .bind(&details)
-        .execute(&mut *tx)
-        .await?;
-
-        events_insert.clear();
-    }
-
-    tx.commit().await?;
-    tracing::info!("[BATCH] Flushed all batches in {:?}", start.elapsed());
-
-    Ok(())
 }
 
 #[cfg(test)]
