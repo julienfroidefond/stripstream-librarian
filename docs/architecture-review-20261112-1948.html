@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — Stripstream Librarian</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "neutral",
+        securityLevel: "loose",
+        flowchart: { curve: "basis", padding: 12 },
+      });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .leak { color: #dc2626; }
+      .hairline { box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06); }
+      .mermaid { font-size: 12px; }
+      .card-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+      @media (min-width: 768px) { .card-grid { grid-template-columns: 1fr 1fr; } }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 antialiased">
+    <main class="max-w-6xl mx-auto px-6 py-12 space-y-12">
+
+      <!-- ───────────────────────── header ───────────────────────── -->
+      <header class="border-b border-slate-300 pb-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-indigo-700 font-semibold">Architecture review · 12 novembre 2026</p>
+            <h1 class="font-serif text-5xl md:text-6xl leading-none mt-3">Stripstream Librarian</h1>
+            <p class="text-sm text-slate-500 mt-3 font-mono">main @ ba7b219a · v3.32.140</p>
+          </div>
+          <div class="flex gap-8 text-sm">
+            <div><span class="block text-3xl font-serif">10</span><span class="text-xs uppercase tracking-wider text-slate-500">candidates</span></div>
+            <div><span class="block text-3xl font-serif text-emerald-700">5</span><span class="text-xs uppercase tracking-wider text-slate-500">strong</span></div>
+            <div><span class="block text-3xl font-serif">3</span><span class="text-xs uppercase tracking-wider text-slate-500">parked</span></div>
+          </div>
+        </div>
+        <div class="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] uppercase tracking-wider text-slate-500">
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 rounded-sm border border-slate-400 bg-white"></span>module</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-6 border-t-2 border-dashed border-slate-400"></span>seam</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 rounded-sm border-2 border-red-500 bg-red-50"></span>leak</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 rounded-sm deep"></span>deep module</span>
+          <span class="ml-auto normal-case tracking-normal text-slate-400">Scan: API Rust, indexer, crates, backoffice Next.js</span>
+        </div>
+      </header>
+
+      <!-- ───────────────────────── candidates ───────────────────────── -->
+      <section id="candidates" class="space-y-10">
+
+        <!-- 1 ─────────────────────────────────────────────────────── -->
+        <article id="c1" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">01 · Downloads · API Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">Make the torrent lifecycle a guarded ledger</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/api/src/downloads/torrent_import.rs:132–156, 302–355, 460–696, 700–765, 936–945<br />
+            apps/api/src/downloads/alldebrid.rs:860–892, 1185–1237, 1300–1340, 1491–1538
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">Before · 17 writes, zero owner</p>
+              <div class="flex-1 grid grid-cols-[108px_1fr] gap-3 items-center mt-3">
+                <div class="space-y-1.5 text-[10px] uppercase tracking-wider">
+                  <div class="border border-slate-300 rounded px-2 py-1 bg-white">webhook</div>
+                  <div class="border border-slate-300 rounded px-2 py-1 bg-white">poller</div>
+                  <div class="border border-slate-300 rounded px-2 py-1 bg-white">import</div>
+                  <div class="border border-slate-300 rounded px-2 py-1 bg-white">retry</div>
+                  <div class="border border-slate-300 rounded px-2 py-1 bg-white">errors</div>
+                </div>
+                <div>
+                  <div class="grid grid-cols-6 gap-1">
+                    <div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div>
+                    <div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div>
+                    <div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div><div class="h-6 rounded-sm bg-red-50 border border-red-300"></div>
+                    <div class="h-6 rounded-sm bg-slate-50 border border-slate-200 flex items-center justify-center text-[10px] text-slate-400">…</div>
+                  </div>
+                  <p class="mt-4 text-[11px] text-red-700 leading-snug">status is a string · <span class="font-mono">partial</span> has no writer · retryability inferred at call sites</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">After · one ledger</p>
+              <div class="flex-1 flex flex-col justify-center gap-3 mt-3">
+                <div class="flex justify-center gap-1 text-[9px] uppercase tracking-wider">
+                  <span class="border border-slate-300 rounded px-1.5 py-1">webhook</span>
+                  <span class="border border-slate-300 rounded px-1.5 py-1">poller</span>
+                  <span class="border border-slate-300 rounded px-1.5 py-1">import</span>
+                  <span class="border border-slate-300 rounded px-1.5 py-1">retry</span>
+                  <span class="border border-slate-300 rounded px-1.5 py-1">errors</span>
+                </div>
+                <div class="text-center text-slate-400 text-xs">↓</div>
+                <div class="deep rounded-xl p-4 text-white">
+                  <p class="text-[10px] uppercase tracking-[0.2em] text-slate-300">TorrentLedger</p>
+                  <div class="grid grid-cols-2 gap-1.5 mt-3 font-mono text-[10px] text-slate-200">
+                    <span class="bg-white/10 rounded px-2 py-1">restart()</span>
+                    <span class="bg-white/10 rounded px-2 py-1">mark_completed()</span>
+                    <span class="bg-white/10 rounded px-2 py-1">begin_import()</span>
+                    <span class="bg-white/10 rounded px-2 py-1">finish_import()</span>
+                    <span class="bg-white/10 rounded px-2 py-1">fail()</span>
+                    <span class="bg-emerald-400/20 rounded px-2 py-1 text-emerald-200">TorrentStatus</span>
+                  </div>
+                </div>
+                <p class="text-center text-[10px] uppercase tracking-wider text-slate-400">illegal transitions rejected at the seam</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">The torrent lifecycle is a stringly-typed protocol spread over 17 <span class="font-mono text-xs">UPDATE</span> statements in two modules, so no interface owns legal transitions, retryability, or the import outcome vocabulary.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">A <span class="font-mono text-xs">torrent_ledger</span> module exposes a <span class="font-mono text-xs">TorrentStatus</span> enum and guarded methods; callers ask for a transition and get a typed error when the source status disallows it.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One lifecycle, seventeen writes</li>
+                <li>• Illegal transitions rejected locally</li>
+                <li>• Retryability owned by the ledger</li>
+                <li>• <span class="font-mono text-xs">partial</span> becomes reachable and tested</li>
+                <li>• Import outcome asserted once</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 2 ─────────────────────────────────────────────────────── -->
+        <article id="c2" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">02 · Downloads · API Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">Compose one transfer-progress module</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/api/src/downloads/rate.rs:80–89 · alldebrid.rs:1261–1271, 1373–1431, 1491–1518<br />
+            apps/api/src/downloads/ddl_provider/service.rs:583–633 · telegram_monitor/transfer.rs:263–311<br />
+            apps/api/src/downloads/torrent_import.rs:556–575
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Before · four formulas, three ETA shapes</p>
+              <pre class="mermaid">
+flowchart LR
+  A[AllDebrid] --> A1[local fraction + ETA]
+  A1 --> T[(torrent_downloads<br/>file_size = NULLIF)]
+  D[DDL] --> D1[DdlProgress + TransferRate]
+  D1 --> T2[(ddl_provider_downloads)]
+  G[Telegram] --> G1[LinkProgress]
+  G1 --> T3[(telegram_book_links)]
+  Q[qBittorrent] --> Q1[info.progress / info.eta]
+  Q1 --> T
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#dc2626;
+  class A1,Q1,T leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">After · one tracker, one sink</p>
+              <pre class="mermaid">
+flowchart LR
+  A[AllDebrid] --> P[ProgressTracker]
+  D[DDL] --> P
+  G[Telegram] --> P
+  Q[qBittorrent] --> P
+  P --> S[ProgressSink]
+  S --> T[(table by target)]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+  class P,S deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Four download flows re-derive progress, speed and ETA, so the same columns have three ETA formulas and two incompatible <span class="font-mono text-xs">file_size</span> policies.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">A <span class="font-mono text-xs">downloads/progress</span> module owns throttling, <span class="font-mono text-xs">TransferRate</span>, ETA and the column contract; a <span class="font-mono text-xs">ProgressSink</span> adapter is selected by target.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One ETA formula</li>
+                <li>• Size never erased</li>
+                <li>• Sinks become adapters</li>
+                <li>• Progress math unit-tested</li>
+                <li>• Four flows, one contract</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3 ─────────────────────────────────────────────────────── -->
+        <article id="c3" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">03 · Downloads · API Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">One validated library-target resolver</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/api/src/downloads/target.rs:25–90, 200–230, 316–333<br />
+            apps/api/src/downloads/import_pipeline.rs:14–74, 580–605<br />
+            apps/api/src/downloads/qbittorrent.rs:21, 176–178, 513–519
+          </div>
+
+          <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            <span class="font-semibold">Security-relevant.</span> The torrent path falls back to <span class="font-mono text-xs">root / series_name</span> without the traversal guard used by DDL/Telegram. <span class="font-mono text-xs">series_name</span> is request input or inferred from a release title.
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Before · two resolvers, one guarded</p>
+              <pre class="mermaid">
+flowchart LR
+  D[DDL / Telegram] --> R[resolve_target_dir]
+  R --> F[find_existing_series_dir]
+  Q[Torrent] --> I[do_import]
+  I --> J["root / series_name"]
+  R -. imports .-> I
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#dc2626;
+  class I,J leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">After · one resolver, one guard</p>
+              <pre class="mermaid">
+flowchart LR
+  D[DDL / Telegram] --> L[library_target::resolve]
+  Q[Torrent] --> L
+  L --> V[validate + norm_text lookup]
+  V --> T[(directory + reference)]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+  class L deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Two modules resolve the same series directory, but only <span class="font-mono text-xs">target::resolve_target_dir</span> validates the user-supplied component; the torrent path joins an unvalidated name to the library root, and the safe module imports from the unsafe one.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">Move <span class="font-mono text-xs">find_existing_series_dir</span> and the validated resolver behind one <span class="font-mono text-xs">library_target</span> interface returning the directory plus the optional volume reference; all three flows call it.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• Traversal guard on every flow</li>
+                <li>• One directory rule</li>
+                <li>• Module cycle disappears</li>
+                <li>• Existing tests cover both paths</li>
+                <li>• <span class="font-mono text-xs">norm_text</span> lookup kept</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 4 ─────────────────────────────────────────────────────── -->
+        <article id="c4" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">04 · Downloads · API Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">Record matched releases once</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/api/src/downloads/detection.rs:65–94, 981–1008, 1074–1090, 1216–1244<br />
+            apps/api/src/downloads/rss_poll.rs:246–274, 276–313, 337–366<br />
+            crates/core/src/availability.rs (merge stays here)
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Before · same envelope, twice</p>
+              <pre class="mermaid">
+flowchart TB
+  subgraph D[Detection]
+    D1[filter_map] --> D2[AvailableReleaseDto]
+    D2 --> D3[downloads_found]
+    D3 --> D4[merge_releases]
+    D4 --> D5[count detected_at in JSON]
+  end
+  subgraph R[RSS]
+    R1[filter_map] --> R2[AvailableReleaseDto]
+    R2 --> R3[downloads_found]
+    R3 --> R4[merge_releases]
+    R4 --> R5[count detected_at in JSON]
+  end
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#dc2626;
+  class D2,D5,R2,R5 leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">After · one recording envelope</p>
+              <pre class="mermaid">
+flowchart LR
+  D[Detection] --> M[MatchedReleases::record]
+  R[RSS] --> M
+  M --> E[event + merge + count]
+  E --> A[(available_downloads)]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+  class M deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Detection and RSS rebuild the same <span class="font-mono text-xs">AvailableReleaseDto</span>, emit the same event, call the same merge, then recover the “new” count by re-parsing <span class="font-mono text-xs">detected_at</span> from JSON — the matcher is shared, the recording contract is not.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">An API-side <span class="font-mono text-xs">release_recording</span> module owns the envelope: build <span class="font-mono text-xs">MatchedReleases</span>, serialize once for the event, pass to <span class="font-mono text-xs">availability::merge_releases</span>, count through one helper.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One JSON contract</li>
+                <li>• <span class="font-mono text-xs">detected_at</span> policy local</li>
+                <li>• Event shape tested once</li>
+                <li>• Detection and RSS share locality</li>
+                <li>• Merge rules stay in core</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 5 ─────────────────────────────────────────────────────── -->
+        <article id="c5" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">05 · Indexer · Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">Reconcile scanner corrections once</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">local-substitutable</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/indexer/src/scanner/discovery.rs:323–472 (skipped dir), 439–470 (compare + UPDATE)<br />
+            apps/indexer/src/scanner/discovery.rs:562–699 (normal branch), 584–629 (compare + UPDATE), 616–628 (event)
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">Before · two branches, one silent</p>
+              <div class="flex-1 flex flex-col justify-center gap-3 mt-3">
+                <div class="border-l-4 border-amber-400 bg-amber-50/60 rounded-r-lg p-3">
+                  <p class="text-[10px] uppercase tracking-wider text-amber-700">skipped directory</p>
+                  <div class="flex flex-wrap gap-1 mt-2 text-[9px] uppercase tracking-wider">
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">compare</span>
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">series lookup</span>
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">UPDATE</span>
+                    <span class="bg-red-100 border border-red-300 text-red-700 rounded px-1.5 py-1">no event</span>
+                  </div>
+                </div>
+                <div class="border-l-4 border-slate-300 bg-slate-50 rounded-r-lg p-3">
+                  <p class="text-[10px] uppercase tracking-wider text-slate-500">fingerprint unchanged</p>
+                  <div class="flex flex-wrap gap-1 mt-2 text-[9px] uppercase tracking-wider">
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">compare</span>
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">series lookup</span>
+                    <span class="bg-white border border-slate-300 rounded px-1.5 py-1">UPDATE</span>
+                    <span class="bg-emerald-100 border border-emerald-300 text-emerald-700 rounded px-1.5 py-1">book_updated</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">After · one reconcile</p>
+              <div class="flex-1 flex flex-col justify-center mt-3">
+                <div class="border-2 border-slate-900 rounded-xl p-4">
+                  <p class="font-mono text-xs text-slate-900">reconcile_existing_book(cause)</p>
+                  <div class="mt-3 space-y-1 text-[10px] text-slate-400">
+                    <p>compare title / volume / type</p>
+                    <p>get_or_create_series_id</p>
+                    <p>UPDATE books … COALESCE(series_id)</p>
+                    <p>emit book_updated</p>
+                  </div>
+                  <div class="mt-3 flex gap-1 text-[9px] uppercase tracking-wider">
+                    <span class="bg-slate-100 rounded px-1.5 py-1">SkippedDir</span>
+                    <span class="bg-slate-100 rounded px-1.5 py-1">FingerprintUnchanged</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">The skipped-directory and unchanged-fingerprint branches duplicate the same title/volume/type comparison, series resolution and <span class="font-mono text-xs">UPDATE</span>, but only the second emits <span class="font-mono text-xs">book_updated</span>.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">Extract <span class="font-mono text-xs">reconcile_existing_book</span> behind one call, with a <span class="font-mono text-xs">ScanCause</span> parameter selecting the branch; decide once whether skipped-dir corrections emit the event.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• Volume-type rule in one place</li>
+                <li>• Events become consistent</li>
+                <li>• Comparison unit-tested</li>
+                <li>• Two paths, one implementation</li>
+                <li>• Documented invariant becomes true</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 6 ─────────────────────────────────────────────────────── -->
+        <article id="c6" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">06 · Reading lists · API Rust</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">Delete the local accent table</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/api/src/reading_lists/ai.rs:870–914 (claims, local table, callers at 734, 778, 816)<br />
+            crates/parsers/src/matching.rs:54–86 (fold_accents) · apps/api/src/tests/reading_lists_ai.rs:721–742
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col justify-center">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-4">Before · lowercase-only folding</p>
+              <div class="font-mono text-xs space-y-2">
+                <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">CONTINUITÉ</div>
+                <div class="text-red-600 text-[11px]">↓ local table maps lowercase only</div>
+                <div class="bg-red-50 border border-red-200 text-red-700 rounded px-3 py-2">continuité</div>
+                <div class="text-red-600 text-[11px]">✗ “continuite” not found — guard bypassed</div>
+              </div>
+              <p class="mt-4 text-[11px] text-slate-500">Same for MÊME MONDE. MÊME UNIVERS slips through only because “univers” is a separate keyword.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col justify-center">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-4">After · parser seam does the folding</p>
+              <div class="font-mono text-xs space-y-2">
+                <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">CONTINUITÉ</div>
+                <div class="text-emerald-700 text-[11px]">↓ parsers::fold_accents → to_lowercase</div>
+                <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded px-3 py-2">continuite</div>
+                <div class="text-emerald-700 text-[11px]">✓ keyword matched · guard holds</div>
+              </div>
+              <p class="mt-4 text-[11px] text-slate-500">One public helper already covers case and diacritics. No new module.</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed"><span class="font-mono text-xs">normalize_claim_text</span> reimplements accent folding with lowercase-only match arms, so uppercase accented claims bypass the shared-identity grounding guard.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">Delete the local table and call <span class="font-mono text-xs">parsers::matching::fold_accents(value).to_lowercase()</span>; <span class="font-mono text-xs">normalize_title</span> is not a drop-in because it would collapse the <span class="font-mono text-xs">spin-off</span> keyword.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• Guard cannot be bypassed</li>
+                <li>• One folding rule</li>
+                <li>• Less local code</li>
+                <li>• Uppercase claims get a test</li>
+                <li>• Leverage on an existing seam</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 7 ─────────────────────────────────────────────────────── -->
+        <article id="c7" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">07 · Downloads · Backoffice</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">One download write seam</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/backoffice/app/(app)/downloads/DownloadsPage.tsx:211–410, 428–596, 598–784, 786–1269<br />
+            apps/backoffice/app/components/DownloadClientButton.tsx:32–281<br />
+            apps/backoffice/app/components/ProwlarrSearchModal.tsx:230–290
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-3">Before · three rows, three write machines</p>
+              <div class="grid grid-cols-2 gap-2 text-[10px]">
+                <div class="border border-slate-300 rounded-lg p-2 bg-slate-50">
+                  <p class="uppercase tracking-wider text-slate-500">DownloadRow</p>
+                  <p class="font-mono mt-1 text-slate-700">{retrying, deleting, showConfirm}</p>
+                  <p class="text-red-600 mt-1">silent delete catch</p>
+                </div>
+                <div class="border border-slate-300 rounded-lg p-2 bg-slate-50">
+                  <p class="uppercase tracking-wider text-slate-500">TelegramRow</p>
+                  <p class="font-mono mt-1 text-slate-700">{retrying, deleting, showConfirm}</p>
+                  <p class="text-red-600 mt-1">portal confirm</p>
+                </div>
+                <div class="border border-slate-300 rounded-lg p-2 bg-slate-50">
+                  <p class="uppercase tracking-wider text-slate-500">DdlProviderRow</p>
+                  <p class="font-mono mt-1 text-slate-700">{retrying, deleting, showConfirm}</p>
+                  <p class="text-red-600 mt-1">different dismiss rule</p>
+                </div>
+                <div class="border border-red-300 rounded-lg p-2 bg-red-50">
+                  <p class="uppercase tracking-wider text-red-700">AvailableSection</p>
+                  <p class="font-mono mt-1 text-red-700">4 busy Sets · 5 handlers</p>
+                  <p class="text-red-600 mt-1">silent vs toast</p>
+                </div>
+              </div>
+              <p class="mt-3 text-[11px] text-slate-500">Every surface calls <span class="font-mono">browserApi</span> directly.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-3">After · one action module, rows are adapters</p>
+              <div class="flex-1 flex flex-col justify-center gap-3">
+                <div class="deep rounded-xl p-4 text-white">
+                  <p class="text-[10px] uppercase tracking-[0.2em] text-slate-300">downloadActions</p>
+                  <div class="grid grid-cols-2 gap-1.5 mt-3 font-mono text-[10px] text-slate-200">
+                    <span class="bg-white/10 rounded px-2 py-1">state per item</span>
+                    <span class="bg-white/10 rounded px-2 py-1">retry routing</span>
+                    <span class="bg-white/10 rounded px-2 py-1">confirm</span>
+                    <span class="bg-white/10 rounded px-2 py-1">failure policy</span>
+                  </div>
+                </div>
+                <div class="text-center text-slate-400 text-xs">↓</div>
+                <div class="grid grid-cols-4 gap-1 text-[9px] uppercase tracking-wider text-center">
+                  <span class="border border-slate-300 rounded px-1 py-1 bg-white">row</span>
+                  <span class="border border-slate-300 rounded px-1 py-1 bg-white">row</span>
+                  <span class="border border-slate-300 rounded px-1 py-1 bg-white">row</span>
+                  <span class="border border-slate-300 rounded px-1 py-1 bg-white">section</span>
+                </div>
+                <p class="text-center text-[10px] uppercase tracking-wider text-slate-400">render is left, protocol is gone</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Every download surface re-implements the same write protocol — busy flags, confirmation, retry routing, refresh, failure policy — so three rows encode three subtly different contracts.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">A client-side <span class="font-mono text-xs">downloadActions</span> module owns per-item action state, retry/delete/dismiss routing, confirmation and failure policy; rows become thin presentation adapters over <span class="font-mono text-xs">browserApi</span>.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One write seam, four callers</li>
+                <li>• Retry and confirm centralized</li>
+                <li>• Failure policy explicit</li>
+                <li>• Rows become pure adapters</li>
+                <li>• Tests replace DOM assertions</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 8 ─────────────────────────────────────────────────────── -->
+        <article id="c8" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">08 · Series detail · Backoffice</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">One series-detail loader, one view model</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/backoffice/app/(app)/series/[seriesId]/page.tsx:33–112 (fan-out), 120–453 (render)<br />
+            apps/backoffice/app/components/SeriesActionsToolbar.tsx:42–77 (29 props), 79–249 (forwarding)<br />
+            apps/backoffice/tests/unit/app/series/[seriesId]/page.test.tsx
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">Before · eighteen fetches, four fallback policies</p>
+              <svg viewBox="0 0 330 210" class="w-full flex-1 mt-2" role="img" aria-label="Page fans out to eighteen fetches with red fallback lines">
+                <rect x="6" y="78" width="78" height="54" rx="6" fill="#fff" stroke="#94a3b8" />
+                <text x="45" y="98" text-anchor="middle" font-size="9" fill="#0f172a" font-family="ui-sans-serif">page.tsx</text>
+                <text x="45" y="112" text-anchor="middle" font-size="7.5" fill="#64748b" font-family="ui-sans-serif">loader + view</text>
+                <line x1="84" y1="104" x2="208" y2="8" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="19" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="30" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="41" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="52" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="63" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="74" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="85" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="96" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="107" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="118" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="129" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="140" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="151" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="162" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="173" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="184" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <line x1="84" y1="104" x2="208" y2="195" stroke="#dc2626" stroke-width="1" opacity="0.55" />
+                <g fill="#fee2e2" stroke="#fca5a5">
+                  <rect x="208" y="5" width="112" height="6" rx="2" /><rect x="208" y="16" width="112" height="6" rx="2" /><rect x="208" y="27" width="112" height="6" rx="2" /><rect x="208" y="38" width="112" height="6" rx="2" /><rect x="208" y="49" width="112" height="6" rx="2" /><rect x="208" y="60" width="112" height="6" rx="2" /><rect x="208" y="71" width="112" height="6" rx="2" /><rect x="208" y="82" width="112" height="6" rx="2" /><rect x="208" y="93" width="112" height="6" rx="2" /><rect x="208" y="104" width="112" height="6" rx="2" /><rect x="208" y="115" width="112" height="6" rx="2" /><rect x="208" y="126" width="112" height="6" rx="2" /><rect x="208" y="137" width="112" height="6" rx="2" /><rect x="208" y="148" width="112" height="6" rx="2" /><rect x="208" y="159" width="112" height="6" rx="2" /><rect x="208" y="170" width="112" height="6" rx="2" /><rect x="208" y="181" width="112" height="6" rx="2" /><rect x="208" y="192" width="112" height="6" rx="2" />
+                </g>
+              </svg>
+              <div class="flex flex-wrap gap-1 text-[9px] font-mono mt-2">
+                <span class="bg-red-50 border border-red-200 text-red-700 rounded px-1.5 py-0.5">null</span>
+                <span class="bg-red-50 border border-red-200 text-red-700 rounded px-1.5 py-0.5">[]</span>
+                <span class="bg-red-50 border border-red-200 text-red-700 rounded px-1.5 py-0.5">undefined</span>
+                <span class="bg-red-50 border border-red-200 text-red-700 rounded px-1.5 py-0.5">notFound()</span>
+                <span class="text-slate-500 ml-auto">→ toolbar: 29 props</span>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col justify-center gap-2">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">After · one loader, one model</p>
+              <div class="border border-slate-300 rounded-lg px-3 py-2 bg-white text-[10px] uppercase tracking-wider text-center">page.tsx · composition</div>
+              <div class="text-center text-slate-400 text-xs">↓</div>
+              <div class="deep rounded-xl p-3 text-white text-center">
+                <p class="font-mono text-[11px]">loadSeriesDetail(seriesId, { page, limit, viewMode })</p>
+                <p class="text-[9px] uppercase tracking-wider text-slate-300 mt-1">fetch fan-out + degradation policy</p>
+              </div>
+              <div class="text-center text-slate-400 text-xs">↓</div>
+              <div class="border border-slate-300 rounded-lg px-3 py-2 bg-slate-50 text-[10px] uppercase tracking-wider text-center">SeriesDetailModel</div>
+              <div class="text-center text-slate-400 text-xs">↓</div>
+              <div class="border border-slate-300 rounded-lg px-3 py-2 bg-white text-[10px] uppercase tracking-wider text-center">toolbar receives { model }</div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">The page is simultaneously loader and view model: eighteen fetches with four <span class="font-mono text-xs">.catch</span> policies decide the meaning of missing data inline, and that raw fan-out becomes the toolbar’s 29-prop interface.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">Move the fan-out into a server-side series-detail module returning one resolved view model plus one explicit not-found/degraded result; the page becomes composition and the toolbar a render adapter.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One place defines degradation</li>
+                <li>• Page shrinks to composition</li>
+                <li>• Toolbar props collapse to model</li>
+                <li>• Loader testable without React</li>
+                <li>• Fetch policy stops spreading</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 9 ─────────────────────────────────────────────────────── -->
+        <article id="c9" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">09 · Jobs · Backoffice</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">A job-type descriptor and one live-job seam</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Strong</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/backoffice/app/(app)/jobs/[id]/page.tsx:94–183 (catalog + map + booleans), 286–353 (card matrix)<br />
+            app/components/JobsList.tsx:12–40, 84–133 · JobProgress.tsx:49–87 · JobDetailLive.tsx:20–45<br />
+            apps/backoffice/lib/useEventSource.ts:12–96
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Before · four sources of job knowledge</p>
+              <pre class="mermaid">
+flowchart TB
+  C[server catalog] --> P[detail page]
+  M[local JOB_TYPE_INFO · 17] --> P
+  B[9 boolean predicates] --> P
+  P --> R[card matrix]
+  S1[JobsList raw EventSource] --> L[list]
+  S2[JobProgress raw EventSource] --> L
+  S3[JobDetailLive raw EventSource] --> P
+  U[useEventSource] -. only indicator .-> X[JobsIndicator]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#dc2626;
+  class M,B,S1,S2,S3 leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px]">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-2">After · one registry, one stream</p>
+              <pre class="mermaid">
+flowchart TB
+  D[JobTypeDescriptor registry] --> P[detail page]
+  D --> L[list]
+  H[useJobStream built on useEventSource] --> P
+  H --> L
+  P --> R[card dispatch]
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+  class D,H deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Job-type knowledge is split across a 17-entry local label map, a server catalog used only for <span class="font-mono text-xs">category</span>/<span class="font-mono text-xs">replayable</span>, nine boolean predicates and per-type report fetches, while three components bypass the existing SSE seam with their own <span class="font-mono text-xs">EventSource</span> lifecycles.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">One job-type descriptor module — label, description, category, replayability, report loaders, result-card selection — consumed by list and detail; every stream goes through <span class="font-mono text-xs">useEventSource</span>.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One registry, list and detail</li>
+                <li>• Type rules stop drifting</li>
+                <li>• SSE reconnect logic shared</li>
+                <li>• Report loading centralized</li>
+                <li>• Descriptor tests replace page mocks</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- 10 ────────────────────────────────────────────────────── -->
+        <article id="c10" class="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.22em] text-slate-400">10 · Reading lists · Backoffice</p>
+              <h2 class="font-serif text-3xl md:text-4xl mt-1">One optimistic-write policy for reading lists</h2>
+            </div>
+            <div class="flex flex-wrap gap-2 md:justify-end">
+              <span class="text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">Worth exploring</span>
+              <span class="text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-[11px] leading-6 text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+            apps/backoffice/app/(app)/reading-lists/[id]/ReadingListDetailClient.tsx:40–119<br />
+            apps/backoffice/app/(app)/reading-lists/ReadingListsClient.tsx:30–74
+          </div>
+
+          <div class="card-grid my-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col justify-center">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400 mb-3">Before · six operations, six consistency contracts</p>
+              <div class="grid grid-cols-[1.2fr_repeat(4,1fr)] gap-x-1 gap-y-2 text-[9px]">
+                <span class="uppercase tracking-wider text-slate-400">operation</span>
+                <span class="uppercase tracking-wider text-slate-400 text-center">optim.</span>
+                <span class="uppercase tracking-wider text-slate-400 text-center">rollback</span>
+                <span class="uppercase tracking-wider text-slate-400 text-center">refresh</span>
+                <span class="uppercase tracking-wider text-slate-400 text-center">error</span>
+
+                <span class="font-mono text-[10px]">create</span><span class="text-center text-slate-300">—</span><span class="text-center text-slate-300">—</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">silent</span>
+                <span class="font-mono text-[10px]">update</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-slate-300">—</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">silent</span>
+                <span class="font-mono text-[10px]">delete</span><span class="text-center text-slate-300">—</span><span class="text-center text-slate-300">—</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">silent</span>
+                <span class="font-mono text-[10px]">add</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-slate-300">—</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">silent</span>
+                <span class="font-mono text-[10px]">remove</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-slate-300">—</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">silent</span>
+                <span class="font-mono text-[10px]">reorder</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-emerald-600">✓</span><span class="text-center text-red-600">snapshot</span>
+              </div>
+              <p class="mt-4 text-[11px] text-slate-500">Detail client and list client disagree. No test covers the reorder rollback.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-[320px] flex flex-col justify-center gap-3">
+              <p class="text-[10px] uppercase tracking-wider text-slate-400">After · one write module</p>
+              <div class="deep rounded-xl p-4 text-white">
+                <p class="text-[10px] uppercase tracking-[0.2em] text-slate-300">readingListWrites</p>
+                <div class="grid grid-cols-2 gap-1.5 mt-3 font-mono text-[10px] text-slate-200">
+                  <span class="bg-white/10 rounded px-2 py-1">apply optimistic</span>
+                  <span class="bg-white/10 rounded px-2 py-1">rollback</span>
+                  <span class="bg-white/10 rounded px-2 py-1">reconcile list</span>
+                  <span class="bg-white/10 rounded px-2 py-1">surface error</span>
+                </div>
+              </div>
+              <div class="text-center text-slate-400 text-xs">↓</div>
+              <div class="grid grid-cols-2 gap-2 text-[10px] uppercase tracking-wider text-center">
+                <span class="border border-slate-300 rounded px-2 py-2 bg-white">detail client</span>
+                <span class="border border-slate-300 rounded px-2 py-2 bg-white">list client</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4">
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Problem</h3><p class="text-sm leading-relaxed">Every reading-list mutation hand-rolls its own optimistic update, rollback, refresh and error policy, so six write operations across two clients encode six different consistency contracts.</p></div>
+              <div><h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-1">Solution</h3><p class="text-sm leading-relaxed">Extract a client write module that owns optimistic apply/rollback, list reconciliation and error surfacing for create/update/delete/add/remove/reorder; both clients render from its state.</p></div>
+            </div>
+            <div>
+              <h3 class="text-[11px] uppercase tracking-[0.2em] text-slate-400 mb-2">Wins</h3>
+              <ul class="space-y-1.5 text-sm">
+                <li>• One optimistic policy, two clients</li>
+                <li>• Rollback stops being per-handler</li>
+                <li>• Silent failures become deliberate</li>
+                <li>• Write logic testable without DOM</li>
+                <li>• Shared write core</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+      </section>
+
+      <!-- ───────────────────────── parked ───────────────────────── -->
+      <section id="parked">
+        <div class="flex items-baseline justify-between border-b border-slate-300 pb-3">
+          <h2 class="font-serif text-2xl">Parked</h2>
+          <p class="text-[11px] uppercase tracking-wider text-slate-400">Observed, not carded</p>
+        </div>
+        <div class="grid md:grid-cols-3 gap-4 mt-5">
+          <div class="bg-white border border-slate-200 rounded-xl p-4">
+            <div class="flex items-center gap-2"><span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Worth exploring</span></div>
+            <h3 class="font-serif text-lg mt-2">Genre catalog read model</h3>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed"><span class="font-mono">GenresClient.tsx</span> is 923 lines: count merging, cover refetches, two filter paths and 20+ states recombine four API shapes ad hoc.</p>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl p-4">
+            <div class="flex items-center gap-2"><span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Speculative</span></div>
+            <h3 class="font-serif text-lg mt-2">Locale formatting seam</h3>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed">Dictionaries are centralized; format/plural/locale literals are not. <span class="font-mono">LocaleProvider</span> also bypasses the browser transport for persistence.</p>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl p-4">
+            <div class="flex items-center gap-2"><span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Speculative</span></div>
+            <h3 class="font-serif text-lg mt-2">Index-job enqueue envelope</h3>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed">Seven producers write their own <span class="font-mono">INSERT INTO index_jobs</span> and re-query the row; <span class="font-mono">queue_scan_job</span> has a bypass in torrent import.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────────── top recommendation ───────────────────────── -->
+      <section id="top-recommendation">
+        <div class="deep rounded-2xl p-8 md:p-10 text-white">
+          <p class="text-[11px] uppercase tracking-[0.28em] text-emerald-300">Top recommendation</p>
+          <h2 class="font-serif text-3xl md:text-4xl mt-3">Start with the library-target resolver.</h2>
+          <p class="text-sm text-slate-300 mt-4 max-w-3xl leading-relaxed">Smallest change with the highest risk reduction: it closes a path-traversal gap on the torrent flow, deletes a module-level cycle, and both existing paths already have tests to move behind the new interface. Then take the torrent ledger — it gives the downloads domain the status vocabulary the progress module will reuse.</p>
+          <div class="mt-6 flex flex-wrap gap-3 text-sm">
+            <a href="#c3" class="inline-flex items-center gap-2 bg-emerald-400 text-slate-900 font-semibold px-4 py-2 rounded-lg hover:bg-emerald-300 transition">Candidate 03 · library_target →</a>
+            <a href="#c1" class="inline-flex items-center gap-2 border border-white/30 text-white px-4 py-2 rounded-lg hover:bg-white/10 transition">Follow-up · torrent ledger →</a>
+          </div>
+        </div>
+      </section>
+
+      <footer class="border-t border-slate-200 pt-6 text-[11px] text-slate-400 leading-relaxed">
+        <p>No <span class="font-mono">GLOSSARY.md</span> or <span class="font-mono">docs/adr/</span> in the repository at this revision; domain names are taken from <span class="font-mono">AGENTS.md</span> and the module guides. The review vocabulary is the deep-module glossary: module, interface, implementation, depth, deep, shallow, seam, adapter, leverage, locality.</p>
+        <p class="mt-2">Scan prioritised recent churn: downloads, metadata, book analysis, series detail, jobs, reading lists, settings. Prior deepening work — <span class="font-mono">series_identity</span>, <span class="font-mono">coverage</span>, <span class="font-mono">availability</span>, typed paths, analysis state, settings drafts, browser transport — was excluded.</p>
+      </footer>
+
+    </main>
+  </body>
+</html>
