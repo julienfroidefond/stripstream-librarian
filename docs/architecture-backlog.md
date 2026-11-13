@@ -15,15 +15,61 @@ répertoire temporaire ; le snapshot ci-dessus est la copie de référence).
 | 02 | Downloads · API Rust | Composer un module de progression de transfert unique | Strong | **fusionné** (#285) |
 | 03 | Downloads · API Rust | Un résolveur de cible de bibliothèque validé | Strong | **fusionné** (#279) |
 | 04 | Downloads · API Rust | Enregistrer les releases appariées une seule fois | Worth exploring | hors périmètre |
-| 05 | Indexer · Rust | Réconcilier les corrections du scanner une seule fois | Worth exploring | hors périmètre |
+| 05 | Indexer · Rust | Réconcilier les corrections du scanner une seule fois | Worth exploring | repris en **13** (Strong) |
 | 06 | Reading lists · API Rust | Supprimer la table d'accents locale | Worth exploring | hors périmètre |
 | 07 | Downloads · Backoffice | Un seam d'écriture unique pour les téléchargements | Strong | **fusionné** (#286) |
 | 08 | Series detail · Backoffice | Un loader de détail de série, un view model | Strong | **fusionné** (#283) |
 | 09 | Jobs · Backoffice | Un descripteur de type de job et un seam SSE unique | Strong | **fusionné** (#284) |
-| 10 | Reading lists · Backoffice | Une politique d'écriture optimiste unique | Worth exploring | hors périmètre |
+| 10 | Reading lists · Backoffice | Une politique d'écriture optimiste unique | Worth exploring | réévalué en **22** |
 
 Périmètre retenu : les six chantiers **Strong** (03, 01, 02, 07, 08, 09). Les quatre « Worth
 exploring » ne sont pas planifiés.
+
+## Audit du 2026-11-13 — zones non couvertes
+
+Second passage (grille *deep modules* : module, interface, seam, test de suppression) sur ce que
+l'audit du 12 n'avait pas couvert : API hors downloads, indexer, crates partagés, backoffice hors
+downloads / série / jobs. Tous les chantiers sont retenus.
+
+### Bugs trouvés pendant l'audit
+
+| # | Zone | Bug | Traité par |
+|---|------|-----|------------|
+| B1 | Discovery · API Rust | La requête des tomes possédés lit `books.volume_number` (la colonne est `volume`) ; l'erreur est avalée, `volumes_already_owned` est toujours vide | PR dédiée |
+| B2 | Reading lists · Backoffice | `moveSeries` appelle `.../series/{id}/move`, route inexistante ; chaque moitié est mockée dans les tests | PR dédiée |
+| B3 | Settings · Backoffice | API injoignable ⇒ brouillon amorcé avec les défauts sans signal ; une sauvegarde peut écraser la config stockée | chantier 17 |
+| B4 | Metadata · API Rust | Le bonus « nombre de tomes » s'applique après le plafond 0,7 : une variante plafonnée peut auto-matcher | chantier B4 (score) |
+| B5 | Metadata · API Rust | La fusion de séries déplace les liens externes sans gérer `is_primary` (index unique « un primaire par série ») | chantier 12 |
+
+### Chantiers
+
+| # | Zone | Titre | Force | Statut |
+|---|------|-------|-------|--------|
+| 11 | Jobs · API Rust | Un seul lanceur de jobs d'arrière-plan | Strong | en cours |
+| 12 | Metadata · API Rust | Un module propriétaire de `external_metadata_links` (corrige B5) | Strong | en cours |
+| 13 | Indexer · Rust | Réconcilier un fichier existant une seule fois (ex-05) | Strong | en cours |
+| 14 | Crates · Rust | Un magasin de miniatures partagé API / indexer | Strong | en cours |
+| 15 | Crates · Rust | `series_identity::find_or_create` (prolonge l'ADR 0007) | Strong | à faire (après 12, 13) |
+| 16 | Cache · Backoffice | Une seule politique d'invalidation du cache Next | Strong | en cours |
+| 17 | Settings · Backoffice | Un loader pour `/settings` (corrige B3) | Strong | en cours |
+| B4 | Metadata · API Rust | Une seule politique de score de correspondance | Strong | en cours |
+| 18 | Books · API Rust | Un rendu de page unique et un `current_book_file` | Worth exploring | à faire |
+| 19 | Indexer · Rust | Un résultat de job typé (annulation, `partial`) | Worth exploring | à faire (après 14) |
+| 20 | Crates · Rust | Les transitions de `analysis_status` dans un seul module | Worth exploring | à faire (après 14) |
+| 21 | Settings · API Rust | Un schéma typé pour `app_settings.limits` | Worth exploring | à faire |
+| 22 | Reading lists · Backoffice | Un store d'écriture unique (ex-10) | Worth exploring | à faire |
+| 23 | Genres · Backoffice + API | Une requête de navigation par genres côté serveur | Worth exploring | à faire |
+| 24 | Libraries / Series · Backoffice | Passer le DTO plutôt que ses champs en props | Worth exploring | à faire |
+| 25 | Workspace | Ménage : `core2-shim`, `MonitoringForm.tsx`, `BookFormat::from_str` | — | à faire |
+
+Constats détaillés (avec références `fichier:ligne`) : voir les descriptions des PR et les ADR
+0015 et suivantes.
+
+Correction du snapshot du 12 pour le chantier 10 : seul le réordonnancement est optimiste ;
+le vrai problème est l'existence de quatre politiques d'échec pour douze écritures.
+
+Vagues d'exécution (pour limiter les conflits) : **vague 1** = B1, B2, B4, 11, 12, 13, 14, 16,
+17 ; **vague 2** = 15, 18, 19, 20, 21, 22, 23, 24, 25, une fois la vague 1 fusionnée.
 
 ## Méthode
 
@@ -128,3 +174,4 @@ composant n'instancie `EventSource`.
 | 2026-11-13 | #285 (chantier 02) fusionné |
 | 2026-11-13 | #286 (chantier 07), #283 (chantier 08) et #284 (chantier 09) fusionnés |
 | 2026-11-13 | ADR 0010–0014 ajoutées (chantiers 01, 02, 07, 08, 09) |
+| 2026-11-13 | Second audit : 5 bugs (B1–B5), chantiers 11–25 ; vague 1 lancée |
