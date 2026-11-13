@@ -1,8 +1,8 @@
 use stripstream_core::http::build_http_client_with_agent;
 
 use super::{
-    compute_confidence, strip_html, BookCandidate, MetadataProvider, ProviderConfig,
-    SeriesCandidate,
+    scoring::{self, Score},
+    strip_html, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
 };
 
 const DEFAULT_BASE_URL: &str = "https://comicvine.gamespot.com";
@@ -93,8 +93,6 @@ async fn search_series_impl(
         None => return Ok(vec![]),
     };
 
-    let query_lower = query.to_lowercase();
-
     let mut candidates: Vec<SeriesCandidate> = results
         .iter()
         .filter_map(|vol| {
@@ -127,7 +125,7 @@ async fn search_series_impl(
                 .and_then(|u| u.as_str())
                 .map(String::from);
 
-            let confidence = compute_confidence(&name, &query_lower);
+            let score = Score::of_titles(&name, query, scoring::UNCAPPED);
 
             let mut metadata_json = serde_json::json!({});
             if let Some(ref desc) = description {
@@ -143,17 +141,13 @@ async fn search_series_impl(
                 total_volumes: count_of_issues,
                 cover_url,
                 external_url: site_url,
-                confidence,
+                score,
                 metadata_json,
             })
         })
         .collect();
 
-    candidates.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scoring::sort_best_first(&mut candidates);
     candidates.truncate(10);
     Ok(candidates)
 }
@@ -234,7 +228,7 @@ async fn get_series_impl(
         total_volumes,
         cover_url,
         external_url,
-        confidence: 1.0,
+        score: Score::exact(),
         metadata_json,
     })
 }

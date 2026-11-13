@@ -9,10 +9,11 @@ use uuid::Uuid;
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
-use crate::jobs::lifecycle::{
-    cancel_job, classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
-};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, JobStatus};
 use crate::{error::ApiError, integrations::anilist, state::AppState};
+use futures::future::BoxFuture;
+use notifications::NotificationEvent;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -63,7 +64,7 @@ pub struct ReadingStatusPushResultDto {
     tag = "reading_status",
     request_body = ReadingStatusPushRequest,
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "Bad request"),
     ),
     security(("Bearer" = []))
@@ -71,72 +72,21 @@ pub struct ReadingStatusPushResultDto {
 pub async fn start_push(
     State(state): State<AppState>,
     Json(body): Json<ReadingStatusPushRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<JobLaunchResponse>, ApiError> {
     // All libraries case
-    if body.library_id.is_none() {
-        let (_, _, local_user_id) = anilist::load_anilist_settings(&state.pool).await?;
-        if local_user_id.is_none() {
-            return Err(ApiError::bad_request(
-                "AniList local_user_id not configured — required for reading status push",
-            ));
-        }
+    let Some(library_id) = body.library_id else {
+        require_local_user_id(&state.pool).await?;
         let library_ids: Vec<Uuid> = sqlx::query_scalar(
             "SELECT id FROM libraries WHERE reading_status_provider = 'anilist' ORDER BY name",
         )
         .fetch_all(&state.pool)
         .await?;
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let existing = job_in_flight(
-                &state.pool,
-                JobScope::Library(library_id),
-                &["reading_status_push"],
-            )
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            let library_name: Option<String> =
-                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                    .bind(library_id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            tokio::spawn(async move {
-                if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
-                    warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
-                    let partial_stats = build_push_stats(&pool, job_id).await;
-                    let _ = fail_job(&pool, job_id, &e.to_string(), Some(partial_stats)).await;
-                    notifications::notify(
-                        pool.clone(),
-                        notifications::NotificationEvent::ReadingStatusPushFailed {
-                            library_name,
-                            error: e.to_string(),
-                        },
-                    );
-                }
-            });
-            last_job_id = Some(job_id);
-        }
-        return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
-            "status": "started",
-        })));
-    }
+        let fan_out =
+            launcher::launch_each(&state.pool, library_ids, &READING_STATUS_PUSH, run_push).await?;
+        return Ok(Json(fan_out.into()));
+    };
 
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
+    let library_id: Uuid = library_id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
@@ -154,66 +104,49 @@ pub async fn start_push(
         ));
     }
 
-    // Check AniList is configured globally with a local_user_id
-    let (_, _, local_user_id) = anilist::load_anilist_settings(&state.pool).await?;
+    require_local_user_id(&state.pool).await?;
+
+    let launched = launcher::launch(
+        &state.pool,
+        Some(library_id),
+        &READING_STATUS_PUSH,
+        move |pool, job_id| run_push(pool, job_id, library_id),
+    )
+    .await?;
+    Ok(Json(launched.into()))
+}
+
+/// AniList must be configured globally with a `local_user_id` to push.
+async fn require_local_user_id(pool: &PgPool) -> Result<(), ApiError> {
+    let (_, _, local_user_id) = anilist::load_anilist_settings(pool).await?;
     if local_user_id.is_none() {
         return Err(ApiError::bad_request(
             "AniList local_user_id not configured — required for reading status push",
         ));
     }
+    Ok(())
+}
 
-    // Check no existing running job for this library
-    let existing = job_in_flight(
-        &state.pool,
-        JobScope::Library(library_id),
-        &["reading_status_push"],
-    )
-    .await?;
+pub(crate) const READING_STATUS_PUSH: JobSpec = JobSpec {
+    job_type: "reading_status_push",
+    conflicts: &[],
+    failure: Some(push_failed),
+    partial_stats: Some(push_partial_stats),
+};
 
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
+fn push_failed(library_name: Option<String>, error: String) -> NotificationEvent {
+    NotificationEvent::ReadingStatusPushFailed {
+        library_name,
+        error,
     }
+}
 
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
+fn push_partial_stats(pool: PgPool, job_id: Uuid) -> BoxFuture<'static, serde_json::Value> {
+    Box::pin(async move { build_push_stats(&pool, job_id).await })
+}
 
-    let pool = state.pool.clone();
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-
-    tokio::spawn(async move {
-        if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
-            warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
-            let partial_stats = build_push_stats(&pool, job_id).await;
-            let _ = fail_job(&pool, job_id, &e.to_string(), Some(partial_stats)).await;
-            notifications::notify(
-                pool.clone(),
-                notifications::NotificationEvent::ReadingStatusPushFailed {
-                    library_name,
-                    error: e.to_string(),
-                },
-            );
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "running",
-    })))
+async fn run_push(pool: PgPool, job_id: Uuid, library_id: Uuid) -> Result<(), String> {
+    process_reading_status_push(&pool, job_id, library_id).await
 }
 
 // ---------------------------------------------------------------------------

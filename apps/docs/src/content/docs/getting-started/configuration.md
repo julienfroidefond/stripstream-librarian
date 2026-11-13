@@ -28,6 +28,7 @@ Ces variables doivent obligatoirement être définies — Stripstream ne démarr
 | `IMAGE_CACHE_DIR` | Répertoire de repli du cache disque des pages | `/tmp/stripstream-image-cache` |
 | `API_LISTEN_ADDR` | Adresse d'écoute de l'API | `0.0.0.0:7080` |
 | `API_BASE_URL` | URL de l'API vue par le backoffice | `http://api:7080` |
+| `INDEXER_BASE_URL` | URL de l'indexer vue par le backoffice (version affichée dans les paramètres) | `http://indexer:7081` |
 | `INDEXER_LISTEN_ADDR` | Adresse d'écoute de l'indexer | `0.0.0.0:7081` |
 | `INDEXER_SCAN_INTERVAL_SECONDS` | Intervalle de vérification du watcher | `5` |
 | `RUST_LOG` | Niveau de verbosité des logs | `indexer=info,scan=info,...` |

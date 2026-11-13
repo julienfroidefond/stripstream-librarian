@@ -1,7 +1,7 @@
-import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, LibraryDto } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 export const PATCH = withRoute(async (
   request: NextRequest,
@@ -12,6 +12,6 @@ export const PATCH = withRoute(async (
     method: "PATCH",
     body: JSON.stringify(body),
   });
-  revalidatePath("/libraries");
+  invalidateAfter({ type: "library.updated", libraryId: id });
   return NextResponse.json(data);
 }, { fallback: "Failed to update metadata provider" });

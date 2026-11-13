@@ -18,10 +18,10 @@ use super::{blacklist, missing, prowlarr};
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
-use crate::jobs::lifecycle::{
-    cancel_job, classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
-};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, JobStatus};
 use crate::{error::ApiError, state::AppState};
+use notifications::NotificationEvent;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -114,7 +114,7 @@ fn default_match_reasons() -> Vec<String> {
     tag = "download_detection",
     request_body = StartDownloadDetectionRequest,
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "Bad request"),
     ),
     security(("Bearer" = []))
@@ -122,64 +122,20 @@ fn default_match_reasons() -> Vec<String> {
 pub async fn start_detection(
     State(state): State<AppState>,
     Json(body): Json<StartDownloadDetectionRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<JobLaunchResponse>, ApiError> {
     // All libraries case
-    if body.library_id.is_none() {
+    let Some(library_id) = body.library_id else {
         prowlarr::check_prowlarr_configured(&state.pool).await?;
         let library_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM libraries ORDER BY name")
             .fetch_all(&state.pool)
             .await?;
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let existing = job_in_flight(
-                &state.pool,
-                JobScope::Library(library_id),
-                &["download_detection"],
-            )
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            let library_name: Option<String> =
-                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                    .bind(library_id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            tokio::spawn(async move {
-                if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
-                    warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
-                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-                    notifications::notify(
-                        pool,
-                        notifications::NotificationEvent::DownloadDetectionFailed {
-                            library_name,
-                            error: e.to_string(),
-                        },
-                    );
-                }
-            });
-            last_job_id = Some(job_id);
-        }
-        return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
-            "status": "started",
-        })));
-    }
+        let fan_out =
+            launcher::launch_each(&state.pool, library_ids, &DOWNLOAD_DETECTION, run_detection)
+                .await?;
+        return Ok(Json(fan_out.into()));
+    };
 
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
+    let library_id: Uuid = library_id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
@@ -193,57 +149,35 @@ pub async fn start_detection(
     // Verify Prowlarr is configured
     prowlarr::check_prowlarr_configured(&state.pool).await?;
 
-    // Check no existing running job for this library
-    let existing = job_in_flight(
+    let launched = launcher::launch(
         &state.pool,
-        JobScope::Library(library_id),
-        &["download_detection"],
+        Some(library_id),
+        &DOWNLOAD_DETECTION,
+        move |pool, job_id| run_detection(pool, job_id, library_id),
     )
     .await?;
+    Ok(Json(launched.into()))
+}
 
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
+pub(crate) const DOWNLOAD_DETECTION: JobSpec = JobSpec {
+    job_type: "download_detection",
+    conflicts: &[],
+    failure: Some(detection_failed),
+    partial_stats: None,
+};
+
+/// Failure notification shared by the download-search jobs (detection, RSS, DDL).
+pub(crate) fn detection_failed(library_name: Option<String>, error: String) -> NotificationEvent {
+    NotificationEvent::DownloadDetectionFailed {
+        library_name,
+        error,
     }
+}
 
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
-
-    let pool = state.pool.clone();
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-
-    tokio::spawn(async move {
-        if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
-            warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-            notifications::notify(
-                pool,
-                notifications::NotificationEvent::DownloadDetectionFailed {
-                    library_name,
-                    error: e.to_string(),
-                },
-            );
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "running",
-    })))
+async fn run_detection(pool: PgPool, job_id: Uuid, library_id: Uuid) -> Result<(), String> {
+    process_download_detection(&pool, job_id, library_id)
+        .await
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------

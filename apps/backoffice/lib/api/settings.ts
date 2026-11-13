@@ -126,8 +126,12 @@ export type StatusMappingDto = {
   mapped_status: string | null;
 };
 
+/**
+ * Read by the `/settings` editor, whose writes do not invalidate a cache tag:
+ * a cached read would show the previous mappings after an edit and a reload.
+ */
 export async function fetchStatusMappings(): Promise<StatusMappingDto[]> {
-  return apiFetch<StatusMappingDto[]>("/settings/status-mappings", { next: { revalidate: 60 } });
+  return apiFetch<StatusMappingDto[]>("/settings/status-mappings", { cache: "no-store" });
 }
 
 export async function upsertStatusMapping(provider_status: string, mapped_status: string): Promise<StatusMappingDto> {

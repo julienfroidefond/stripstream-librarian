@@ -3,6 +3,7 @@
  */
 
 import { apiFetch } from "./client";
+import { cacheTags } from "../cache/tags";
 
 export type StatsOverview = {
   total_books: number;
@@ -143,7 +144,7 @@ export type StatsResponse = {
 export async function fetchStats(period?: "day" | "week" | "month") {
   const params = period && period !== "week" ? `?period=${period}` : "";
   return apiFetch<StatsResponse>(`/stats${params}`, {
-    next: { revalidate: 30, tags: ["stats"] },
+    next: { revalidate: 30, tags: [cacheTags.stats()] },
   });
 }
 
@@ -165,12 +166,12 @@ export type StatsBreakdownData = {
 
 export async function fetchStatsOverview() {
   return apiFetch<StatsOverviewData>("/stats/overview", {
-    next: { revalidate: 30, tags: ["stats"] },
+    next: { revalidate: 30, tags: [cacheTags.stats()] },
   });
 }
 
 export async function fetchStatsBreakdown() {
   return apiFetch<StatsBreakdownData>("/stats/breakdown", {
-    next: { revalidate: 30, tags: ["stats"] },
+    next: { revalidate: 30, tags: [cacheTags.stats()] },
   });
 }

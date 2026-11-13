@@ -179,38 +179,26 @@ pub(crate) async fn create_series_with_metadata(
             .clone()
             .unwrap_or(serde_json::json!({}));
 
-        let link_id: Uuid = sqlx::query_scalar(
-            r#"
-            INSERT INTO external_metadata_links
-                (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
-            VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8)
-            ON CONFLICT (series_id, provider)
-            DO UPDATE SET
-                status = 'approved',
-                confidence = EXCLUDED.confidence,
-                metadata_json = EXCLUDED.metadata_json,
-                total_volumes_external = EXCLUDED.total_volumes_external,
-                matched_at = NOW(),
-                approved_at = NOW(),
-                updated_at = NOW()
-            RETURNING id
-            "#,
+        // Approve the link (promoted to primary if the series has none yet).
+        let link_id = crate::metadata::links::approve(
+            pool,
+            &crate::metadata::links::LinkCandidate {
+                library_id: params.library_id,
+                series_id,
+                provider,
+                external_id,
+                external_url: params.external_url.as_deref(),
+                confidence: params.confidence,
+                metadata_json: &metadata_json,
+                total_volumes: params.total_volumes,
+            },
+            // Two provider entities with the same title land on one series:
+            // keep the stored identity (#25).
+            crate::metadata::links::OnConflict::KeepExisting,
         )
-        .bind(params.library_id)
-        .bind(series_id)
-        .bind(provider)
-        .bind(external_id)
-        .bind(&params.external_url)
-        .bind(params.confidence)
-        .bind(&metadata_json)
-        .bind(params.total_volumes)
-        .fetch_one(pool)
         .await?;
 
         metadata_link_id = Some(link_id);
-
-        // Promote this link to primary if the series has none yet.
-        let _ = crate::metadata::shared_sync::promote_if_no_primary(pool, series_id, link_id).await;
 
         // Sync the whole series from all approved links (primary + fallback).
         let _ = crate::metadata::sync_series_from_links(pool, series_id, true, true).await;

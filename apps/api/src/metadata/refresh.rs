@@ -9,11 +9,11 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::job_helpers::{is_job_cancelled, set_total_files, update_progress};
-use crate::jobs::lifecycle::{
-    cancel_job, classify_job, fail_job, finish_job, job_in_flight, start_job, JobScope, JobStatus,
-};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, start_job, JobStatus};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{error::ApiError, state::AppState};
+use notifications::NotificationEvent;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -94,7 +94,7 @@ pub struct MetadataRefreshReportDto {
     tag = "metadata",
     request_body = MetadataRefreshRequest,
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "Bad request"),
     ),
     security(("Bearer" = []))
@@ -102,164 +102,8 @@ pub struct MetadataRefreshReportDto {
 pub async fn start_refresh(
     State(state): State<AppState>,
     Json(body): Json<MetadataRefreshRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    // All libraries case
-    if body.library_id.is_none() {
-        let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name"
-        )
-        .fetch_all(&state.pool)
-        .await?;
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let link_count: i64 = sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) FROM external_metadata_links eml
-                LEFT JOIN series sm
-                    ON sm.library_id = eml.library_id AND sm.id = eml.series_id
-                WHERE eml.library_id = $1
-                  AND eml.status = 'approved'
-                  AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
-                "#,
-            )
-            .bind(library_id)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(0);
-            if link_count == 0 {
-                continue;
-            }
-            let existing = job_in_flight(
-                &state.pool,
-                JobScope::Library(library_id),
-                &["metadata_refresh"],
-            )
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            let library_name: Option<String> =
-                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                    .bind(library_id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            tokio::spawn(async move {
-                if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
-                    warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
-                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-                    notifications::notify(
-                        pool.clone(),
-                        notifications::NotificationEvent::MetadataRefreshFailed {
-                            library_name,
-                            error: e.to_string(),
-                        },
-                    );
-                }
-            });
-            last_job_id = Some(job_id);
-        }
-        return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
-            "status": "started",
-        })));
-    }
-
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid library_id"))?;
-
-    // Verify library exists
-    sqlx::query("SELECT 1 FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("library not found"))?;
-
-    // Check no existing running metadata_refresh job for this library
-    let existing = job_in_flight(
-        &state.pool,
-        JobScope::Library(library_id),
-        &["metadata_refresh"],
-    )
-    .await?;
-
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
-    }
-
-    // Check there are approved links to refresh (only ongoing series)
-    let link_count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*) FROM external_metadata_links eml
-        LEFT JOIN series sm
-            ON sm.library_id = eml.library_id AND sm.id = eml.series_id
-        WHERE eml.library_id = $1
-          AND eml.status = 'approved'
-          AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
-        "#,
-    )
-    .bind(library_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if link_count == 0 {
-        return Err(ApiError::bad_request(
-            "No approved metadata links to refresh for this library",
-        ));
-    }
-
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh', 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
-
-    // Spawn the background processing task (status already 'running' to avoid poller race)
-    let pool = state.pool.clone();
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-    tokio::spawn(async move {
-        if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
-            warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-            notifications::notify(
-                pool.clone(),
-                notifications::NotificationEvent::MetadataRefreshFailed {
-                    library_name,
-                    error: e.to_string(),
-                },
-            );
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "pending",
-    })))
+) -> Result<Json<JobLaunchResponse>, ApiError> {
+    launch_refresh(&state.pool, body, RefreshScope::Ongoing).await
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +116,7 @@ pub async fn start_refresh(
     tag = "metadata",
     request_body = MetadataRefreshRequest,
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "Bad request"),
     ),
     security(("Bearer" = []))
@@ -280,157 +124,133 @@ pub async fn start_refresh(
 pub async fn start_refresh_all(
     State(state): State<AppState>,
     Json(body): Json<MetadataRefreshRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    // All libraries case
-    if body.library_id.is_none() {
-        let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name"
-        )
-        .fetch_all(&state.pool)
-        .await?;
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let link_count: i64 = sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) FROM external_metadata_links eml
-                WHERE eml.library_id = $1
-                  AND eml.status = 'approved'
-                "#,
-            )
-            .bind(library_id)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(0);
-            if link_count == 0 {
-                continue;
-            }
-            let existing = job_in_flight(
-                &state.pool,
-                JobScope::Library(library_id),
-                &["metadata_refresh_all"],
-            )
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh_all', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            let library_name: Option<String> =
-                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                    .bind(library_id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            tokio::spawn(async move {
-                if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
-                    warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
-                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-                    notifications::notify(
-                        pool.clone(),
-                        notifications::NotificationEvent::MetadataRefreshFailed {
-                            library_name,
-                            error: e.to_string(),
-                        },
-                    );
-                }
-            });
-            last_job_id = Some(job_id);
-        }
-        return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
-            "status": "started",
-        })));
-    }
+) -> Result<Json<JobLaunchResponse>, ApiError> {
+    launch_refresh(&state.pool, body, RefreshScope::All).await
+}
 
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
+/// Which approved links a refresh job walks through.
+#[derive(Clone, Copy)]
+enum RefreshScope {
+    /// `metadata_refresh`: only series that are not ended or cancelled.
+    Ongoing,
+    /// `metadata_refresh_all`: every series.
+    All,
+}
+
+impl RefreshScope {
+    fn spec(self) -> &'static JobSpec {
+        match self {
+            RefreshScope::Ongoing => &METADATA_REFRESH,
+            RefreshScope::All => &METADATA_REFRESH_ALL,
+        }
+    }
+}
+
+pub(crate) const METADATA_REFRESH: JobSpec = JobSpec {
+    job_type: "metadata_refresh",
+    conflicts: &[],
+    failure: Some(refresh_failed),
+    partial_stats: None,
+};
+
+pub(crate) const METADATA_REFRESH_ALL: JobSpec = JobSpec {
+    job_type: "metadata_refresh_all",
+    conflicts: &[],
+    failure: Some(refresh_failed),
+    partial_stats: None,
+};
+
+fn refresh_failed(library_name: Option<String>, error: String) -> NotificationEvent {
+    NotificationEvent::MetadataRefreshFailed {
+        library_name,
+        error,
+    }
+}
+
+/// Number of approved links a refresh of `scope` would walk for a library.
+async fn refreshable_link_count(
+    pool: &PgPool,
+    library_id: Uuid,
+    scope: RefreshScope,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM external_metadata_links eml
+        LEFT JOIN series sm
+            ON sm.library_id = eml.library_id AND sm.id = eml.series_id
+        WHERE eml.library_id = $1
+          AND eml.status = 'approved'
+          AND ($2 OR COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled'))
+        "#,
+    )
+    .bind(library_id)
+    .bind(matches!(scope, RefreshScope::All))
+    .fetch_one(pool)
+    .await
+}
+
+async fn run_refresh(
+    pool: PgPool,
+    job_id: Uuid,
+    library_id: Uuid,
+    scope: RefreshScope,
+) -> Result<(), String> {
+    match scope {
+        RefreshScope::Ongoing => process_metadata_refresh(&pool, job_id, library_id).await,
+        RefreshScope::All => process_metadata_refresh_all(&pool, job_id, library_id).await,
+    }
+}
+
+async fn launch_refresh(
+    pool: &PgPool,
+    body: MetadataRefreshRequest,
+    scope: RefreshScope,
+) -> Result<Json<JobLaunchResponse>, ApiError> {
+    let spec = scope.spec();
+
+    // All libraries case: only libraries with something to refresh
+    let Some(library_id) = body.library_id else {
+        let candidates: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name",
+        )
+        .fetch_all(pool)
+        .await?;
+        let mut library_ids = Vec::with_capacity(candidates.len());
+        for library_id in candidates {
+            if refreshable_link_count(pool, library_id, scope).await? > 0 {
+                library_ids.push(library_id);
+            }
+        }
+        let fan_out =
+            launcher::launch_each(pool, library_ids, spec, move |pool, job_id, library_id| {
+                run_refresh(pool, job_id, library_id, scope)
+            })
+            .await?;
+        return Ok(Json(fan_out.into()));
+    };
+
+    let library_id: Uuid = library_id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
     // Verify library exists
     sqlx::query("SELECT 1 FROM libraries WHERE id = $1")
         .bind(library_id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::not_found("library not found"))?;
 
-    // Check no existing running metadata_refresh_all job for this library
-    let existing = job_in_flight(
-        &state.pool,
-        JobScope::Library(library_id),
-        &["metadata_refresh_all"],
-    )
-    .await?;
-
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
-    }
-
-    // Check there are approved links to refresh (ALL series, no status filter)
-    let link_count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*) FROM external_metadata_links eml
-        WHERE eml.library_id = $1
-          AND eml.status = 'approved'
-        "#,
-    )
-    .bind(library_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if link_count == 0 {
+    if refreshable_link_count(pool, library_id, scope).await? == 0 {
         return Err(ApiError::bad_request(
             "No approved metadata links to refresh for this library",
         ));
     }
 
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh_all', 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .execute(&state.pool)
+    let launched = launcher::launch(pool, Some(library_id), spec, move |pool, job_id| {
+        run_refresh(pool, job_id, library_id, scope)
+    })
     .await?;
-
-    let pool = state.pool.clone();
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-    tokio::spawn(async move {
-        if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
-            warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-            notifications::notify(
-                pool.clone(),
-                notifications::NotificationEvent::MetadataRefreshFailed {
-                    library_name,
-                    error: e.to_string(),
-                },
-            );
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "pending",
-    })))
+    Ok(Json(launched.into()))
 }
 
 // ---------------------------------------------------------------------------

@@ -10,9 +10,8 @@ use stripstream_core::http::build_http_client_with_agent;
 
 use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr};
 use crate::jobs::helpers::{insert_entity_event as insert_event, set_total_files};
-use crate::jobs::lifecycle::{
-    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
-};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::{classify_job, finish_job, JobStatus};
 use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -27,91 +26,42 @@ pub struct StartRssPollRequest {
 pub async fn start_rss_poll(
     State(state): State<AppState>,
     Json(body): Json<StartRssPollRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<JobLaunchResponse>, ApiError> {
     prowlarr::check_prowlarr_configured(&state.pool).await?;
 
-    if body.library_id.is_none() {
-        // Global job: one RSS fetch covers all libraries
-        let existing = job_in_flight(&state.pool, JobScope::Global, &["prowlarr_rss"]).await?;
-
-        if let Some(existing_id) = existing {
-            return Ok(Json(serde_json::json!({
-                "id": existing_id.to_string(),
-                "status": "already_running",
-            })));
+    // Global job: one RSS fetch covers all libraries (normal path).
+    // Per-library trigger: backward compat, fetches RSS for just this library.
+    let library_id = match body.library_id {
+        None => None,
+        Some(raw) => {
+            let library_id: Uuid = raw
+                .parse()
+                .map_err(|_| ApiError::bad_request("invalid library_id"))?;
+            sqlx::query("SELECT id FROM libraries WHERE id = $1")
+                .bind(library_id)
+                .fetch_optional(&state.pool)
+                .await?
+                .ok_or_else(|| ApiError::not_found("library not found"))?;
+            Some(library_id)
         }
+    };
 
-        let job_id = Uuid::new_v4();
-        sqlx::query(
-            "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'prowlarr_rss', 'running', NOW())",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await?;
-
-        let pool = state.pool.clone();
-        tokio::spawn(async move {
-            if let Err(e) = process_rss_poll(&pool, job_id, None).await {
-                tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
-                let _ = fail_job(&pool, job_id, &e, None).await;
-            }
-        });
-
-        return Ok(Json(serde_json::json!({
-            "id": job_id.to_string(),
-            "status": "started",
-        })));
-    }
-
-    // Per-library trigger (backward compat — still fetches RSS for just this library)
-    let library_id: Uuid = body
-        .library_id
-        .unwrap()
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid library_id"))?;
-
-    sqlx::query("SELECT id FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("library not found"))?;
-
-    let existing = job_in_flight(
+    let launched = launcher::launch(
         &state.pool,
-        JobScope::Library(library_id),
-        &["prowlarr_rss"],
+        library_id,
+        &PROWLARR_RSS,
+        move |pool, job_id| async move { process_rss_poll(&pool, job_id, library_id).await },
     )
     .await?;
-
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
-    }
-
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'prowlarr_rss', 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
-
-    let pool = state.pool.clone();
-    tokio::spawn(async move {
-        if let Err(e) = process_rss_poll(&pool, job_id, Some(library_id)).await {
-            tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e, None).await;
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "running",
-    })))
+    Ok(Json(launched.into()))
 }
+
+pub(crate) const PROWLARR_RSS: JobSpec = JobSpec {
+    job_type: "prowlarr_rss",
+    conflicts: &[],
+    failure: Some(super::detection::detection_failed),
+    partial_stats: None,
+};
 
 // ---------------------------------------------------------------------------
 // Background processing

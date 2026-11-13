@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath, revalidateTag } from "next/cache";
 import { updateReadingProgress, apiFetch, BookDto } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 export const PATCH = withRoute(async (
   request: NextRequest,
@@ -12,14 +12,6 @@ export const PATCH = withRoute(async (
     updateReadingProgress(bookId, body.status, body.current_page ?? undefined),
     apiFetch<BookDto>(`/books/${bookId}`).catch(() => null),
   ]);
-  revalidatePath("/series");
-  revalidatePath(`/books/${bookId}`);
-  // Le dashboard met en cache ses statistiques 30 s ; une progression de
-  // lecture doit s'y refléter immédiatement (listes « en cours » / « récents »).
-  revalidateTag("stats", { expire: 0 });
-  revalidatePath("/");
-  if (book?.series_id) {
-    revalidatePath(`/series/${book.series_id}`);
-  }
+  invalidateAfter({ type: "readingProgress.changed", bookId, seriesId: book?.series_id });
   return NextResponse.json(data);
 }, { fallback: "Failed to update reading progress" });

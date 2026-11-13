@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use base64::Engine as _;
 use stripstream_core::http::build_http_client_with_custom_agent;
 
+use super::scoring::{self, Score};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const GRAPHQL_URL: &str = "https://apollo.senscritique.com/";
@@ -52,10 +53,14 @@ fn build_client() -> Result<reqwest::Client, String> {
 
 // ─── MetadataProvider implementation ─────────────────────────────────────────
 
+/// A franchise found by a search: its base candidate, rating and search rank.
+type FranchiseHit = (SeriesCandidate, Option<f64>, usize);
+
 /// Search SensCritique for series matching the query.
 ///
 /// Uses `searchAutocomplete` to find products, then deduplicates by franchise
 /// so each series appears only once (using the best-rated tome as representative).
+/// Candidates are scored by title similarity; the search rank only breaks ties.
 async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCandidate>, String> {
     let client = build_client()?;
 
@@ -84,8 +89,9 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
         .and_then(|v| v.as_array())
         .ok_or("SensCritique: missing searchAutocomplete items")?;
 
-    // Group by franchise — keep the first occurrence per franchise
-    let mut franchise_map: HashMap<i64, (SeriesCandidate, Option<f64>)> = HashMap::new();
+    // Group by franchise — keep the first occurrence per franchise, with its
+    // search rank so equal scores keep SensCritique's relevance order.
+    let mut franchise_map: HashMap<i64, FranchiseHit> = HashMap::new();
     // Track best description per franchise: prefer lowest volume number (tome 1)
     let mut franchise_descriptions: HashMap<i64, (Option<i32>, String)> = HashMap::new();
     // Products without franchise get their own entry
@@ -151,8 +157,6 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             Some(format!("https://www.senscritique.com{url_path}"))
         };
 
-        let confidence = 1.0 - (i as f32 / 20.0).clamp(0.0, 0.9);
-
         if let Some(franchise) = franchises.first() {
             let fid = franchise
                 .get("id")
@@ -166,7 +170,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
 
             let candidate = SeriesCandidate {
                 external_id: format!("franchise:{fid}"),
-                title: flabel,
+                title: flabel.clone(),
                 authors,
                 description: None,
                 publishers: vec![],
@@ -174,7 +178,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 total_volumes: None,
                 cover_url,
                 external_url,
-                confidence,
+                score: Score::of_titles(&flabel, query, scoring::UNCAPPED),
                 metadata_json: serde_json::json!({
                     "franchise_id": fid,
                     "rating": rating,
@@ -184,7 +188,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             };
 
             // Keep the first occurrence per franchise (most relevant from search order)
-            franchise_map.entry(fid).or_insert((candidate, rating));
+            franchise_map.entry(fid).or_insert((candidate, rating, i));
 
             // Track description from the lowest volume number (tome 1 preferred)
             if let Some(syn) = synopsis.clone() {
@@ -215,7 +219,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 total_volumes: None,
                 cover_url,
                 external_url,
-                confidence,
+                score: Score::of_titles(title, query, scoring::UNCAPPED),
                 metadata_json: serde_json::json!({
                     "product_id": id,
                     "rating": rating,
@@ -230,10 +234,13 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
     let franchise_ids: Vec<i64> = franchise_map.keys().copied().collect();
     let latest_dates = fetch_franchise_latest_dates(&client, &franchise_ids).await;
 
+    let mut franchises: Vec<(i64, FranchiseHit)> = franchise_map.into_iter().collect();
+    franchises.sort_by_key(|(_, (_, _, rank))| *rank);
+
     if detailed {
         // Manual search: fetch all products per franchise, group by edition
         let mut results: Vec<SeriesCandidate> = Vec::new();
-        for (fid, (base_candidate, _rating)) in &franchise_map {
+        for (fid, (base_candidate, _rating, _rank)) in &franchises {
             let edition_candidates = fetch_franchise_editions(
                 &client,
                 *fid,
@@ -245,18 +252,14 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             .await;
             results.extend(edition_candidates);
         }
-        results.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scoring::sort_best_first(&mut results);
         results.extend(standalone);
         Ok(results)
     } else {
         // Batch mode: return one candidate per franchise (no extra API calls)
-        let mut results: Vec<SeriesCandidate> = franchise_map
+        let mut results: Vec<SeriesCandidate> = franchises
             .into_iter()
-            .map(|(fid, (mut c, _))| {
+            .map(|(fid, (mut c, _, _))| {
                 if c.description.is_none() {
                     if let Some((_, desc)) = franchise_descriptions.remove(&fid) {
                         c.description = Some(desc.clone());
@@ -270,11 +273,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 c
             })
             .collect();
-        results.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scoring::sort_best_first(&mut results);
         results.extend(standalone);
         Ok(results)
     }
@@ -388,11 +387,10 @@ async fn fetch_franchise_editions(
             metadata["edition"] = serde_json::json!(edition_name);
             metadata["description"] = serde_json::json!(description);
 
-            // Confidence based on name similarity with search query
-            let similarity = name_similarity(search_query, &edition_name);
             // Bonus for editions with more volumes (main edition likely more relevant)
             let volume_bonus = (volume_count as f32 / 100.0).min(0.1);
-            let confidence = (similarity + volume_bonus).min(1.0);
+            let score = Score::of_titles(&edition_name, search_query, scoring::UNCAPPED)
+                .with_bonus(volume_bonus);
 
             SeriesCandidate {
                 external_id: format!(
@@ -408,7 +406,7 @@ async fn fetch_franchise_editions(
                 total_volumes: Some(volume_count),
                 cover_url,
                 external_url: base_candidate.external_url.clone(),
-                confidence,
+                score,
                 metadata_json: metadata,
             }
         })
@@ -454,7 +452,7 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
         total_volumes: Some(books.len() as i32),
         cover_url: first.cover_url.clone(),
         external_url: None,
-        confidence: 1.0,
+        score: Score::exact(),
         metadata_json,
     })
 }
@@ -888,7 +886,7 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
             .filter(|s| !s.is_empty())
             .map(String::from);
 
-        let confidence = 1.0 - (i as f32 / 100.0).clamp(0.0, 0.9);
+        let score = Score::ranked(i, 0.01);
 
         candidates.push(SeriesCandidate {
             external_id,
@@ -900,7 +898,7 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
             total_volumes: None,
             cover_url,
             external_url,
-            confidence,
+            score,
             metadata_json: serde_json::json!({
                 "source": "senscritique",
                 "rating": rating,
@@ -1140,48 +1138,6 @@ fn decode_edition(encoded: &str) -> Result<String, String> {
         .decode(encoded)
         .map_err(|e| format!("invalid base64 edition: {e}"))?;
     String::from_utf8(bytes).map_err(|e| format!("invalid utf8 edition: {e}"))
-}
-
-/// Compute name similarity between 0.0 and 1.0.
-/// Compares normalized (lowercased, unaccented-ish) names.
-fn name_similarity(a: &str, b: &str) -> f32 {
-    let normalize = |s: &str| -> String {
-        s.to_lowercase()
-            .replace(['é', 'è', 'ê', 'ë'], "e")
-            .replace(['à', 'â', 'ä'], "a")
-            .replace(['ù', 'û', 'ü'], "u")
-            .replace(['î', 'ï'], "i")
-            .replace(['ô', 'ö'], "o")
-            .replace('ç', "c")
-            .replace(|c: char| !c.is_alphanumeric(), " ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    let na = normalize(a);
-    let nb = normalize(b);
-    if na == nb {
-        return 1.0;
-    }
-    if na.is_empty() || nb.is_empty() {
-        return 0.0;
-    }
-    // Check containment
-    if na.contains(&nb) || nb.contains(&na) {
-        let shorter = na.len().min(nb.len()) as f32;
-        let longer = na.len().max(nb.len()) as f32;
-        return (shorter / longer).max(0.5);
-    }
-    // Word overlap
-    let words_a: std::collections::HashSet<&str> = na.split_whitespace().collect();
-    let words_b: std::collections::HashSet<&str> = nb.split_whitespace().collect();
-    let intersection = words_a.intersection(&words_b).count() as f32;
-    let union = words_a.union(&words_b).count() as f32;
-    if union == 0.0 {
-        0.0
-    } else {
-        intersection / union
-    }
 }
 
 /// Extract edition name from a SensCritique product title.

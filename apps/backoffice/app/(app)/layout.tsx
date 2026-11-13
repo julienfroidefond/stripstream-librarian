@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
+import { invalidateAfter } from "@/lib/cache";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { JobsIndicator } from "@/app/components/JobsIndicator";
 import { DownloadsIndicator } from "@/app/components/DownloadsIndicator";
@@ -86,7 +86,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     } else {
       store.delete(ACTIVE_USER_COOKIE);
     }
-    revalidatePath("/", "layout");
+    invalidateAfter({ type: "activeUser.changed" });
   }
 
   return (
