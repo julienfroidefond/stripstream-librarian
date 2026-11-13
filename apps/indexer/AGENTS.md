@@ -49,7 +49,7 @@ Jobs spéciaux :
   (`running`, `extracting_pages`, `generating_thumbnails`). `cbr_to_cbz` n'est **pas** exclusif.
   Les types `API_ONLY_JOB_TYPES` (metadata_*, reading_status_push, rating_pull, download_detection,
   prowlarr_rss, telegram_sync, telegram_sync_incremental, ddl_search) ne sont jamais réclamés ici.
-- **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers ou 1 s (scanner) ; poller séparé
+- **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers hors dossiers inchangés ou 1 s (scanner) ; poller séparé
   de 2 s côté analyzer — retourne l'erreur typée `job::JobCancelled`, reconnue par type
   (`RunError::Cancelled`), jamais par son message.
 - **Résultat** : un scan compte une unité par bibliothèque ; une bibliothèque en échec incrémente
@@ -75,6 +75,8 @@ writer.flush().await?;
 Ne jamais écrire `books`/`book_files` ligne à ligne depuis la boucle de scan.
 Le writer résout les noms de série via `stripstream_core::series_identity::find_or_create`
 (cache mémo par nom brut) ; ne jamais réécrire un get-or-create de série dans l'indexer (ADR 0022).
+Une série n'est comptée dans `stats.new_series` (notifications) que si `find_or_create_tracked`
+l'a réellement créée : « one piece » rattaché à « One Piece » n'est pas une nouvelle série.
 
 Toutes les opérations du flush sont dans une seule transaction.
 
@@ -84,7 +86,7 @@ Toutes les opérations du flush sont dans une seule transaction.
 
 Pipeline allégé — **zéro ouverture d'archive** :
 1. Charger `directory_mtimes` depuis la DB
-2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké ; dans un dossier inchangé, seuls les fichiers déjà connus sont relus (même chemin que le cas normal : stat, fingerprint, progression, annulation, `reconcile`)
+2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké ; dans un dossier inchangé, seuls les fichiers déjà connus sont relus (stat, fingerprint, `reconcile`) ; leur progression et l'annulation ne se déclenchent qu'au temps écoulé (1 s), jamais au compteur de 10 fichiers, pour qu'un scan incrémental n'ajoute pas de requêtes par fichier
 3. Pour chaque fichier : `parse_metadata_fast` (title/series/volume depuis filename uniquement)
 4. INSERT/UPDATE avec `analysis_status = 'discovered'` et `page_count = NULL` — les livres sont visibles immédiatement
 5. Upsert `directory_mtimes` en fin de scan
@@ -125,8 +127,9 @@ que `discovered` via `ScanBatch`. N'écrivez jamais `analysis_status` en SQL ail
 
 Transitions : skip/annulation d'un livre `analyzing` → `discovered` (un `cover_pending` le reste) ; erreur d'extraction ou page count irrécupérable →
 `failed` ; page count récupéré → `cover_pending` ou `complete` selon la miniature déjà présente ;
-miniature écrite → `complete`. Un échec de redimensionnement laisse l'état courant (`analyzing` en
-analyse complète, `cover_pending` en miniatures seules) pour que le prochain job reprenne le livre.
+miniature écrite → `complete`. Un échec d'encodage/publication en sous-phase B enregistre le page
+count de la sous-phase A (`record_page_counts` ⇒ `cover_pending`, événement `pages_extracted` en
+warning) et supprime le `.raw` : un job miniatures reprendra la couverture.
 Si les miniatures sont désactivées, l'analyse complète extrait seulement le page count
 (`page_count_only`) et laisse le livre en `cover_pending` ; aucun fichier n'est supprimé par une
 regénération. `failed` n'est pas compté comme « en attente » dans les diagnostics : il est exposé

@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use parsers::{detect_format, parse_metadata_fast};
 use sqlx::Row;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -22,6 +22,10 @@ use super::writer::ScanWriter;
 use super::{ExistingFile, JobStats};
 
 const NOTIFICATION_ITEMS_LIMIT: usize = 10;
+/// Progress is written (and cancellation checked) at least this often.
+const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
+/// ...and every this many files outside unchanged directories.
+const PROGRESS_EVERY_FILES: i32 = 10;
 
 pub fn push_capped_item(items: &mut Vec<String>, value: String) {
     if items.len() < NOTIFICATION_ITEMS_LIMIT {
@@ -136,10 +140,6 @@ pub async fn scan_library_discovery(
         })
         .collect();
 
-    // Track existing series names for new_series counting
-    let existing_series: HashSet<String> = series_map.keys().cloned().collect();
-    let mut seen_new_series: HashSet<String> = HashSet::new();
-
     // Load series rename mapping: original filesystem name → current DB name.
     // This prevents the scanner from recreating old series after a user rename.
     let rename_rows = sqlx::query(
@@ -167,6 +167,8 @@ pub async fn scan_library_discovery(
 
     let mut seen: HashMap<String, bool> = HashMap::new();
     let mut library_processed_count = 0i32;
+    // Files outside unchanged directories: only they drive the count-based progress trigger.
+    let mut changed_dir_count = 0i32;
     let mut last_progress_update = std::time::Instant::now();
 
     let mut writer = ScanWriter::new(state.pool.clone(), job_id, library_id, series_map);
@@ -327,10 +329,15 @@ pub async fn scan_library_discovery(
 
         library_processed_count += 1;
         *total_processed_count += 1;
+        if !under_skipped {
+            changed_dir_count += 1;
+        }
 
-        // Progress update
-        let should_update_progress = last_progress_update.elapsed() > Duration::from_secs(1)
-            || library_processed_count % 10 == 0;
+        // Progress update + cancellation check. Files of unchanged directories only report on
+        // elapsed time: on an incremental scan they are the bulk of the library, and a per-count
+        // trigger would cost two queries every 10 untouched files.
+        let should_update_progress = last_progress_update.elapsed() > PROGRESS_INTERVAL
+            || (!under_skipped && changed_dir_count % PROGRESS_EVERY_FILES == 0);
         if should_update_progress {
             if let Err(e) = stripstream_jobs::update_progress_checked(
                 &state.pool,
@@ -383,23 +390,7 @@ pub async fn scan_library_discovery(
         debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
         let new_book_title = parsed.title.clone();
 
-        // Track new series
-        let series_key = parsed
-            .series
-            .as_deref()
-            .unwrap_or("unclassified")
-            .to_string();
-        if !existing_series.contains(&series_key) && seen_new_series.insert(series_key) {
-            stats.new_series += 1;
-            push_capped_item(
-                &mut stats.new_series_names,
-                parsed
-                    .series
-                    .clone()
-                    .unwrap_or_else(|| "unclassified".to_string()),
-            );
-        }
-
+        // New series are counted by the writer, when `series_identity` actually creates one.
         writer
             .insert_new(parsed, file, &abs_path, &file_name, stats)
             .await?;
