@@ -49,7 +49,7 @@ Jobs spéciaux :
   (`running`, `extracting_pages`, `generating_thumbnails`). `cbr_to_cbz` n'est **pas** exclusif.
   Les types `API_ONLY_JOB_TYPES` (metadata_*, reading_status_push, rating_pull, download_detection,
   prowlarr_rss, telegram_sync, telegram_sync_incremental, ddl_search) ne sont jamais réclamés ici.
-- **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers ou 1 s (scanner) ; poller séparé
+- **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers hors dossiers inchangés ou 1 s (scanner) ; poller séparé
   de 2 s côté analyzer — retourne l'erreur typée `job::JobCancelled`, reconnue par type
   (`RunError::Cancelled`), jamais par son message.
 - **Résultat** : un scan compte une unité par bibliothèque ; une bibliothèque en échec incrémente
@@ -84,7 +84,7 @@ Toutes les opérations du flush sont dans une seule transaction.
 
 Pipeline allégé — **zéro ouverture d'archive** :
 1. Charger `directory_mtimes` depuis la DB
-2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké ; dans un dossier inchangé, seuls les fichiers déjà connus sont relus (même chemin que le cas normal : stat, fingerprint, progression, annulation, `reconcile`)
+2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké ; dans un dossier inchangé, seuls les fichiers déjà connus sont relus (stat, fingerprint, `reconcile`) ; leur progression et l'annulation ne se déclenchent qu'au temps écoulé (1 s), jamais au compteur de 10 fichiers, pour qu'un scan incrémental n'ajoute pas de requêtes par fichier
 3. Pour chaque fichier : `parse_metadata_fast` (title/series/volume depuis filename uniquement)
 4. INSERT/UPDATE avec `analysis_status = 'discovered'` et `page_count = NULL` — les livres sont visibles immédiatement
 5. Upsert `directory_mtimes` en fin de scan

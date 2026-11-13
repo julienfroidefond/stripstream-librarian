@@ -395,6 +395,143 @@ mod tests {
         }
     }
 
+    // ─── Progress writes on incremental scans ───
+
+    /// Runs discovery over `files` known, unchanged books in `lib/Series/` and returns how many
+    /// times the job row was written (progress updates; each one also checks cancellation).
+    async fn job_writes_during_discovery(pool: sqlx::PgPool, files: usize, skip_dir: bool) -> i64 {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        let series_dir = root.join("Series");
+        std::fs::create_dir_all(&series_dir).unwrap();
+
+        let state = crate::AppState {
+            pool: pool.clone(),
+            library_root: stripstream_core::paths::LibraryRoot::new(dir.path()),
+        };
+        let library_id = create_test_library(&pool, "lib").await;
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Series')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        for volume in 1..=files {
+            let file_name = format!("Series - T{volume:03}.cbz");
+            let file_path = series_dir.join(&file_name);
+            std::fs::write(&file_path, b"not really a zip").unwrap();
+            let meta = std::fs::metadata(&file_path).unwrap();
+            let mtime: DateTime<Utc> = meta.modified().unwrap().into();
+            let fingerprint =
+                crate::utils::compute_fingerprint(&file_path, meta.len(), &mtime).unwrap();
+            let book_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO books (id, library_id, title, volume, kind, format, series_id, analysis_status) \
+                 VALUES ($1, $2, $3, $4, 'comic', 'cbz', $5, 'complete')",
+            )
+            .bind(book_id)
+            .bind(library_id)
+            .bind(format!("Series - T{volume:03}"))
+            .bind(volume as i32)
+            .bind(series_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO book_files (id, book_id, abs_path, format, size_bytes, mtime, fingerprint, parse_status) \
+                 VALUES ($1, $2, $3, 'cbz', $4, $5, $6, 'ok')",
+            )
+            .bind(Uuid::new_v4())
+            .bind(book_id)
+            .bind(format!("/libraries/lib/Series/{file_name}"))
+            .bind(meta.len() as i64)
+            .bind(mtime)
+            .bind(fingerprint)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        if skip_dir {
+            sqlx::query(
+                "INSERT INTO directory_mtimes (library_id, dir_path, mtime) \
+                 VALUES ($1, '/libraries/lib/Series', NOW() + INTERVAL '1 day')",
+            )
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'running')",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::raw_sql(
+            "CREATE TABLE job_writes (n INT NOT NULL); \
+             CREATE FUNCTION count_job_write() RETURNS trigger AS $$ \
+             BEGIN INSERT INTO job_writes VALUES (1); RETURN NEW; END $$ LANGUAGE plpgsql; \
+             CREATE TRIGGER count_job_write AFTER UPDATE ON index_jobs \
+             FOR EACH ROW EXECUTE FUNCTION count_job_write();",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut stats = empty_stats();
+        let mut processed = 0;
+        scan_library_discovery(
+            &state,
+            job_id,
+            library_id,
+            &root,
+            &mut stats,
+            &mut processed,
+            files,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            processed as usize, files,
+            "every known file counts toward progress"
+        );
+        assert_eq!(stats.indexed_files, 0, "nothing changed on disk");
+
+        sqlx::query_scalar("SELECT COUNT(*) FROM job_writes")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    }
+
+    /// An incremental scan over an unchanged directory must not write progress (and check
+    /// cancellation) every 10 files: only the elapsed-time trigger applies there.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn unchanged_dir_files_do_not_trigger_count_based_progress(pool: sqlx::PgPool) {
+        let writes = job_writes_during_discovery(pool, 50, true).await;
+        assert!(
+            writes <= 1,
+            "50 files of an unchanged dir wrote the job row {writes} times"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn changed_dir_files_report_progress_every_10_files(pool: sqlx::PgPool) {
+        let writes = job_writes_during_discovery(pool, 50, false).await;
+        assert!(
+            writes >= 5,
+            "expected a progress write per 10 files, got {writes}"
+        );
+    }
+
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn orphan_series_cleaned_up_after_book_deletion(pool: sqlx::PgPool) {
         let library_id = create_test_library(&pool, "orphan_test").await;

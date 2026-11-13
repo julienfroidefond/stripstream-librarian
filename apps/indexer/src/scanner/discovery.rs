@@ -22,6 +22,10 @@ use super::writer::ScanWriter;
 use super::{ExistingFile, JobStats};
 
 const NOTIFICATION_ITEMS_LIMIT: usize = 10;
+/// Progress is written (and cancellation checked) at least this often.
+const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
+/// ...and every this many files outside unchanged directories.
+const PROGRESS_EVERY_FILES: i32 = 10;
 
 pub fn push_capped_item(items: &mut Vec<String>, value: String) {
     if items.len() < NOTIFICATION_ITEMS_LIMIT {
@@ -167,6 +171,8 @@ pub async fn scan_library_discovery(
 
     let mut seen: HashMap<String, bool> = HashMap::new();
     let mut library_processed_count = 0i32;
+    // Files outside unchanged directories: only they drive the count-based progress trigger.
+    let mut changed_dir_count = 0i32;
     let mut last_progress_update = std::time::Instant::now();
 
     let mut writer = ScanWriter::new(state.pool.clone(), job_id, library_id, series_map);
@@ -327,10 +333,15 @@ pub async fn scan_library_discovery(
 
         library_processed_count += 1;
         *total_processed_count += 1;
+        if !under_skipped {
+            changed_dir_count += 1;
+        }
 
-        // Progress update
-        let should_update_progress = last_progress_update.elapsed() > Duration::from_secs(1)
-            || library_processed_count % 10 == 0;
+        // Progress update + cancellation check. Files of unchanged directories only report on
+        // elapsed time: on an incremental scan they are the bulk of the library, and a per-count
+        // trigger would cost two queries every 10 untouched files.
+        let should_update_progress = last_progress_update.elapsed() > PROGRESS_INTERVAL
+            || (!under_skipped && changed_dir_count % PROGRESS_EVERY_FILES == 0);
         if should_update_progress {
             if let Err(e) = stripstream_jobs::update_progress_checked(
                 &state.pool,
