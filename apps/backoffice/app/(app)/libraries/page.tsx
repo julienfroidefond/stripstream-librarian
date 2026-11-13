@@ -1,7 +1,7 @@
 import { invalidateAfter } from "@/lib/cache";
 import Image from "next/image";
 import Link from "next/link";
-import { listFolders, createLibrary, deleteLibrary, fetchLibraries, getBookCoverUrl, LibraryDto, FolderItem } from "@/lib/api";
+import { listFolders, createLibrary, deleteLibrary, fetchLibraries, fetchMetadataProviders, getBookCoverUrl, LibraryDto, FolderItem, MetadataProviderDto } from "@/lib/api";
 import type { TranslationKey } from "@/lib/i18n/fr";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { LibraryActions } from "@/app/components/LibraryActions";
@@ -29,9 +29,11 @@ function formatNextScan(nextScanAt: string | null, imminentLabel: string): strin
 
 export default async function LibrariesPage() {
   const { t } = await getServerTranslations();
-  const [libraries, folders] = await Promise.all([
+  const [libraries, folders, providers] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    listFolders().catch(() => [] as FolderItem[])
+    listFolders().catch(() => [] as FolderItem[]),
+    // One request for the page, shared by every library's settings modal.
+    fetchMetadataProviders().catch(() => [] as MetadataProviderDto[]),
   ]);
 
   const thumbnailMap = new Map(
@@ -108,19 +110,7 @@ export default async function LibrariesPage() {
                     {!lib.enabled && <Badge variant="muted" className="mt-1">{t("libraries.disabled")}</Badge>}
                   </div>
                   <div className="flex items-center gap-1">
-                    <LibraryActions
-                      libraryId={lib.id}
-                      monitorEnabled={lib.monitor_enabled}
-                      scanMode={lib.scan_mode}
-                      watcherEnabled={lib.watcher_enabled}
-                      metadataProvider={lib.metadata_provider}
-                      fallbackMetadataProvider={lib.fallback_metadata_provider}
-                      metadataRefreshMode={lib.metadata_refresh_mode}
-                      readingStatusProvider={lib.reading_status_provider}
-                      readingStatusPushMode={lib.reading_status_push_mode}
-                      downloadDetectionMode={lib.download_detection_mode ?? "manual"}
-                      tags={lib.tags ?? []}
-                    />
+                    <LibraryActions library={lib} providers={providers} />
                     <form>
                       <input type="hidden" name="id" value={lib.id} />
                       <Button type="submit" variant="ghost" size="sm" formAction={removeLibrary} className="text-muted-foreground hover:text-destructive">

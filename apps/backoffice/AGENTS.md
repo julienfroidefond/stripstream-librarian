@@ -181,6 +181,17 @@ Les lignes (`DownloadRow`, `TelegramDownloadRow`, `DdlProviderDownloadRow`,
 direct. `DownloadClientButton` garde son flux d'ajout manuel (ce n'est pas une action de ligne) et
 `ProwlarrSearchModal` ne fait que chercher.
 
+## Passer le DTO, pas ses champs
+
+Un composant reçoit l'objet que la page possède déjà ([ADR 0029](../../docs/adr/0029-pass-dtos-not-fields.md)),
+jamais une prop par champ : `<LibraryActions library={lib} providers={providers} />`,
+`<EditSeriesForm model={model} />`. Une donnée commune à toutes les lignes (fournisseurs de
+métadonnées) est chargée une fois par la page serveur. La traduction vers le formulaire vit dans
+un module pur : `lib/series/editForm.ts` (`seriesEditDefaults`) et `lib/libraries/settings.ts`
+(`diffLibrarySettings(before, form)` ⇒ `LibraryWrite[]`, une écriture par section modifiée ;
+`applyLibraryWrites` les applique séquentiellement et s'arrête au premier échec). Après une
+écriture : `router.refresh()`, jamais `window.location.reload()`.
+
 ## Fraîcheur du cache (Cache invalidation)
 
 `lib/cache/` est la seule porte du cache de données Next ([ADR 0021](../../docs/adr/0021-backoffice-cache-invalidation.md)) :
@@ -240,7 +251,7 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
 - `tests/setup.ts` mocke `next/link`, `next/image`, `next/navigation` et `@/lib/i18n/context` (`t` renvoie la clé) ; `@testing-library/jest-dom` est chargé globalement.
 - Couvre :
   - logique/`lib` : `format`, `jobStatus`, `ratings`, `searchParams`, `session`, `volumeRanges`, `useEventSource`, `usePopin`, `useMarkRead`, `i18n` (dictionnaires sync + chargement async, parité fr/en, interpolation, `LocaleProvider`/`useTranslation`), `api` (`apiFetch`, `config`, `getBookCoverUrl` et tous les endpoints : librairies, jobs, tokens, livres, séries, métadonnées, reading status, downloads, komga, reading lists, archive, reading overview, telegram) ;
-  - composants : `TagInput`, `Modal`, `DeleteConfirmButton`, `MarkReadButton`, `MarkBookReadButton`, `MarkSeriesReadButton`, `TestConnectionButton`, `SeriesResultRow`, `StatCard`, `SeriesGrid`, `MetadataReportCards`, `ReadingStatusReportCards`, `RatingStars`, `JobProgress`, `Pagination`, `ProgressBar`, `ActionsMenu`, `BookCard`, `LibraryForm`, `EditBookForm`, `EditSeriesForm`, `JobRow`, `JobsList`, `ProwlarrCard`, `QBittorrentCard`, `TelegramCard`, `ThemeToggle`/`ThemeSelector`, plus les primitives `ui/` (`Badge`/`StatusBadge`/`JobTypeBadge`/`ProgressBadge`, `Card`/`GlassCard`/`SimpleCard`, `Tooltip`, `CoverFan`, `Button`/`IconButton`, `Input`/`Select`/`Textarea`/`SearchInput`, `Form`, `StatBox`, `Switch`, `ReportStatGrid`, `SettingsCard`/`SettingsField`, `Toast`, `Icon`) ;
+  - composants : `TagInput`, `Modal`, `DeleteConfirmButton`, `MarkReadButton`, `MarkBookReadButton`, `MarkSeriesReadButton`, `TestConnectionButton`, `SeriesResultRow`, `StatCard`, `SeriesGrid`, `MetadataReportCards`, `ReadingStatusReportCards`, `RatingStars`, `JobProgress`, `Pagination`, `ProgressBar`, `ActionsMenu`, `BookCard`, `LibraryForm`, `LibraryActions`, `EditBookForm`, `EditSeriesForm`, `JobRow`, `JobsList`, `ProwlarrCard`, `QBittorrentCard`, `TelegramCard`, `ThemeToggle`/`ThemeSelector`, plus les primitives `ui/` (`Badge`/`StatusBadge`/`JobTypeBadge`/`ProgressBadge`, `Card`/`GlassCard`/`SimpleCard`, `Tooltip`, `CoverFan`, `Button`/`IconButton`, `Input`/`Select`/`Textarea`/`SearchInput`, `Form`, `StatBox`, `Switch`, `ReportStatGrid`, `SettingsCard`/`SettingsField`, `Toast`, `Icon`) ;
   - settings : `AiTaggingCard`, `MetadataProvidersCard`, `StatusMappingsCard`, `RenameFormatCard`, `ArchivesTab`, `TokensTab` (server component + server actions), `AnilistTab`, `KomgaSyncCard`, `TelegramMonitorCard` ;
   - routes/app : `app/health`, `app/login` (formulaire), `app/theme-provider`, et l'ensemble des route handlers `app/api/**` (CRUD, SSE `streams.test.ts`, cas d'erreur data-driven `errors.test.ts`).
 - Les tests de route handlers utilisent `// @vitest-environment node` et `tests/unit/app/api/helpers.ts` (`createApiMock()`, `jsonRequest()`, `routeCtx()` retournant `{ params: Promise<any> }`).
