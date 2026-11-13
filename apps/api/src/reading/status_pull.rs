@@ -1,14 +1,15 @@
 use axum::{extract::State, Json};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
-use tracing::{info, warn};
+use tracing::info;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
 };
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
+use crate::jobs::lifecycle::complete_job;
 use crate::{
     error::ApiError,
     integrations::{anilist, anilist_rating_push::anilist_score_to_local},
@@ -39,14 +40,14 @@ pub struct ReadingStatusPullReportDto {
     path = "/ratings/pull",
     tag = "reading_status",
     responses(
-        (status = 200, description = "Job created"),
+        (status = 200, body = JobLaunchResponse),
         (status = 400, description = "AniList not configured"),
     ),
     security(("Bearer" = []))
 )]
 pub async fn start_pull(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<JobLaunchResponse>, ApiError> {
     let (_, _, local_user_id) = anilist::load_anilist_settings(&state.pool).await?;
     if local_user_id.is_none() {
         return Err(ApiError::bad_request(
@@ -54,36 +55,20 @@ pub async fn start_pull(
         ));
     }
 
-    let existing = job_in_flight(&state.pool, JobScope::Any, &["rating_pull"]).await?;
-
-    if let Some(existing_id) = existing {
-        return Ok(Json(serde_json::json!({
-            "id": existing_id.to_string(),
-            "status": "already_running",
-        })));
-    }
-
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'rating_pull', 'running', NOW())",
-    )
-    .bind(job_id)
-    .execute(&state.pool)
+    let launched = launcher::launch(&state.pool, None, &RATING_PULL, |pool, job_id| async move {
+        process_rating_pull(&pool, job_id).await
+    })
     .await?;
-
-    let pool = state.pool.clone();
-    tokio::spawn(async move {
-        if let Err(e) = process_rating_pull(&pool, job_id).await {
-            warn!("[RATING_PULL] job {job_id} failed: {e}");
-            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "id": job_id.to_string(),
-        "status": "running",
-    })))
+    Ok(Json(launched.into()))
 }
+
+/// Global job (`library_id IS NULL`).
+pub(crate) const RATING_PULL: JobSpec = JobSpec {
+    job_type: "rating_pull",
+    conflicts: &[],
+    failure: None,
+    partial_stats: None,
+};
 
 // ---------------------------------------------------------------------------
 // GET /ratings/pull/:id/report

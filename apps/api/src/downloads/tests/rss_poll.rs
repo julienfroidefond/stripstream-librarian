@@ -209,8 +209,11 @@ async fn start_rss_poll_returns_an_already_running_global_job(pool: sqlx::PgPool
         .unwrap()
         .0;
 
-    assert_eq!(body["status"], "already_running");
-    assert_eq!(body["id"], existing.to_string());
+    assert_eq!(
+        body.status,
+        crate::jobs::launcher::JobLaunchStatus::AlreadyRunning
+    );
+    assert_eq!(body.id, Some(existing));
 
     let jobs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM index_jobs")
         .fetch_one(&pool)
@@ -236,8 +239,11 @@ async fn start_rss_poll_returns_an_already_running_library_job(pool: sqlx::PgPoo
     .unwrap()
     .0;
 
-    assert_eq!(body["status"], "already_running");
-    assert_eq!(body["id"], existing.to_string());
+    assert_eq!(
+        body.status,
+        crate::jobs::launcher::JobLaunchStatus::AlreadyRunning
+    );
+    assert_eq!(body.id, Some(existing));
 }
 
 // ── fetch_rss_releases ──────────────────────────────────────────────────────

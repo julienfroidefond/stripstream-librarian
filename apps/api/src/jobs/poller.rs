@@ -7,8 +7,33 @@ use stripstream_jobs::{claim_next, fail_job, fail_orphaned_jobs, JobOwner};
 
 use crate::{
     downloads::{ddl_provider, detection as download_detection, rss_poll, telegram_monitor},
+    jobs::launcher::{self, JobSpec},
     metadata, reading,
 };
+
+/// `ddl_search` is only ever polled; it reports failures like the other download searches.
+const DDL_SEARCH: JobSpec = JobSpec {
+    job_type: "ddl_search",
+    conflicts: &[],
+    failure: Some(download_detection::detection_failed),
+    partial_stats: None,
+};
+
+/// The launcher spec whose failure path (partial stats, `fail_job`, notification)
+/// applies to a polled job. `None` means a plain `fail_job`.
+fn failure_spec(job_type: &str) -> Option<&'static JobSpec> {
+    match job_type {
+        "metadata_refresh" => Some(&metadata::refresh::METADATA_REFRESH),
+        "metadata_refresh_all" => Some(&metadata::refresh::METADATA_REFRESH_ALL),
+        "metadata_batch" => Some(&metadata::batch::METADATA_BATCH),
+        "metadata_batch_rematch" => Some(&metadata::batch::METADATA_BATCH_REMATCH),
+        "reading_status_push" => Some(&reading::status_push::READING_STATUS_PUSH),
+        "download_detection" => Some(&download_detection::DOWNLOAD_DETECTION),
+        "prowlarr_rss" => Some(&rss_poll::PROWLARR_RSS),
+        "ddl_search" => Some(&DDL_SEARCH),
+        _ => None,
+    }
+}
 
 /// Poll for pending API-owned jobs and process them.
 ///
@@ -27,16 +52,6 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                 info!("[JOB_POLLER] Claimed {job_type} job {job_id} library={library_id:?}");
 
                 let pool_clone = pool.clone();
-                let library_name: Option<String> = if let Some(lid) = library_id {
-                    sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                        .bind(lid)
-                        .fetch_optional(&pool)
-                        .await
-                        .ok()
-                        .flatten()
-                } else {
-                    None
-                };
 
                 tokio::spawn(async move {
                     let result = match job_type.as_str() {
@@ -95,46 +110,14 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
 
                     if let Err(e) = result {
                         error!("[JOB_POLLER] {job_type} job {job_id} failed: {e}");
-                        let _ = fail_job(&pool_clone, job_id, &e, None).await;
-
-                        match job_type.as_str() {
-                            "metadata_refresh" | "metadata_refresh_all" => {
-                                notifications::notify(
-                                    pool_clone,
-                                    notifications::NotificationEvent::MetadataRefreshFailed {
-                                        library_name,
-                                        error: e.to_string(),
-                                    },
-                                );
+                        match failure_spec(&job_type) {
+                            Some(spec) => {
+                                launcher::report_failure(&pool_clone, job_id, library_id, spec, &e)
+                                    .await
                             }
-                            "metadata_batch" | "metadata_batch_rematch" => {
-                                notifications::notify(
-                                    pool_clone,
-                                    notifications::NotificationEvent::MetadataBatchFailed {
-                                        library_name,
-                                        error: e.to_string(),
-                                    },
-                                );
+                            None => {
+                                let _ = fail_job(&pool_clone, job_id, &e, None).await;
                             }
-                            "reading_status_push" => {
-                                notifications::notify(
-                                    pool_clone,
-                                    notifications::NotificationEvent::ReadingStatusPushFailed {
-                                        library_name,
-                                        error: e.to_string(),
-                                    },
-                                );
-                            }
-                            "download_detection" | "prowlarr_rss" | "ddl_search" => {
-                                notifications::notify(
-                                    pool_clone,
-                                    notifications::NotificationEvent::DownloadDetectionFailed {
-                                        library_name,
-                                        error: e.to_string(),
-                                    },
-                                );
-                            }
-                            _ => {}
                         }
                     }
                 });
