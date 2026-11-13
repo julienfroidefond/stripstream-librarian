@@ -27,58 +27,6 @@ pub fn push_capped_item(items: &mut Vec<String>, value: String) {
     }
 }
 
-/// Look up a series by name in the local cache, or INSERT INTO series ... ON CONFLICT DO NOTHING
-/// then SELECT to get the id. Updates the cache on creation.
-///
-/// Cache keys are lowercased so lookups stay O(1) rather than scanning every entry.
-pub async fn get_or_create_series_id(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-    name: &str,
-    cache: &mut HashMap<String, Uuid>,
-) -> Result<Uuid> {
-    let cache_key = name.to_lowercase();
-    if let Some(&id) = cache.get(&cache_key) {
-        return Ok(id);
-    }
-
-    // Look for existing series with case-insensitive + accent-insensitive match
-    // Also checks original_name to prevent duplicates after user renames
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 \
-         AND (norm_text(name) = norm_text($2) \
-              OR norm_text(original_name) = norm_text($2))",
-    )
-    .bind(library_id)
-    .bind(name)
-    .fetch_optional(pool)
-    .await?;
-
-    if let Some(id) = existing {
-        cache.insert(cache_key, id);
-        return Ok(id);
-    }
-
-    // No match — insert new series
-    sqlx::query(
-        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) ON CONFLICT (library_id, name) DO NOTHING",
-    )
-    .bind(Uuid::new_v4())
-    .bind(library_id)
-    .bind(name)
-    .execute(pool)
-    .await?;
-
-    let id: Uuid = sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
-        .bind(library_id)
-        .bind(name)
-        .fetch_one(pool)
-        .await?;
-
-    cache.insert(cache_key, id);
-    Ok(id)
-}
-
 /// Phase 1 — Discovery: walk filesystem, extract metadata from filenames only (no archive I/O).
 /// New books are inserted with page_count = NULL so the analyzer phase can fill them in.
 /// Updated books (fingerprint changed) get page_count/thumbnail reset.

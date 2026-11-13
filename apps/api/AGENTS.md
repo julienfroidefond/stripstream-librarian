@@ -131,7 +131,9 @@ y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
 - **Identité de série** : `stripstream_core::series_identity` possède la clé normalisée
   (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
   Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
-  écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
+  écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main. Pour trouver ou créer
+  une série à partir d'un nom, `series_identity::find_or_create` (ADR 0022), jamais un
+  `INSERT INTO series ... ON CONFLICT (library_id, name)`.
 - **Liens de métadonnées** : `metadata/links.rs` est le seul écrivain de
   `external_metadata_links` (ADR 0017) : `propose`, `approve`, `approve_existing`,
   `set_primary`, `remove(Removal::…)`, `reassign`, `record_provider_snapshot`, `mark_synced`.

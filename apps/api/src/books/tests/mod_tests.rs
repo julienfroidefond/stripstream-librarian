@@ -450,3 +450,46 @@ async fn thumbnail_fallback_uses_shared_store_settings(pool: sqlx::PgPool) {
         Some(published.to_string_lossy().as_ref())
     );
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_book_reuses_series_by_normalized_name(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "book_series").await;
+    let series_id = create_test_series(&pool, lib_id, "One Piece").await;
+    let book_id = create_test_book(&pool, lib_id, None, "One Piece 1", "comic").await;
+
+    let Json(details) = update_book(
+        State(state),
+        Path(book_id),
+        Json(UpdateBookRequest {
+            title: "One Piece 1".to_string(),
+            author: None,
+            authors: Vec::new(),
+            series: Some("one piece".to_string()),
+            volume: None,
+            language: None,
+            summary: None,
+            isbn: None,
+            publish_date: None,
+            locked_fields: None,
+        }),
+    )
+    .await
+    .unwrap();
+
+    let (book_series, series_count): (Option<Uuid>, i64) = sqlx::query_as(
+        "SELECT (SELECT series_id FROM books WHERE id = $1), \
+                (SELECT COUNT(*) FROM series WHERE library_id = $2)",
+    )
+    .bind(book_id)
+    .bind(lib_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(book_series, Some(series_id));
+    assert_eq!(details.series_id, Some(series_id));
+    assert_eq!(
+        series_count, 1,
+        "'one piece' must not create a second series"
+    );
+}

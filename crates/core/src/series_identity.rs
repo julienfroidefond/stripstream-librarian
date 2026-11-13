@@ -2,17 +2,28 @@
 //!
 //! The `series` table stores the display name; matching uses the SQL
 //! `norm_text` function (lowercase + unaccent), which backs the
-//! `(library_id, norm_text(name))` index. Callers must pass raw names to this
-//! module and never compare `LOWER(...)` or `norm_text(...)` by hand. The
-//! database normalizes the raw side, so Rust and SQL cannot drift on accents.
+//! `(library_id, norm_text(name))` and `(library_id, norm_text(original_name))`
+//! indexes. Callers must pass raw names to this module and never compare
+//! `LOWER(...)` or `norm_text(...)` by hand. The database normalizes the raw
+//! side, so Rust and SQL cannot drift on accents.
 //!
-//! Use [`find`] / [`find_id`] for a single name, [`find_many`] for one library,
-//! [`resolve_many`] for a batch spanning libraries, and [`existing_names`] to
-//! filter a candidate list against every library.
+//! # Identity rule
+//!
+//! A raw name designates the series of the library whose `norm_text(name)`
+//! **or** `norm_text(original_name)` equals `norm_text(raw)`. `original_name`
+//! keeps the filesystem name after a user rename, so the scanner, the API and
+//! the download pipeline keep resolving the old folder name to the renamed
+//! series instead of recreating it. When several rows match, a match on the
+//! current `name` wins over a match on `original_name`, then the oldest row.
+//!
+//! Use [`find`] / [`find_id`] for a single name, [`find_or_create`] to resolve
+//! or insert one, [`find_many`] for one library, [`resolve_many`] for a batch
+//! spanning libraries, and [`existing_names`] to filter a candidate list
+//! against every library.
 
 use std::collections::{HashMap, HashSet};
 
-use sqlx::{PgPool, Row};
+use sqlx::{Acquire, PgPool, Postgres, Row};
 use uuid::Uuid;
 
 /// A resolved series row.
@@ -23,22 +34,83 @@ pub struct SeriesIdentity {
     pub name: String,
 }
 
-/// Resolve one raw series name inside a library.
+/// Point lookup for the identity rule: `$1` library, `$2` raw name. A match on
+/// the current name wins over `original_name`, then the oldest row.
+const FIND_SQL: &str = "SELECT id, library_id, name FROM series \
+     WHERE library_id = $1 \
+       AND (norm_text(name) = norm_text($2) OR norm_text(original_name) = norm_text($2)) \
+     ORDER BY (norm_text(name) = norm_text($2)) DESC, created_at, id \
+     LIMIT 1";
+
+/// Resolve one raw series name inside a library (see the identity rule).
 pub async fn find(
     pool: &PgPool,
     library_id: Uuid,
     raw_name: &str,
 ) -> sqlx::Result<Option<SeriesIdentity>> {
-    let row = sqlx::query(
-        "SELECT id, library_id, name FROM series \
-         WHERE library_id = $1 AND norm_text(name) = norm_text($2)",
+    let row = sqlx::query(FIND_SQL)
+        .bind(library_id)
+        .bind(raw_name)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.map(identity_from_row))
+}
+
+/// Resolve a raw series name inside a library, creating the series when no row
+/// matches the identity rule. The new row keeps `raw_name` as display name.
+///
+/// Creation is serialized per `(library, norm_text(raw_name))` with a
+/// transaction-scoped advisory lock, then the lookup is repeated under the
+/// lock: two concurrent calls for `One Piece` and `one piece` resolve to the
+/// same row even though the unique constraint only covers the exact name.
+/// Pass a pool, a connection or an open transaction; inside a transaction the
+/// lock is held until the caller commits.
+pub async fn find_or_create<'c, A>(
+    conn: A,
+    library_id: Uuid,
+    raw_name: &str,
+) -> sqlx::Result<SeriesIdentity>
+where
+    A: Acquire<'c, Database = Postgres>,
+{
+    let mut tx = conn.begin().await?;
+
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(\
+             hashtextextended('series_identity:' || $1::text || ':' || norm_text($2), 0))",
     )
     .bind(library_id)
     .bind(raw_name)
-    .fetch_optional(pool)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(row.map(identity_from_row))
+    let existing = sqlx::query(FIND_SQL)
+        .bind(library_id)
+        .bind(raw_name)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+    let identity = match existing {
+        Some(row) => identity_from_row(row),
+        None => {
+            // The exact-name constraint still guards writers that bypass this
+            // module; on conflict the existing row is returned.
+            let row = sqlx::query(
+                "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) \
+                 ON CONFLICT (library_id, name) DO UPDATE SET name = EXCLUDED.name \
+                 RETURNING id, library_id, name",
+            )
+            .bind(library_id)
+            .bind(raw_name)
+            .fetch_one(&mut *tx)
+            .await?;
+            identity_from_row(row)
+        }
+    };
+
+    tx.commit().await?;
+    Ok(identity)
 }
 
 /// Resolve a raw series name to its id inside a library.
@@ -93,10 +165,14 @@ pub async fn resolve_many(
         .collect();
 
     let rows = sqlx::query(
-        "SELECT q.library_id, q.raw_name, s.id, s.library_id, s.name \
+        "SELECT DISTINCT ON (q.library_id, q.raw_name) \
+                q.library_id, q.raw_name, s.id, s.library_id, s.name \
          FROM UNNEST($1::uuid[], $2::text[]) AS q(library_id, raw_name) \
          JOIN series s ON s.library_id = q.library_id \
-                      AND norm_text(s.name) = norm_text(q.raw_name)",
+                      AND (norm_text(s.name) = norm_text(q.raw_name) \
+                           OR norm_text(s.original_name) = norm_text(q.raw_name)) \
+         ORDER BY q.library_id, q.raw_name, \
+                  (norm_text(s.name) = norm_text(q.raw_name)) DESC, s.created_at, s.id",
     )
     .bind(&library_ids)
     .bind(&raw_names)
@@ -124,9 +200,12 @@ pub async fn existing_names(pool: &PgPool, raw_names: &[String]) -> sqlx::Result
     }
 
     let rows = sqlx::query(
-        "SELECT DISTINCT q.raw_name \
-         FROM UNNEST($1::text[]) AS q(raw_name) \
-         JOIN series s ON norm_text(s.name) = norm_text(q.raw_name)",
+        // Two equi-joins (hash-joinable) instead of one OR join across every library.
+        "SELECT q.raw_name FROM UNNEST($1::text[]) AS q(raw_name) \
+         JOIN series s ON norm_text(s.name) = norm_text(q.raw_name) \
+         UNION \
+         SELECT q.raw_name FROM UNNEST($1::text[]) AS q(raw_name) \
+         JOIN series s ON norm_text(s.original_name) = norm_text(q.raw_name)",
     )
     .bind(raw_names)
     .fetch_all(pool)
@@ -240,6 +319,145 @@ mod tests {
 
         assert!(existing.contains("Asterix"));
         assert!(!existing.contains("Tintin"));
+    }
+
+    async fn rename(pool: &PgPool, series_id: Uuid, name: &str, original_name: &str) {
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind(name)
+            .bind(original_name)
+            .bind(series_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn series_count(pool: &PgPool, library_id: Uuid) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM series WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_resolves_the_original_name_after_a_rename(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let series_id = seed_series(&pool, library_id, "LES MYTHICS").await;
+        rename(&pool, series_id, "Mythics", "LES MYTHICS").await;
+
+        let identity = find(&pool, library_id, "les mythics")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(identity.id, series_id);
+        assert_eq!(identity.name, "Mythics");
+        assert_eq!(
+            resolve_many(&pool, &[(library_id, "Les Mythics".to_string())])
+                .await
+                .unwrap()[&(library_id, "Les Mythics".to_string())]
+                .id,
+            series_id
+        );
+        assert!(existing_names(&pool, &["les mythics".to_string()])
+            .await
+            .unwrap()
+            .contains("les mythics"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn a_current_name_wins_over_an_original_name(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let renamed = seed_series(&pool, library_id, "Dragon Ball").await;
+        rename(&pool, renamed, "Dragon Ball Z", "Dragon Ball").await;
+        let current = seed_series(&pool, library_id, "Dragon Ball").await;
+
+        assert_eq!(
+            find_id(&pool, library_id, "dragon ball").await.unwrap(),
+            Some(current)
+        );
+        let resolved = find_many(&pool, library_id, &["dragon ball".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(resolved["dragon ball"].id, current);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_or_create_inserts_once_then_matches_case_and_accents(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+
+        let created = find_or_create(&pool, library_id, "Astérix").await.unwrap();
+        assert_eq!(created.name, "Astérix");
+        assert_eq!(created.library_id, library_id);
+
+        for name in ["Astérix", "asterix", "ASTÉRIX"] {
+            let identity = find_or_create(&pool, library_id, name).await.unwrap();
+            assert_eq!(identity, created, "raw name {name} must reuse the series");
+        }
+        assert_eq!(series_count(&pool, library_id).await, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_or_create_is_scoped_to_the_library(pool: PgPool) {
+        let first = seed_library(&pool, "first").await;
+        let second = seed_library(&pool, "second").await;
+
+        let a = find_or_create(&pool, first, "Naruto").await.unwrap();
+        let b = find_or_create(&pool, second, "Naruto").await.unwrap();
+
+        assert_ne!(a.id, b.id);
+        assert_eq!(b.library_id, second);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_or_create_follows_renames(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let created = find_or_create(&pool, library_id, "Series A").await.unwrap();
+        // Chained rename A -> B -> C keeps the first filesystem name.
+        rename(&pool, created.id, "Series C", "Series A").await;
+
+        let by_original = find_or_create(&pool, library_id, "series a").await.unwrap();
+        let by_name = find_or_create(&pool, library_id, "Series C").await.unwrap();
+
+        assert_eq!(by_original.id, created.id);
+        assert_eq!(by_original.name, "Series C");
+        assert_eq!(by_name.id, created.id);
+        assert_eq!(series_count(&pool, library_id).await, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_or_create_joins_a_caller_transaction(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let mut tx = pool.begin().await.unwrap();
+
+        let identity = find_or_create(&mut *tx, library_id, "One Piece")
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+
+        assert_eq!(find_id(&pool, library_id, "One Piece").await.unwrap(), None);
+        assert_ne!(identity.id, Uuid::nil());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn concurrent_find_or_create_yields_one_series(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let spellings = ["One Piece", "one piece", "ONE PIECE", "Óne Piece"];
+
+        let tasks: Vec<_> = (0..16)
+            .map(|i| {
+                let pool = pool.clone();
+                let name = spellings[i % spellings.len()];
+                tokio::spawn(async move { find_or_create(&pool, library_id, name).await })
+            })
+            .collect();
+
+        let mut ids = HashSet::new();
+        for task in tasks {
+            ids.insert(task.await.unwrap().unwrap().id);
+        }
+
+        assert_eq!(ids.len(), 1, "every spelling must resolve to one series");
+        assert_eq!(series_count(&pool, library_id).await, 1);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
