@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.158 — 2026-11-13
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump framer-motion ([#299](https://github.com/julienfroidefond/stripstream-librarian/pull/299))
+
+</details>
+
 ## v3.32.157 — 2026-11-13
 
 ### Refactoring
