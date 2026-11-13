@@ -12,15 +12,17 @@ use tokio_util::io::ReaderStream;
 use tracing::instrument;
 use uuid::Uuid;
 
+use parsers::BookFormat;
+
 use crate::{error::ApiError, state::AppState};
 
 fn file_content_type(format: &str) -> &'static str {
-    match format {
-        "cbz" => "application/vnd.comicbook+zip",
-        "cbr" => "application/vnd.comicbook-rar",
-        "pdf" => "application/pdf",
-        "epub" => "application/epub+zip",
-        _ => "application/octet-stream",
+    match format.parse::<BookFormat>() {
+        Ok(BookFormat::Cbz) => "application/vnd.comicbook+zip",
+        Ok(BookFormat::Cbr) => "application/vnd.comicbook-rar",
+        Ok(BookFormat::Pdf) => "application/pdf",
+        Ok(BookFormat::Epub) => "application/epub+zip",
+        Err(_) => "application/octet-stream",
     }
 }
 

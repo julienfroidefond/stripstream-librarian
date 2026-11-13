@@ -487,14 +487,10 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     };
 
     // Fetch the book format from the path extension as a shortcut
-    let input_format = match abs_path.rsplit('.').next().map(|e| e.to_ascii_lowercase()) {
-        Some(ref e) if e == "cbz" => "cbz",
-        Some(ref e) if e == "cbr" => "cbr",
-        Some(ref e) if e == "pdf" => "pdf",
-        Some(ref e) if e == "epub" => "epub",
-        _ => return,
-    }
-    .to_string();
+    let Some(input_format) = parsers::BookFormat::from_extension(Path::new(abs_path)) else {
+        return;
+    };
+    let input_format = input_format.as_str().to_string();
 
     let abs_clone = abs_path.to_string();
     let fmt = format;
@@ -635,13 +631,9 @@ pub async fn render_book_cover(
 }
 
 fn parse_book_format(input_format: &str) -> Result<parsers::BookFormat, ApiError> {
-    match input_format {
-        "cbz" => Ok(parsers::BookFormat::Cbz),
-        "cbr" => Ok(parsers::BookFormat::Cbr),
-        "pdf" => Ok(parsers::BookFormat::Pdf),
-        "epub" => Ok(parsers::BookFormat::Epub),
-        _ => Err(ApiError::bad_request("unsupported source format")),
-    }
+    input_format
+        .parse()
+        .map_err(|_| ApiError::bad_request("unsupported source format"))
 }
 
 fn render_page(

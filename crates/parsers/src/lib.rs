@@ -48,6 +48,36 @@ impl BookFormat {
             Self::Epub => "epub",
         }
     }
+
+    /// Format of a book file, read from its extension (ASCII case-insensitive).
+    pub fn from_extension(path: &Path) -> Option<Self> {
+        path.extension()?.to_str()?.parse().ok()
+    }
+}
+
+/// A format name that is not one of `cbz`, `cbr`, `pdf`, `epub`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownBookFormat(pub String);
+
+impl std::fmt::Display for UnknownBookFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unsupported book format '{}'", self.0)
+    }
+}
+
+impl std::error::Error for UnknownBookFormat {}
+
+impl std::str::FromStr for BookFormat {
+    type Err = UnknownBookFormat;
+
+    /// Parse a format name as stored in `book_files.format` or used as a file extension.
+    /// Matching is ASCII case-insensitive; `as_str` is the inverse.
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        [Self::Cbz, Self::Cbr, Self::Pdf, Self::Epub]
+            .into_iter()
+            .find(|format| format.as_str().eq_ignore_ascii_case(value))
+            .ok_or_else(|| UnknownBookFormat(value.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,14 +109,7 @@ pub struct ParsedMetadata {
 }
 
 pub fn detect_format(path: &Path) -> Option<BookFormat> {
-    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
-    match ext.as_str() {
-        "cbz" => Some(BookFormat::Cbz),
-        "cbr" => Some(BookFormat::Cbr),
-        "pdf" => Some(BookFormat::Pdf),
-        "epub" => Some(BookFormat::Epub),
-        _ => None,
-    }
+    BookFormat::from_extension(path)
 }
 
 pub fn is_image_name(name: &str) -> bool {
@@ -1029,6 +1052,38 @@ mod tests {
         assert_eq!(BookFormat::Cbr.as_str(), "cbr");
         assert_eq!(BookFormat::Pdf.as_str(), "pdf");
         assert_eq!(BookFormat::Epub.as_str(), "epub");
+    }
+
+    #[test]
+    fn book_format_from_str_round_trips_as_str() {
+        for format in [
+            BookFormat::Cbz,
+            BookFormat::Cbr,
+            BookFormat::Pdf,
+            BookFormat::Epub,
+        ] {
+            assert_eq!(format.as_str().parse::<BookFormat>(), Ok(format));
+        }
+    }
+
+    #[test]
+    fn book_format_from_str_ignores_ascii_case_and_rejects_unknown() {
+        assert_eq!("CBZ".parse::<BookFormat>(), Ok(BookFormat::Cbz));
+        assert_eq!("Epub".parse::<BookFormat>(), Ok(BookFormat::Epub));
+        let err = "zip".parse::<BookFormat>().unwrap_err();
+        assert_eq!(err, UnknownBookFormat("zip".to_string()));
+        assert_eq!(err.to_string(), "unsupported book format 'zip'");
+        assert!("".parse::<BookFormat>().is_err());
+    }
+
+    #[test]
+    fn book_format_from_extension_reads_the_path_suffix() {
+        assert_eq!(
+            BookFormat::from_extension(Path::new("/a/b/T01.CbR")),
+            Some(BookFormat::Cbr)
+        );
+        assert_eq!(BookFormat::from_extension(Path::new("/a/b/cbz")), None);
+        assert_eq!(BookFormat::from_extension(Path::new("/a/b/x.zip")), None);
     }
 
     // ─── clean_title ─────────────────────────────────────────────────────
