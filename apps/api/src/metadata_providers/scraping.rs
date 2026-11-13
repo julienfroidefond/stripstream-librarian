@@ -11,6 +11,7 @@ use futures::StreamExt;
 use scraper::ElementRef;
 use tracing::warn;
 
+use super::scoring::UNCAPPED;
 use super::SeriesCandidate;
 
 /// Retry settings for a scraper request.
@@ -118,29 +119,13 @@ pub(crate) fn absolute(base: &str, href: &str) -> String {
         .unwrap_or_else(|| href.to_string())
 }
 
-/// Confidence of a hit against the query that produced it.
-///
-/// Only an exact (case-insensitive) title match reaches `1.0`, which is the
-/// single value that triggers an automatic match during a batch. `max_confidence`
-/// caps the result for queries derived from the local name (a variant that
-/// dropped part of it must never auto-match).
-pub(crate) fn confidence_for(title: &str, query: &str, max_confidence: f32) -> f32 {
-    let raw: f32 = if title.eq_ignore_ascii_case(query) {
-        1.0
-    } else if title.to_lowercase().contains(&query.to_lowercase()) {
-        0.7
-    } else {
-        0.3
-    };
-    raw.min(max_confidence)
-}
-
 /// A search query derived from a local series name.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct QueryVariant {
     pub query: String,
-    /// Highest confidence a hit found with this query may receive.
-    pub max_confidence: f32,
+    /// Ceiling of the [`Score`](super::scoring::Score) of a hit found with
+    /// this query. Below the auto-match threshold for a lossy rewrite.
+    pub cap: f32,
 }
 
 /// French articles the scraped sites move to a trailing parenthesis:
@@ -233,20 +218,17 @@ pub(crate) fn query_variants(query: &str) -> Vec<QueryVariant> {
 
     let mut variants: Vec<QueryVariant> = Vec::with_capacity(4);
     let candidates = [
-        (Some(base), 1.0),
-        (moved, 1.0),
-        (moved_and_stripped, 1.0),
+        (Some(base), UNCAPPED),
+        (moved, UNCAPPED),
+        (moved_and_stripped, UNCAPPED),
         (stripped, SUBTITLE_CONFIDENCE_CAP),
     ];
-    for (query, max_confidence) in candidates {
+    for (query, cap) in candidates {
         let Some(query) = query else { continue };
         if variants.iter().any(|known| known.query == query) {
             continue;
         }
-        variants.push(QueryVariant {
-            query,
-            max_confidence,
-        });
+        variants.push(QueryVariant { query, cap });
     }
     variants
 }
@@ -345,6 +327,7 @@ async fn get_html_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metadata_providers::scoring::Score;
 
     #[test]
     fn absolute_resolves_relative_href() {
@@ -417,7 +400,7 @@ mod tests {
             total_volumes: None,
             cover_url: None,
             external_url: None,
-            confidence: 0.3,
+            score: Score::new(0.3),
             metadata_json: serde_json::json!({}),
         }
     }
@@ -474,10 +457,10 @@ mod tests {
         }
     }
 
-    fn variant(query: &str, max_confidence: f32) -> QueryVariant {
+    fn variant(query: &str, cap: f32) -> QueryVariant {
         QueryVariant {
             query: query.to_string(),
-            max_confidence,
+            cap,
         }
     }
 
@@ -550,22 +533,15 @@ mod tests {
     }
 
     #[test]
-    fn confidence_for_caps_derived_matches() {
-        assert_eq!(
-            confidence_for("Les Cités obscures", "Les Cités obscures", 1.0),
-            1.0
-        );
-        assert_eq!(
-            confidence_for("Les Cités obscures", "les cités obscures", 1.0),
-            1.0
-        );
-        assert_eq!(confidence_for("Les Cités obscures", "Les Cités", 1.0), 0.7);
-        assert_eq!(confidence_for("Bilbo", "Spawn", 1.0), 0.3);
-        // A capped variant can never reach the auto-match threshold.
-        assert_eq!(
-            confidence_for("Spawn", "Spawn", SUBTITLE_CONFIDENCE_CAP),
-            SUBTITLE_CONFIDENCE_CAP
-        );
+    fn subtitle_variant_hits_never_auto_match() {
+        let stripped = query_variants("Spawn - La Malédiction de Spawn")
+            .pop()
+            .expect("a stripped variant");
+        assert_eq!(stripped.cap, SUBTITLE_CONFIDENCE_CAP);
+        // Exact title and exact volume total: still left for review.
+        let score =
+            Score::of_titles("Spawn", &stripped.query, stripped.cap).with_book_count(5, Some(5));
+        assert!(!score.is_auto_match());
     }
 
     #[tokio::test]

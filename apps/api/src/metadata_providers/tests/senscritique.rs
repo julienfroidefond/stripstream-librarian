@@ -678,39 +678,49 @@ fn external_id_franchise_backward_compat() {
     );
 }
 
-// ─── name_similarity ──────────────────────────────────────────────
+// ─── title_similarity ──────────────────────────────────────────────
 
 #[test]
 fn similarity_exact_match() {
-    assert!((name_similarity("Naruto", "Naruto") - 1.0).abs() < f32::EPSILON);
+    assert!(
+        (crate::metadata_providers::scoring::title_similarity("Naruto", "Naruto") - 1.0).abs()
+            < f32::EPSILON
+    );
 }
 
 #[test]
 fn similarity_case_insensitive() {
-    assert!((name_similarity("naruto", "NARUTO") - 1.0).abs() < f32::EPSILON);
+    assert!(
+        (crate::metadata_providers::scoring::title_similarity("naruto", "NARUTO") - 1.0).abs()
+            < f32::EPSILON
+    );
 }
 
 #[test]
 fn similarity_accent_insensitive() {
-    assert!((name_similarity("Astérix", "Asterix") - 1.0).abs() < f32::EPSILON);
+    assert!(
+        (crate::metadata_providers::scoring::title_similarity("Astérix", "Asterix") - 1.0).abs()
+            < f32::EPSILON
+    );
 }
 
 #[test]
 fn similarity_edition_suffix_lower() {
     // "Naruto" vs "Naruto (Édition Hokage)" — contained, so > 0.5
-    let s = name_similarity("Naruto", "Naruto (Édition Hokage)");
+    let s =
+        crate::metadata_providers::scoring::title_similarity("Naruto", "Naruto (Édition Hokage)");
     assert!(s > 0.3 && s < 1.0, "partial containment: got {s}");
 }
 
 #[test]
 fn similarity_different_series() {
-    let s = name_similarity("Naruto", "One Piece");
+    let s = crate::metadata_providers::scoring::title_similarity("Naruto", "One Piece");
     assert!(s < 0.2, "unrelated: got {s}");
 }
 
 #[test]
 fn similarity_subseries() {
     // "Boruto" vs "Naruto" — share "ruto" but are different
-    let s = name_similarity("Boruto", "Naruto");
+    let s = crate::metadata_providers::scoring::title_similarity("Boruto", "Naruto");
     assert!(s < 0.5, "different series: got {s}");
 }

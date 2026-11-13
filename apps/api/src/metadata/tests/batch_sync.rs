@@ -1,6 +1,15 @@
 use super::*;
+use crate::metadata_providers::scoring::{apply_book_count, Score};
 
 fn candidate(title: &str, confidence: f32) -> metadata_providers::SeriesCandidate {
+    scored_candidate(title, None, Score::new(confidence))
+}
+
+fn scored_candidate(
+    title: &str,
+    total_volumes: Option<i32>,
+    score: Score,
+) -> metadata_providers::SeriesCandidate {
     metadata_providers::SeriesCandidate {
         external_id: format!("test:{title}"),
         title: title.to_string(),
@@ -8,10 +17,10 @@ fn candidate(title: &str, confidence: f32) -> metadata_providers::SeriesCandidat
         description: None,
         publishers: vec![],
         start_year: None,
-        total_volumes: None,
+        total_volumes,
         cover_url: None,
         external_url: None,
-        confidence,
+        score,
         metadata_json: serde_json::json!({}),
     }
 }
@@ -45,6 +54,29 @@ fn uncertain_best_candidate_is_not_auto_matched() {
         candidate("Blacksad (intégrale)", 0.6),
     ]);
     assert!(matches!(outcome, SearchOutcome::LowConfidence(_)));
+}
+
+/// Regression: a hit found through a subtitle-stripped query is capped at 0.7.
+/// The +0.3 book-count bonus used to be added after the cap and pushed it to
+/// 1.0, auto-approving a candidate that must stay for review.
+#[test]
+fn capped_candidate_with_matching_book_count_is_not_auto_matched() {
+    let mut candidates = vec![scored_candidate("Spawn", Some(12), Score::capped(1.0, 0.7))];
+    apply_book_count(&mut candidates, 12);
+    assert!(matches!(
+        evaluate_candidates(candidates),
+        SearchOutcome::LowConfidence(_)
+    ));
+}
+
+#[test]
+fn uncapped_partial_candidate_with_matching_book_count_is_auto_matched() {
+    let mut candidates = vec![scored_candidate("Spawn", Some(12), Score::new(0.7))];
+    apply_book_count(&mut candidates, 12);
+    assert!(matches!(
+        evaluate_candidates(candidates),
+        SearchOutcome::AutoMatch(_)
+    ));
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use stripstream_core::http::build_http_client;
 
 use super::{
-    compute_confidence, urlencoded, BookCandidate, MetadataProvider, ProviderConfig,
-    SeriesCandidate,
+    scoring::{self, Score},
+    urlencoded, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
 };
 
 const DEFAULT_BASE_URL: &str = "https://openlibrary.org";
@@ -83,8 +83,6 @@ async fn search_series_impl(
         Some(docs) => docs,
         None => return Ok(vec![]),
     };
-
-    let query_lower = query.to_lowercase();
     let mut series_map: std::collections::HashMap<String, SeriesCandidateBuilder> =
         std::collections::HashMap::new();
 
@@ -186,7 +184,7 @@ async fn search_series_impl(
     let mut candidates: Vec<SeriesCandidate> = series_map
         .into_values()
         .map(|b| {
-            let confidence = compute_confidence(&b.title, &query_lower);
+            let score = Score::of_titles(&b.title, query, scoring::UNCAPPED);
             let mut metadata_json = serde_json::json!({});
             if let Some(ref desc) = b.description {
                 metadata_json["description"] = serde_json::json!(desc);
@@ -209,17 +207,13 @@ async fn search_series_impl(
                 total_volumes: None,
                 cover_url: b.cover_url,
                 external_url: b.external_url,
-                confidence,
+                score,
                 metadata_json,
             }
         })
         .collect();
 
-    candidates.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scoring::sort_best_first(&mut candidates);
     candidates.truncate(10);
     Ok(candidates)
 }
@@ -278,7 +272,7 @@ async fn get_series_impl(
         total_volumes: None,
         cover_url: None,
         external_url: Some(format!("https://openlibrary.org{external_id}")),
-        confidence: 1.0,
+        score: Score::exact(),
         metadata_json,
     })
 }
