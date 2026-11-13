@@ -8,6 +8,19 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.145 — 2026-11-13
+
+### Documentation
+
+- **adr** — document post-refactor architecture decisions ([#281](https://github.com/julienfroidefond/stripstream-librarian/pull/281))
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **build** — shrink and prune the Rust target cache ([#282](https://github.com/julienfroidefond/stripstream-librarian/pull/282))
+
+</details>
+
 ## v3.32.144 — 2026-11-13
 
 ### Refactoring
