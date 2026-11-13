@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.147 — 2026-11-13
+
+### Refactoring
+
+- **downloads** — one download write seam ([#286](https://github.com/julienfroidefond/stripstream-librarian/pull/286))
+
 ## v3.32.146 — 2026-11-13
 
 ### Refactoring
