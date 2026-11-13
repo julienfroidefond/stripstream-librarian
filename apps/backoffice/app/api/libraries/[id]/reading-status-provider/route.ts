@@ -1,7 +1,7 @@
-import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 export const PATCH = withRoute(async (
   request: Request,
@@ -13,6 +13,6 @@ export const PATCH = withRoute(async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  revalidatePath("/libraries");
+  invalidateAfter({ type: "library.updated", libraryId: id });
   return NextResponse.json(data);
 }, { fallback: "Failed to update reading status provider" });

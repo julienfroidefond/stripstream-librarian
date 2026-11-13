@@ -1,21 +1,19 @@
 "use server";
 
-import { updateTag } from "next/cache";
+import { invalidateAfter } from "@/lib/cache";
 
 export async function refreshBooksAction() {
-  updateTag("books");
+  invalidateAfter({ type: "catalog.refreshRequested", scope: "books" });
 }
 
 export async function refreshSeriesAction() {
-  updateTag("series");
+  invalidateAfter({ type: "catalog.refreshRequested", scope: "series" });
 }
 
 export async function refreshSeriesByIdAction(seriesId: string) {
-  updateTag(`series:${seriesId}`);
+  invalidateAfter({ type: "catalog.refreshRequested", scope: "series-detail", seriesId });
 }
 
 export async function refreshAfterJobAction() {
-  updateTag("books");
-  updateTag("series");
-  updateTag("stats");
+  invalidateAfter({ type: "jobs.finished" });
 }

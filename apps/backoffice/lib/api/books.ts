@@ -4,6 +4,7 @@
 
 import { apiFetch } from "./client";
 import type { IndexJobDto } from "./jobs";
+import { cacheTags } from "../cache/tags";
 
 export type ReadingStatus = "unread" | "reading" | "read";
 
@@ -104,7 +105,7 @@ export async function fetchBooks(
   params.set("limit", limit.toString());
 
   return apiFetch<BooksPageDto>(`/books?${params.toString()}`, {
-    next: { revalidate: 15, tags: ["books"] },
+    next: { revalidate: 15, tags: [cacheTags.books()] },
   });
 }
 
