@@ -17,6 +17,9 @@ use stripstream_core::series_identity;
 
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
+use super::torrent_ledger::{
+    self, ImportOutcome, ProgressUpdate, RestartScope, TorrentStatus, TorrentTransitionError,
+};
 use crate::{error::ApiError, metadata, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -50,7 +53,8 @@ pub struct TorrentDownloadDto {
     /// Torrent name reported by the download backend (AllDebrid fills it).
     pub name: Option<String>,
     pub content_path: Option<String>,
-    pub status: String,
+    /// Lifecycle status; see `downloads::torrent_ledger::TorrentStatus`.
+    pub status: TorrentStatus,
     pub imported_files: Option<serde_json::Value>,
     pub error_message: Option<String>,
     pub progress: f32,
@@ -147,13 +151,17 @@ pub async fn notify_torrent_done(
 
     let torrent_id: Uuid = row.get("id");
 
-    sqlx::query(
-        "UPDATE torrent_downloads SET status = 'completed', content_path = $1, updated_at = NOW() WHERE id = $2",
-    )
-    .bind(&content_path)
-    .bind(torrent_id)
-    .execute(&state.pool)
-    .await?;
+    match torrent_ledger::mark_completed(&state.pool, torrent_id, &content_path).await {
+        Ok(()) => {}
+        Err(TorrentTransitionError::Database(e)) => return Err(e.into()),
+        Err(e) => {
+            info!(
+                "Torrent {} completion was already recorded: {}",
+                body.hash, e
+            );
+            return Ok(Json(crate::responses::OkResponse::new()));
+        }
+    }
 
     info!(
         "Torrent {} completed, content at {}",
@@ -214,7 +222,18 @@ pub async fn list_torrent_downloads(
                 qb_hash: row.get("qb_hash"),
                 name: row.get("name"),
                 content_path: row.get("content_path"),
-                status: row.get("status"),
+                status: {
+                    let raw: String = row.get("status");
+                    match TorrentStatus::try_from(raw.as_str()) {
+                        Ok(status) => status,
+                        Err(_) => {
+                            warn!(
+                                "Torrent download {id} has unknown status '{raw}', reporting as error"
+                            );
+                            TorrentStatus::Error
+                        }
+                    }
+                },
                 imported_files: row.get("imported_files"),
                 error_message: row.get("error_message"),
                 progress: row.get("progress"),
@@ -252,9 +271,10 @@ pub async fn delete_torrent_download(
     let external_id: Option<String> = row.get("external_id");
     let qb_hash: Option<String> = row.get("qb_hash");
     let status: String = row.get("status");
+    let status = TorrentStatus::try_from(status.as_str()).ok();
 
     // If downloading, cancel the transfer in its backend.
-    if status == "downloading" {
+    if status == Some(TorrentStatus::Downloading) {
         if client == "alldebrid" {
             if let Some(ref magnet_id) = external_id {
                 match super::alldebrid::load_alldebrid_client(&state.pool).await {
@@ -314,7 +334,9 @@ pub async fn retry_torrent_import(
     .ok_or_else(|| ApiError::not_found("torrent download not found"))?;
 
     let status: String = row.get("status");
-    if !["importing", "error", "no_files_imported", "partial"].contains(&status.as_str()) {
+    let status = TorrentStatus::try_from(status.as_str())
+        .map_err(|_| ApiError::internal("unknown torrent download status"))?;
+    if !status.is_retryable() {
         return Err(ApiError::bad_request("not in retryable state"));
     }
 
@@ -332,23 +354,16 @@ pub async fn retry_torrent_import(
                         return Err(e);
                     }
                 }
-                sqlx::query(
-                    "UPDATE torrent_downloads SET status = 'downloading', error_message = NULL, \
-                     progress = 0, download_speed = 0, eta = 0, stall_started_at = NULL, updated_at = NOW() \
-                     WHERE id = $1",
-                )
-                .bind(id)
-                .execute(&state.pool)
-                .await?;
+                torrent_ledger::restart(&state.pool, id, RestartScope::Retryable).await?;
                 return Ok(Json(crate::responses::OkResponse::new()));
             }
 
             // Files already cleaned up — mark as error
-            sqlx::query(
-                "UPDATE torrent_downloads SET status = 'error', error_message = 'Source files no longer available (already cleaned up)', updated_at = NOW() WHERE id = $1",
+            torrent_ledger::fail(
+                &state.pool,
+                id,
+                "Source files no longer available (already cleaned up)",
             )
-            .bind(id)
-            .execute(&state.pool)
             .await?;
             return Err(ApiError::bad_request("source files no longer available"));
         }
@@ -479,11 +494,11 @@ async fn poll_qbittorrent_downloads(
             warn!(
                 "[TORRENT_POLLER] Torrent {tid} has no qb_hash after 5 minutes, marking as error"
             );
-            let _ = sqlx::query(
-                "UPDATE torrent_downloads SET status = 'error', error_message = 'Torrent not found in qBittorrent after 5 minutes', updated_at = NOW() WHERE id = $1",
+            let _ = torrent_ledger::fail(
+                pool,
+                tid,
+                "Torrent not found in qBittorrent after 5 minutes",
             )
-            .bind(tid)
-            .execute(pool)
             .await;
             continue;
         }
@@ -491,13 +506,7 @@ async fn poll_qbittorrent_downloads(
         let category = format!("sl-{tid}");
         if let Some(hash) = resolve_hash_by_category(&client, &base_url, &sid, &category).await {
             info!("[TORRENT_POLLER] Late-resolved hash {hash} for torrent {tid} via category {category}");
-            let _ = sqlx::query(
-                "UPDATE torrent_downloads SET qb_hash = $1, updated_at = NOW() WHERE id = $2",
-            )
-            .bind(&hash)
-            .bind(tid)
-            .execute(pool)
-            .await;
+            let _ = torrent_ledger::set_hash(pool, tid, &hash).await;
         }
     }
 
@@ -561,16 +570,19 @@ async fn poll_qbittorrent_downloads(
         if let Some(row) = row {
             let tid: Uuid = row.get("id");
             let global_progress = info.progress as f32;
-            let _ = sqlx::query(
-                "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, file_size = NULLIF($4, 0), updated_at = NOW() \
-                 WHERE id = $5 AND status = 'downloading'",
+            let _ = torrent_ledger::record_progress(
+                pool,
+                tid,
+                &ProgressUpdate {
+                    progress: global_progress,
+                    speed: info.dlspeed,
+                    eta: info.eta,
+                    file_size: Some(info.total_size),
+                    seeders: None,
+                    name: None,
+                    downloaded: 0,
+                },
             )
-            .bind(global_progress)
-            .bind(info.dlspeed)
-            .bind(info.eta)
-            .bind(info.total_size)
-            .bind(tid)
-            .execute(pool)
             .await;
         }
 
@@ -584,15 +596,7 @@ async fn poll_qbittorrent_downloads(
             let tid: Uuid = row.get("id");
             let msg = format!("Torrent stalled in qBittorrent (state: {})", info.state);
             warn!("[TORRENT_POLLER] Torrent {} failed: {}", info.hash, msg);
-            let _ = sqlx::query(
-                "UPDATE torrent_downloads SET status = 'error', error_message = $1, \
-                 download_speed = 0, eta = 0, updated_at = NOW() \
-                 WHERE id = $2 AND status = 'downloading'",
-            )
-            .bind(&msg)
-            .bind(tid)
-            .execute(pool)
-            .await;
+            let _ = torrent_ledger::fail(pool, tid, &msg).await;
 
             // Remove torrent from qBittorrent
             let _ = client
@@ -657,29 +661,27 @@ async fn poll_qbittorrent_downloads(
         };
         let torrent_id: Uuid = row.get("id");
 
-        let updated = sqlx::query(
-            "UPDATE torrent_downloads SET status = 'completed', content_path = $1, progress = 1, \
-             download_speed = 0, eta = 0, updated_at = NOW() \
-             WHERE id = $2 AND status = 'downloading'",
-        )
-        .bind(&content_path)
-        .bind(torrent_id)
-        .execute(pool)
-        .await?;
-
-        if updated.rows_affected() > 0 {
-            info!(
-                "[TORRENT_POLLER] Torrent {} completed, content at {}, starting import",
-                info.hash, content_path
-            );
-            let pool_clone = pool.clone();
-            let library_root = library_root.clone();
-            tokio::spawn(async move {
-                if let Err(e) = process_torrent_import(pool_clone, &library_root, torrent_id).await
-                {
-                    warn!("Torrent import {} failed: {:#}", torrent_id, e);
-                }
-            });
+        match torrent_ledger::mark_completed(pool, torrent_id, &content_path).await {
+            Ok(()) => {
+                info!(
+                    "[TORRENT_POLLER] Torrent {} completed, content at {}, starting import",
+                    info.hash, content_path
+                );
+                let pool_clone = pool.clone();
+                let library_root = library_root.clone();
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        process_torrent_import(pool_clone, &library_root, torrent_id).await
+                    {
+                        warn!("Torrent import {} failed: {:#}", torrent_id, e);
+                    }
+                });
+            }
+            Err(TorrentTransitionError::Database(e)) => return Err(e.into()),
+            Err(e) => info!(
+                "[TORRENT_POLLER] Torrent {} completion was already recorded: {}",
+                info.hash, e
+            ),
         }
     }
 
@@ -721,12 +723,7 @@ pub(super) async fn process_torrent_import(
     let content_path =
         content_path.ok_or_else(|| anyhow::anyhow!("content_path not set on torrent_download"))?;
 
-    sqlx::query(
-        "UPDATE torrent_downloads SET status = 'importing', updated_at = NOW() WHERE id = $1",
-    )
-    .bind(torrent_id)
-    .execute(&pool)
-    .await?;
+    torrent_ledger::begin_import(&pool, torrent_id).await?;
 
     match do_import(
         &pool,
@@ -743,26 +740,19 @@ pub(super) async fn process_torrent_import(
             let imported = &result.imported;
             let skipped = &result.skipped;
 
-            // Status: 'imported' if any file imported, 'no_files_imported' if none
-            let status = if imported.is_empty() {
-                "no_files_imported"
-            } else {
-                "imported"
-            };
+            let imported_volumes: Vec<i32> = imported.iter().map(|file| file.volume).collect();
+            let outcome: ImportOutcome = torrent_ledger::import_outcome(
+                &imported_volumes,
+                &expected_volumes,
+                replace_existing,
+            );
 
             let json = serde_json::json!({
                 "imported": imported,
                 "skipped": skipped,
                 "total_source_files": result.total_source_files,
             });
-            sqlx::query(
-                "UPDATE torrent_downloads SET status = $1, imported_files = $2, updated_at = NOW() WHERE id = $3",
-            )
-            .bind(status)
-            .bind(&json)
-            .bind(torrent_id)
-            .execute(&pool)
-            .await?;
+            torrent_ledger::finish_import(&pool, torrent_id, outcome, &json).await?;
 
             // Queue a scan job so the indexer picks up the new files
             let scan_job_id = Uuid::new_v4();
@@ -936,13 +926,7 @@ pub(super) async fn process_torrent_import(
         Err(e) => {
             let msg = format!("{e:#}");
             warn!("Torrent import {} error: {}", torrent_id, msg);
-            sqlx::query(
-                "UPDATE torrent_downloads SET status = 'error', error_message = $1, updated_at = NOW() WHERE id = $2",
-            )
-            .bind(&msg)
-            .bind(torrent_id)
-            .execute(&pool)
-            .await?;
+            torrent_ledger::fail(&pool, torrent_id, &msg).await?;
 
             notifications::notify(
                 pool.clone(),
