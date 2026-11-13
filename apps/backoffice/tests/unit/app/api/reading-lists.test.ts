@@ -20,7 +20,8 @@ import {
   DELETE as deleteList,
 } from "@/app/api/reading-lists/[id]/route";
 import { POST as addSeries } from "@/app/api/reading-lists/[id]/series/route";
-import { DELETE as removeSeries, POST as moveSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/route";
+import { DELETE as removeSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/route";
+import { POST as moveSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/move/route";
 import { PUT as reorder } from "@/app/api/reading-lists/[id]/series/reorder/route";
 import { GET as memberships } from "@/app/api/reading-lists/memberships/route";
 import { POST as suggestLists } from "@/app/api/reading-lists/ai-suggest/route";
