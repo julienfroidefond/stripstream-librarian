@@ -23,13 +23,16 @@ const mockApi = vi.mocked(apiFetch);
 
 describe("/api/books/[bookId]", () => {
   it("PATCH delegates to updateBook", async () => {
-    vi.mocked(updateBook).mockResolvedValue({ id: "b1" } as never);
+    vi.mocked(updateBook).mockResolvedValue({ id: "b1", series_id: "s1" } as never);
     const res = await patchBook(
       jsonRequest("/api/books/b1", { method: "PATCH", body: { title: "T" } }),
       routeCtx({ bookId: "b1" })
     );
     expect(updateBook).toHaveBeenCalledWith("b1", { title: "T" });
     expect(res.status).toBe(200);
+    expect(revalidateTag).toHaveBeenCalledWith("books", { expire: 0 });
+    expect(revalidatePath).toHaveBeenCalledWith("/books/b1");
+    expect(revalidatePath).toHaveBeenCalledWith("/series/s1");
   });
 
   it("PATCH returns 500 on error", async () => {

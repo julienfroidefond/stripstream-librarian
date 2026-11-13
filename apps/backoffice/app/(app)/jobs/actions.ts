@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { invalidateAfter } from "@/lib/cache";
 import { redirect } from "next/navigation";
 
 import {
@@ -64,7 +64,7 @@ async function runPerLibrary(formData: FormData, run: LibraryJobRunner): Promise
   for (const libraryId of targets) {
     results.push(await run(libraryId));
   }
-  revalidatePath("/jobs");
+  invalidateAfter({ type: "jobs.started" });
   const highlightId = results.find((result) => result.id)?.id ?? undefined;
   jobRedirect(highlightId, libraryIds);
 }
@@ -72,7 +72,7 @@ async function runPerLibrary(formData: FormData, run: LibraryJobRunner): Promise
 async function runGlobal(run: () => Promise<JobResult>): Promise<never> {
   try {
     const result = await run();
-    revalidatePath("/jobs");
+    invalidateAfter({ type: "jobs.started" });
     jobRedirect(result.id, []);
   } catch (e) {
     if (isNextNavigationError(e)) throw e;

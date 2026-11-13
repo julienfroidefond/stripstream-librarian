@@ -416,21 +416,6 @@ async fn wiremock_get_series_books_chapters_fallback() {
 // ─── Pure function tests ────────────────────────────────────────────────
 
 #[test]
-fn test_compute_confidence_exact_match() {
-    assert_eq!(compute_confidence("Naruto", "naruto"), 1.0);
-}
-
-#[test]
-fn test_compute_confidence_prefix() {
-    assert_eq!(compute_confidence("Naruto Shippuden", "naruto"), 0.8);
-}
-
-#[test]
-fn test_compute_confidence_contains() {
-    assert_eq!(compute_confidence("The Art of Naruto", "naruto"), 0.7);
-}
-
-#[test]
 fn test_extract_authors_filters_by_role() {
     let media = serde_json::json!({
         "staff": {
@@ -483,7 +468,7 @@ fn test_parse_media_to_candidate_volumes_source() {
         "status": "FINISHED", "volumes": 10, "chapters": 100,
         "staff": { "edges": [] }, "siteUrl": null, "genres": []
     });
-    let c = parse_media_to_candidate(&media, 0.5).unwrap();
+    let c = parse_media_to_candidate(&media, Score::new(0.5)).unwrap();
     assert_eq!(c.total_volumes, Some(10));
     assert_eq!(c.metadata_json["volume_source"], "volumes");
 
@@ -494,7 +479,7 @@ fn test_parse_media_to_candidate_volumes_source() {
         "status": "RELEASING", "volumes": null, "chapters": 50,
         "staff": { "edges": [] }, "siteUrl": null, "genres": []
     });
-    let c2 = parse_media_to_candidate(&media2, 0.5).unwrap();
+    let c2 = parse_media_to_candidate(&media2, Score::new(0.5)).unwrap();
     assert_eq!(c2.total_volumes, None);
     assert_eq!(c2.metadata_json["volume_source"], "unknown");
     assert_eq!(c2.metadata_json["chapters"], 50);
@@ -506,7 +491,7 @@ fn test_parse_media_to_candidate_volumes_source() {
         "status": "RELEASING", "volumes": null, "chapters": null,
         "staff": { "edges": [] }, "siteUrl": null, "genres": []
     });
-    let c3 = parse_media_to_candidate(&media3, 0.5).unwrap();
+    let c3 = parse_media_to_candidate(&media3, Score::new(0.5)).unwrap();
     assert_eq!(c3.total_volumes, None);
     assert_eq!(c3.metadata_json["volume_source"], "unknown");
 }

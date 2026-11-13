@@ -15,7 +15,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
 | `books/` | `mod.rs` (CRUD livres), `pages.rs` (rendu + double cache), `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
-| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
+| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
 | `downloads/` | `prowlarr`, `qbittorrent`, `torrent_import`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
 | `jobs/` | `index_jobs.rs` (suivi + SSE), `poller.rs`, `helpers.rs` |

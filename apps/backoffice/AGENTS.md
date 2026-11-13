@@ -168,6 +168,21 @@ Les lignes (`DownloadRow`, `TelegramDownloadRow`, `DdlProviderDownloadRow`,
 direct. `DownloadClientButton` garde son flux d'ajout manuel (ce n'est pas une action de ligne) et
 `ProwlarrSearchModal` ne fait que chercher.
 
+## Fraîcheur du cache (Cache invalidation)
+
+`lib/cache/` est la seule porte du cache de données Next ([ADR 0021](../../docs/adr/0021-backoffice-cache-invalidation.md)) :
+
+- `cacheTags` fabrique tous les tags lus par `lib/api` (`next: { tags: [cacheTags.series()] }`),
+  jamais de littéral ;
+- après une écriture, une route ou une server action appelle
+  `invalidateAfter({ type: "series.updated", seriesId })` (union `DomainWrite`) ; le module décide
+  des tags (expirés avec `{ expire: 0 }`) et des chemins à revalider.
+
+`revalidateTag` / `revalidatePath` / `updateTag` hors de `lib/cache` sont refusés par ESLint et par
+`tests/unit/lib/cache/guard.test.ts`. Une nouvelle écriture ajoute (ou réutilise) un événement et
+sa ligne dans `tests/unit/lib/cache/invalidate.test.ts`. Les `router.refresh()` côté client restent
+nécessaires après un appel à un route handler (qui ne rafraîchit pas le routeur du navigateur).
+
 ## Composants UI
 
 Les composants génériques sont dans `app/components/ui/`. Utiliser ces composants plutôt que des éléments HTML bruts :

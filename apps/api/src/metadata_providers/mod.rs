@@ -4,6 +4,7 @@ pub mod bdtheque;
 pub mod comicvine;
 pub mod google_books;
 pub mod open_library;
+pub(crate) mod scoring;
 mod scraping;
 pub mod senscritique;
 
@@ -92,26 +93,6 @@ pub fn resolve_provider(name: &str) -> Result<Box<dyn MetadataProvider>, String>
 // Shared provider helpers
 // ---------------------------------------------------------------------------
 
-/// Confidence score between a candidate `title` and the original `query`.
-///
-/// Exact match → `1.0`, prefix match in either direction → `0.8`, substring
-/// match in either direction → `0.7`, otherwise a character-overlap ratio
-/// clamped to `0.1..=0.6`.
-pub(crate) fn compute_confidence(title: &str, query: &str) -> f32 {
-    let title_lower = title.to_lowercase();
-    if title_lower == query {
-        1.0
-    } else if title_lower.starts_with(query) || query.starts_with(&title_lower) {
-        0.8
-    } else if title_lower.contains(query) || query.contains(&title_lower) {
-        0.7
-    } else {
-        let common: usize = query.chars().filter(|c| title_lower.contains(*c)).count();
-        let max_len = query.len().max(title_lower.len()).max(1);
-        (common as f32 / max_len as f32).clamp(0.1, 0.6)
-    }
-}
-
 /// Percent-encode `s` for use in a URL query string.
 ///
 /// Keeps the RFC 3986 unreserved characters (`A-Z a-z 0-9 - _ . ~`) and encodes
@@ -156,7 +137,8 @@ pub struct SeriesCandidate {
     pub total_volumes: Option<i32>,
     pub cover_url: Option<String>,
     pub external_url: Option<String>,
-    pub confidence: f32,
+    /// Match score against the searched name (see [`scoring`]).
+    pub score: scoring::Score,
     pub metadata_json: serde_json::Value,
 }
 
@@ -233,31 +215,6 @@ mod providers_e2e;
 #[cfg(test)]
 mod helper_tests {
     use super::*;
-
-    #[test]
-    fn confidence_exact_match() {
-        assert_eq!(compute_confidence("Naruto", "naruto"), 1.0);
-    }
-
-    #[test]
-    fn confidence_prefix_match() {
-        assert_eq!(compute_confidence("Naruto Shippuden", "naruto"), 0.8);
-        assert_eq!(compute_confidence("Naruto", "naruto shippuden"), 0.8);
-    }
-
-    #[test]
-    fn confidence_contains_match() {
-        assert_eq!(compute_confidence("The Art of Naruto", "naruto"), 0.7);
-        assert_eq!(compute_confidence("naruto", "the art of naruto"), 0.7);
-    }
-
-    #[test]
-    fn confidence_overlap_is_clamped() {
-        let score = compute_confidence("abcdef", "azbycxdw");
-        assert!((0.1..=0.6).contains(&score), "score out of range: {score}");
-        // No common character → floor of 0.1.
-        assert_eq!(compute_confidence("xyz", "abc"), 0.1);
-    }
 
     #[test]
     fn urlencoded_keeps_unreserved_and_encodes_rest() {

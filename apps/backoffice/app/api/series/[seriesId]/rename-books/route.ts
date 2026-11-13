@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 type Params = Promise<{ seriesId: string }>;
 
@@ -12,6 +13,7 @@ export const POST = withRoute(
       method: "POST",
       body: JSON.stringify(body),
     });
+    invalidateAfter({ type: "series.booksRenamed", seriesId });
     return NextResponse.json(data);
   },
   {

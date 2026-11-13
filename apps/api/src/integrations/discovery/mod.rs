@@ -89,7 +89,11 @@ pub struct AddToLibraryResponse {
 
 // ─── Cache helpers ──────────────────────────────────────────────────────────
 
-async fn get_cached(pool: &sqlx::PgPool, cache_key: &str) -> Option<Vec<DiscoverySuggestionDto>> {
+/// Read a non-expired `discovery_cache` entry, decoded as `T`.
+async fn get_cached<T: serde::de::DeserializeOwned>(
+    pool: &sqlx::PgPool,
+    cache_key: &str,
+) -> Option<T> {
     let row = sqlx::query(
         "SELECT results FROM discovery_cache WHERE cache_key = $1 AND expires_at > NOW()",
     )
@@ -102,12 +106,13 @@ async fn get_cached(pool: &sqlx::PgPool, cache_key: &str) -> Option<Vec<Discover
     serde_json::from_value(results).ok()
 }
 
-async fn set_cached(
+/// Upsert a `discovery_cache` entry that expires after `ttl_hours`.
+async fn set_cached<T: Serialize + ?Sized>(
     pool: &sqlx::PgPool,
     cache_key: &str,
     provider: &str,
     query_type: &str,
-    results: &[DiscoverySuggestionDto],
+    results: &T,
     ttl_hours: i64,
 ) {
     let results_json = serde_json::to_value(results).unwrap_or_default();
@@ -192,7 +197,9 @@ pub async fn trending(
 
     // Try cache first (unless nocache requested)
     let all_suggestions = if !skip_cache {
-        if let Some(cached) = get_cached(&state.pool, &cache_key).await {
+        if let Some(cached) =
+            get_cached::<Vec<DiscoverySuggestionDto>>(&state.pool, &cache_key).await
+        {
             cached
         } else {
             fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort)
@@ -435,7 +442,7 @@ pub async fn prowlarr_discovery(
     // Check cache (unless nocache requested)
     if !skip_cache {
         if let Some(mut cached) =
-            get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
+            get_cached::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
         {
             apply_sort(&mut cached, sort_by_date);
             let all_indexers = all_indexers_from(&cached);
@@ -448,7 +455,7 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
+            let annotated = annotate_local_matches(&state.pool, pre_filtered).await?;
             let items: Vec<ProwlarrDiscoveryItem> = annotated;
             return Ok(Json(ProwlarrDiscoveryResponse {
                 items,
@@ -463,7 +470,7 @@ pub async fn prowlarr_discovery(
     // Re-check cache after acquiring lock — a concurrent request may have populated it
     if !skip_cache {
         if let Some(mut cached) =
-            get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
+            get_cached::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
         {
             apply_sort(&mut cached, sort_by_date);
             let all_indexers = all_indexers_from(&cached);
@@ -475,7 +482,7 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
+            let annotated = annotate_local_matches(&state.pool, pre_filtered).await?;
             let items: Vec<ProwlarrDiscoveryItem> = annotated;
             return Ok(Json(ProwlarrDiscoveryResponse {
                 items,
@@ -704,7 +711,7 @@ pub async fn prowlarr_discovery(
     );
 
     // Cache full result set (7 days)
-    set_cached_raw(
+    set_cached(
         &state.pool,
         &cache_key,
         "prowlarr",
@@ -726,7 +733,7 @@ pub async fn prowlarr_discovery(
     } else {
         items
     };
-    let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
+    let annotated = annotate_local_matches(&state.pool, pre_filtered).await?;
     Ok(Json(ProwlarrDiscoveryResponse {
         items: annotated,
         all_indexers,
@@ -851,21 +858,24 @@ mod extract_tests {
     }
 }
 
-/// Annotate Prowlarr items with matching local series (2 batch queries).
-/// Uses unaccent + lowercase matching to catch accent differences.
+/// Annotate Prowlarr items with matching local series and the tomes already owned.
+///
+/// Names match on `norm_text` (case + accents). Ownership follows the shared
+/// coverage rule (ADR 0005): numbered `regular` and `integral` books cover
+/// their tome, an unnumbered integral covers every tome.
 async fn annotate_local_matches(
     pool: &sqlx::PgPool,
     mut items: Vec<ProwlarrDiscoveryItem>,
-) -> Vec<ProwlarrDiscoveryItem> {
+) -> Result<Vec<ProwlarrDiscoveryItem>, sqlx::Error> {
     if items.is_empty() {
-        return items;
+        return Ok(items);
     }
 
     let item_names: Vec<String> = items.iter().map(|i| i.series_name.clone()).collect();
 
     // Normalize both sides with unaccent so "Asterix" matches "Astérix" in DB
     let matched_rows = sqlx::query(
-        "SELECT s.id::text, s.name, inputs.raw_name \
+        "SELECT s.id, s.name, inputs.raw_name \
          FROM series s \
          JOIN (SELECT unnest($1::text[]) AS raw_name) AS inputs \
            ON norm_text(s.name) = norm_text(inputs.raw_name)",
@@ -873,105 +883,40 @@ async fn annotate_local_matches(
     .bind(&item_names)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .inspect_err(|e| tracing::error!("[DISCOVERY] local series match failed: {e}"))?;
 
     if matched_rows.is_empty() {
-        return items;
+        return Ok(items);
     }
 
-    // Build raw_item_name → (series_id, series_name) map
-    let match_map: std::collections::HashMap<String, (String, String)> = matched_rows
+    // raw item name → (series_id, series_name)
+    let match_map: std::collections::HashMap<String, (Uuid, String)> = matched_rows
         .iter()
-        .map(|r| {
-            let raw: String = r.get("raw_name");
-            let id: String = r.get("id");
-            let name: String = r.get("name");
-            (raw, (id, name))
-        })
+        .map(|r| (r.get("raw_name"), (r.get("id"), r.get("name"))))
         .collect();
 
-    let matched_ids: Vec<String> = match_map.values().map(|(id, _)| id.clone()).collect();
+    let matched_ids: Vec<Uuid> = match_map.values().map(|(id, _)| *id).collect();
+    let coverages = crate::coverage::load_series_coverages(pool, &matched_ids)
+        .await
+        .inspect_err(|e| tracing::error!("[DISCOVERY] owned volumes lookup failed: {e}"))?;
 
-    // Query 2: get all regular volume numbers for matched series
-    let volume_rows = sqlx::query(
-        "SELECT series_id::text, volume_number \
-         FROM books \
-         WHERE series_id::text = ANY($1) AND volume_type = 'regular' AND volume_number IS NOT NULL",
-    )
-    .bind(&matched_ids)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
-
-    // series_id → Vec<volume_number>
-    let mut owned_volumes: std::collections::HashMap<String, Vec<i32>> =
-        std::collections::HashMap::new();
-    for row in &volume_rows {
-        let sid: String = row.get("series_id");
-        let vol: i32 = row.get("volume_number");
-        owned_volumes.entry(sid).or_default().push(vol);
-    }
-
-    // Annotate items — look up by the original item name (matched in SQL via unaccent)
     for item in &mut items {
         if let Some((sid, sname)) = match_map.get(&item.series_name) {
-            let owned = owned_volumes.get(sid).cloned().unwrap_or_default();
-            item.volumes_already_owned = item
-                .volumes_found
-                .iter()
-                .filter(|v| owned.contains(v))
-                .copied()
-                .collect();
-            item.local_series_id = Some(sid.clone());
+            item.volumes_already_owned = match coverages.get(sid) {
+                Some(coverage) => item
+                    .volumes_found
+                    .iter()
+                    .copied()
+                    .filter(|v| coverage.covers_volume(*v))
+                    .collect(),
+                None => Vec::new(),
+            };
+            item.local_series_id = Some(sid.to_string());
             item.local_series_name = Some(sname.clone());
         }
     }
 
-    items
-}
-
-// ─── Generic cache helpers for typed data ───────────────────────────────────
-
-async fn get_cached_raw<T: serde::de::DeserializeOwned>(
-    pool: &sqlx::PgPool,
-    cache_key: &str,
-) -> Option<T> {
-    let row = sqlx::query(
-        "SELECT results FROM discovery_cache WHERE cache_key = $1 AND expires_at > NOW()",
-    )
-    .bind(cache_key)
-    .fetch_optional(pool)
-    .await
-    .ok()??;
-
-    let results: serde_json::Value = row.get("results");
-    serde_json::from_value(results).ok()
-}
-
-async fn set_cached_raw<T: serde::Serialize>(
-    pool: &sqlx::PgPool,
-    cache_key: &str,
-    provider: &str,
-    query_type: &str,
-    results: &T,
-    ttl_hours: i64,
-) {
-    let results_json = serde_json::to_value(results).unwrap_or_default();
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO discovery_cache (cache_key, provider, query_type, results, fetched_at, expires_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW() + make_interval(hours => $5))
-        ON CONFLICT (cache_key)
-        DO UPDATE SET results = $4, fetched_at = NOW(), expires_at = NOW() + make_interval(hours => $5)
-        "#,
-    )
-    .bind(cache_key)
-    .bind(provider)
-    .bind(query_type)
-    .bind(results_json)
-    .bind(ttl_hours as i32)
-    .execute(pool)
-    .await;
+    Ok(items)
 }
 
 /// POST /discovery/add-to-library

@@ -207,7 +207,7 @@ pub async fn search_metadata(
         .await
         .map_err(|e| ApiError::internal(format!("provider error: {e}")))?;
 
-    // Boost confidence based on local book count vs candidate total_volumes
+    // Book-count bonus, added before each score's cap (see `scoring`)
     let local_count: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
@@ -221,7 +221,7 @@ pub async fn search_metadata(
     .ok();
 
     if let Some(count) = local_count {
-        super::config::boost_confidence_by_book_count(&mut candidates, count);
+        metadata_providers::scoring::apply_book_count(&mut candidates, count);
     }
 
     let actual_provider = provider.name().to_string();
@@ -238,7 +238,7 @@ pub async fn search_metadata(
             total_volumes: c.total_volumes,
             cover_url: c.cover_url,
             external_url: c.external_url,
-            confidence: c.confidence,
+            confidence: c.score.value(),
             metadata_json: c.metadata_json,
         })
         .collect();

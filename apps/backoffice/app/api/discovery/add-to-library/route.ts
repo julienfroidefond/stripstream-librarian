@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
-import { revalidatePath } from "next/cache";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 export const POST = withRoute(async (request: NextRequest) => {
   const body = await request.json();
@@ -9,7 +9,6 @@ export const POST = withRoute(async (request: NextRequest) => {
     method: "POST",
     body: JSON.stringify(body),
   });
-  revalidatePath("/series");
-  revalidatePath("/libraries");
+  invalidateAfter({ type: "series.created" });
   return NextResponse.json(data);
 }, { fallback: "Failed to add series" });
