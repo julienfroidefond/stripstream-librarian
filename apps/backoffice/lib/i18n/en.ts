@@ -1486,6 +1486,7 @@ const en: Record<TranslationKey, string> = {
 
   // Genres management page
   "genres.title": "Genre management",
+  "genres.loadMore": "Load more",
   "genres.allGenres": "All genres",
   "genres.seriesCount": "{{count}} series",
   "genres.rename": "Rename",

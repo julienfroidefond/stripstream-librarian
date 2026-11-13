@@ -11,9 +11,9 @@ Les genres sont des tags libres attachés aux séries. Ils peuvent être issus d
 
 La page **Genres** du backoffice centralise toute la gestion :
 
-- **Bibliothèque de genres** — chaque genre affiche une couverture représentative et son nombre de séries. Cliquez dessus pour consulter les séries concernées.
+- **Bibliothèque de genres** — chaque genre affiche une couverture représentative et son nombre de séries dans les bibliothèques sélectionnées. Cliquez dessus pour consulter les séries concernées.
 - **Renommage et suppression** — ces actions se trouvent dans la modale du genre. Le renommage s'applique à toutes les séries ; la suppression retire uniquement ce genre des séries.
-- **Espace d'attribution** — filtrez les séries par bibliothèque, genre inclus ou exclu, ou affichez uniquement les séries sans genre. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné. La recherche porte sur le nom de série, sans distinction de casse ni d'accents (par ex. `asterix` retrouve `Astérix`), et s'applique à l'ensemble du périmètre filtré — pas seulement aux séries affichées.
+- **Espace d'attribution** — filtrez les séries par bibliothèque, genres inclus (une série doit les porter **tous**) ou exclus, ou affichez uniquement les séries sans genre. Les compteurs des genres ne dépendent que des bibliothèques sélectionnées. La liste est paginée : **Charger plus** affiche la suite, sans limite de 500 séries. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné. La recherche porte sur le nom de série, sans distinction de casse ni d'accents (par ex. `asterix` retrouve `Astérix`), et s'applique à l'ensemble du périmètre filtré — pas seulement aux séries affichées.
 - **Sélection et affichage** — choisissez plusieurs séries dans la vue cartes ou tableau, puis affectez-leur un genre existant en une opération.
 
 ## Taguer des séries
@@ -49,8 +49,9 @@ Les genres locaux sont la source de vérité : un rafraîchissement ne les écra
 | `PATCH` | `/genres/{name}` | Renomme un genre sur toutes les séries |
 | `DELETE` | `/genres/{name}` | Supprime un genre de toutes les séries |
 | `POST` | `/genres/assign` | Assigne un genre à une liste de séries (bulk) |
+| `GET` | `/genres/browse` | Séries filtrées (genres ET, exclusions, bibliothèques, sans genre, nom) paginées + facettes |
 | `GET` | `/genres/untagged-series` | Séries sans aucun genre (max 500) |
 | `POST` | `/genres/ai-suggest` | Propose des tags pour 1 à 25 séries sans modifier les données |
 
-`GET /genres` et `GET /genres/untagged-series` acceptent le paramètre `library_id` (UUID) pour filtrer à une bibliothèque donnée. `GET /genres/untagged-series`, `GET /series` et `GET /libraries/{library_id}/series` acceptent aussi `q` pour filtrer par nom de série (recherche partielle, insensible à la casse et aux accents).
+`GET /genres/browse` accepte `genres`, `exclude` et `library_ids` répétables, `untagged=true`, `q`, `page` et `limit` (100 par défaut, 500 max) ; il renvoie `{ items, total, page, limit, facets: { genres, untagged, total } }`, les facettes ne dépendant que de `library_ids`. `GET /genres` et `GET /genres/untagged-series` acceptent le paramètre `library_id` (UUID) pour filtrer à une bibliothèque donnée. `GET /genres/untagged-series`, `GET /series` et `GET /libraries/{library_id}/series` acceptent aussi `q` pour filtrer par nom de série (recherche partielle, insensible à la casse et aux accents).
 :::

@@ -13,6 +13,7 @@ export * from "./tokens";
 export * from "./users";
 export * from "./books";
 export * from "./series";
+export * from "./genres";
 export * from "./settings";
 export * from "./stats";
 export * from "./diagnostics";

@@ -30,7 +30,14 @@ export {
 
 export type { TestConnectionResult, TestConnectionTarget } from "./settings";
 export type { UpdateBookRequest } from "./books";
-export type { GenreDto, GenreSuggestion } from "./genres";
+export type {
+  GenreBrowsePage,
+  GenreBrowseQuery,
+  GenreCover,
+  GenreDto,
+  GenreFacet,
+  GenreSuggestion,
+} from "./genres";
 export type {
   RenameBookEntry,
   RenameBookOverride,

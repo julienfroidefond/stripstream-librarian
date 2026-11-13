@@ -1484,6 +1484,7 @@ const fr = {
 
   // Genres management page
   "genres.title": "Gestion des genres",
+  "genres.loadMore": "Charger plus",
   "genres.allGenres": "Tous les genres",
   "genres.seriesCount": "{{count}} série{{plural}}",
   "genres.rename": "Renommer",

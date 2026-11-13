@@ -596,6 +596,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/genres", get(genres::list_genres))
         .route("/genres/assign", axum::routing::post(genres::assign_genre))
         .route("/genres/untagged-series", get(genres::untagged_series))
+        .route("/genres/browse", get(genres::browse_genres))
         .route(
             "/genres/ai-suggest",
             axum::routing::post(ai_tagging::suggest_tags),

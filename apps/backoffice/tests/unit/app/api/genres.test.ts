@@ -17,6 +17,7 @@ import { PATCH as patchGenre, DELETE as deleteGenre } from "@/app/api/genres/[na
 import { POST as aiSuggest } from "@/app/api/genres/ai-suggest/route";
 import { POST as assign } from "@/app/api/genres/assign/route";
 import { GET as untagged } from "@/app/api/genres/untagged-series/route";
+import { GET as browseGenres } from "@/app/api/genres/browse/route";
 import { GET as readingOverview } from "@/app/api/reading-overview/route";
 import { GET as readingOverviewSeriesBooks } from "@/app/api/reading-overview/[userId]/series-books/route";
 
@@ -65,6 +66,17 @@ describe("/api/genres", () => {
     const body = { genre: "SF", series_ids: ["s1"] };
     expect((await assign(jsonRequest("/api/genres/assign", { method: "POST", body }))).status).toBe(200);
     expect(vi.mocked(revalidateTag)).toHaveBeenCalledWith("series:s1", { expire: 0 });
+  });
+
+  it("GET browse forwards the repeated-key query", async () => {
+    mockApi.mockResolvedValue({ items: [], total: 0, page: 1, limit: 100, facets: { genres: [], untagged: 0, total: 0 } });
+    await browseGenres(jsonRequest("/api/genres/browse?genres=A&genres=B&exclude=C&untagged=true"));
+    expect(mockApi).toHaveBeenCalledWith("/genres/browse?genres=A&genres=B&exclude=C&untagged=true");
+  });
+
+  it("GET browse returns 500 on error", async () => {
+    mockApi.mockRejectedValue(new Error("bad"));
+    expect((await browseGenres(jsonRequest("/api/genres/browse"))).status).toBe(500);
   });
 
   it("GET untagged forwards query", async () => {

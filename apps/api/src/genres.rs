@@ -7,6 +7,10 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, series::SeriesItem, state::AppState};
 
+pub mod browse;
+
+pub use browse::browse_genres;
+
 #[derive(Serialize, ToSchema)]
 pub struct GenreDto {
     pub name: String,
