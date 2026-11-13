@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use parsers::{detect_format, parse_metadata_fast};
 use sqlx::Row;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -139,10 +139,6 @@ pub async fn scan_library_discovery(
             (name, id)
         })
         .collect();
-
-    // Track existing series names for new_series counting
-    let existing_series: HashSet<String> = series_map.keys().cloned().collect();
-    let mut seen_new_series: HashSet<String> = HashSet::new();
 
     // Load series rename mapping: original filesystem name → current DB name.
     // This prevents the scanner from recreating old series after a user rename.
@@ -394,23 +390,7 @@ pub async fn scan_library_discovery(
         debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
         let new_book_title = parsed.title.clone();
 
-        // Track new series
-        let series_key = parsed
-            .series
-            .as_deref()
-            .unwrap_or("unclassified")
-            .to_string();
-        if !existing_series.contains(&series_key) && seen_new_series.insert(series_key) {
-            stats.new_series += 1;
-            push_capped_item(
-                &mut stats.new_series_names,
-                parsed
-                    .series
-                    .clone()
-                    .unwrap_or_else(|| "unclassified".to_string()),
-            );
-        }
-
+        // New series are counted by the writer, when `series_identity` actually creates one.
         writer
             .insert_new(parsed, file, &abs_path, &file_name, stats)
             .await?;

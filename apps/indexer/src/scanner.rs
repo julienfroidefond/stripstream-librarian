@@ -532,6 +532,82 @@ mod tests {
         );
     }
 
+    // ─── New series notifications ───
+
+    /// A folder spelled differently from an existing series resolves to it through
+    /// `series_identity`: it must not be reported as a new series.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn new_series_counts_only_series_actually_created(pool: sqlx::PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        for (folder, file) in [
+            ("one piece", "one piece - T01.cbz"),
+            ("Naruto", "Naruto - T01.cbz"),
+            ("naruto", "naruto - T02.cbz"),
+        ] {
+            std::fs::create_dir_all(root.join(folder)).unwrap();
+            std::fs::write(root.join(folder).join(file), b"not really a zip").unwrap();
+        }
+        let state = crate::AppState {
+            pool: pool.clone(),
+            library_root: stripstream_core::paths::LibraryRoot::new(dir.path()),
+        };
+        let library_id = create_test_library(&pool, "lib").await;
+        let one_piece = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'One Piece')")
+            .bind(one_piece)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'running')",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut stats = empty_stats();
+        let mut processed = 0;
+        scan_library_discovery(
+            &state,
+            job_id,
+            library_id,
+            &root,
+            &mut stats,
+            &mut processed,
+            3,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(stats.indexed_files, 3);
+        assert_eq!(stats.new_series, 1, "{:?}", stats.new_series_names);
+        assert_eq!(stats.new_series_names.len(), 1);
+        assert!(
+            stats.new_series_names[0].eq_ignore_ascii_case("naruto"),
+            "only Naruto is new: {:?}",
+            stats.new_series_names
+        );
+        let one_piece_books: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
+                .bind(one_piece)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(one_piece_books, 1, "'one piece' joins 'One Piece'");
+        let series: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM series WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(series, 2, "One Piece + Naruto");
+    }
+
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn orphan_series_cleaned_up_after_book_deletion(pool: sqlx::PgPool) {
         let library_id = create_test_library(&pool, "orphan_test").await;

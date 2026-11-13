@@ -75,6 +75,8 @@ writer.flush().await?;
 Ne jamais écrire `books`/`book_files` ligne à ligne depuis la boucle de scan.
 Le writer résout les noms de série via `stripstream_core::series_identity::find_or_create`
 (cache mémo par nom brut) ; ne jamais réécrire un get-or-create de série dans l'indexer (ADR 0022).
+Une série n'est comptée dans `stats.new_series` (notifications) que si `find_or_create_tracked`
+l'a réellement créée : « one piece » rattaché à « One Piece » n'est pas une nouvelle série.
 
 Toutes les opérations du flush sont dans une seule transaction.
 

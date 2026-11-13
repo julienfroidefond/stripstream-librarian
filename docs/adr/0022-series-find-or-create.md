@@ -16,5 +16,6 @@ La contrainte unique ne porte que sur `(library_id, name)` exact et l'index `nor
 
 - Pas de migration : les doublons normalisés déjà en base ne sont pas fusionnés ; la recherche choisit une ligne de façon déterministe.
 - Le cache du scanner devient un mémo par nom brut exact ; la normalisation reste en SQL.
+- `find_or_create_tracked` renvoie en plus `created` : le scanner ne compte comme nouvelle série (notifications) que celles réellement insérées, jamais une autre graphie d'une série existante.
 - Les tests de get-or-create dupliqués côté indexer et API sont supprimés ; ils vivent dans le crate `core` (casse/accents, `original_name`, renommage en chaîne, transaction, concurrence).
 - Reste hors module : `metadata::field_policy::apply_series` fait encore un upsert sur le nom exact ; il ne s'applique qu'à une série déjà résolue.

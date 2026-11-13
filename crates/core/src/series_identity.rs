@@ -74,6 +74,31 @@ pub async fn find_or_create<'c, A>(
 where
     A: Acquire<'c, Database = Postgres>,
 {
+    Ok(find_or_create_tracked(conn, library_id, raw_name)
+        .await?
+        .identity)
+}
+
+/// Result of [`find_or_create_tracked`]: the series and whether this call inserted it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundOrCreated {
+    pub identity: SeriesIdentity,
+    /// `true` only when this call inserted the row; a match on another spelling or on
+    /// `original_name` is a lookup, not a creation.
+    pub created: bool,
+}
+
+/// [`find_or_create`], also reporting whether the series was created. Use it when
+/// "new series" matters (scan notifications): comparing raw names would count
+/// `one piece` as new next to `One Piece`.
+pub async fn find_or_create_tracked<'c, A>(
+    conn: A,
+    library_id: Uuid,
+    raw_name: &str,
+) -> sqlx::Result<FoundOrCreated>
+where
+    A: Acquire<'c, Database = Postgres>,
+{
     let mut tx = conn.begin().await?;
 
     sqlx::query(
@@ -91,26 +116,33 @@ where
         .fetch_optional(&mut *tx)
         .await?;
 
-    let identity = match existing {
-        Some(row) => identity_from_row(row),
+    let outcome = match existing {
+        Some(row) => FoundOrCreated {
+            identity: identity_from_row(row),
+            created: false,
+        },
         None => {
             // The exact-name constraint still guards writers that bypass this
-            // module; on conflict the existing row is returned.
+            // module; on conflict the existing row is returned (`xmax <> 0`).
             let row = sqlx::query(
                 "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) \
                  ON CONFLICT (library_id, name) DO UPDATE SET name = EXCLUDED.name \
-                 RETURNING id, library_id, name",
+                 RETURNING id, library_id, name, (xmax = 0) AS inserted",
             )
             .bind(library_id)
             .bind(raw_name)
             .fetch_one(&mut *tx)
             .await?;
-            identity_from_row(row)
+            let created: bool = row.get("inserted");
+            FoundOrCreated {
+                identity: identity_from_row(row),
+                created,
+            }
         }
     };
 
     tx.commit().await?;
-    Ok(identity)
+    Ok(outcome)
 }
 
 /// Resolve a raw series name to its id inside a library.
@@ -394,6 +426,33 @@ mod tests {
             assert_eq!(identity, created, "raw name {name} must reuse the series");
         }
         assert_eq!(series_count(&pool, library_id).await, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn find_or_create_tracked_reports_creation_only_once(pool: PgPool) {
+        let library_id = seed_library(&pool, "lib").await;
+        let renamed = seed_series(&pool, library_id, "LES MYTHICS").await;
+        rename(&pool, renamed, "Mythics", "LES MYTHICS").await;
+
+        let first = find_or_create_tracked(&pool, library_id, "One Piece")
+            .await
+            .unwrap();
+        assert!(first.created);
+        for name in ["One Piece", "one piece", "ONE PIÈCE"] {
+            let again = find_or_create_tracked(&pool, library_id, name)
+                .await
+                .unwrap();
+            assert!(!again.created, "{name} matches the existing series");
+            assert_eq!(again.identity, first.identity);
+        }
+        let by_original = find_or_create_tracked(&pool, library_id, "les mythics")
+            .await
+            .unwrap();
+        assert!(
+            !by_original.created,
+            "original_name is a match, not a creation"
+        );
+        assert_eq!(by_original.identity.id, renamed);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
