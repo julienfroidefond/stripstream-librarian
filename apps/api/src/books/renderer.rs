@@ -143,6 +143,7 @@ impl PageSpec {
             options.output.extension(),
             options.quality,
             options.width,
+            options.filter,
         );
         Self {
             path,
@@ -412,6 +413,11 @@ impl PageRenderer {
     }
 }
 
+/// Cache key (and `ETag`) of a rendered page. The resize filter only shapes
+/// resized renders (`width > 0`), so it is hashed for those alone: unresized
+/// keys are the same as before the filter was part of the key, and their disk
+/// cache stays valid. Resized entries cached under the old keys are no longer
+/// reachable; they stay on disk until **Clear cache** (`POST /settings/cache/clear`).
 fn get_cache_key(
     abs_path: &str,
     mtime_ns: i128,
@@ -419,6 +425,7 @@ fn get_cache_key(
     format: &str,
     quality: u8,
     width: u32,
+    filter: FilterType,
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(abs_path.as_bytes());
@@ -427,11 +434,26 @@ fn get_cache_key(
     hasher.update(format.as_bytes());
     hasher.update(quality.to_le_bytes());
     hasher.update(width.to_le_bytes());
+    if width > 0 {
+        hasher.update(b"filter:");
+        hasher.update(filter_name(filter).as_bytes());
+    }
     hasher
         .finalize()
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// Stable name of a resize filter, hashed into the cache key.
+fn filter_name(filter: FilterType) -> &'static str {
+    match filter {
+        FilterType::Nearest => "nearest",
+        FilterType::Triangle => "triangle",
+        FilterType::CatmullRom => "catmullrom",
+        FilterType::Gaussian => "gaussian",
+        FilterType::Lanczos3 => "lanczos3",
+    }
 }
 
 /// Read the file mtime as nanoseconds since UNIX epoch. Returns 0 if unavailable
@@ -885,41 +907,200 @@ mod tests {
     fn cache_key_changes_when_mtime_changes() {
         // Same file, same render params, different mtime → different cache key.
         // This ensures an in-place file replacement invalidates the disk cache.
-        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        let b = get_cache_key("/libraries/x.cbz", 2000, 1, "webp", 80, 600);
+        let a = get_cache_key(
+            "/libraries/x.cbz",
+            1000,
+            1,
+            "webp",
+            80,
+            600,
+            FilterType::Triangle,
+        );
+        let b = get_cache_key(
+            "/libraries/x.cbz",
+            2000,
+            1,
+            "webp",
+            80,
+            600,
+            FilterType::Triangle,
+        );
         assert_ne!(a, b, "cache key must include mtime");
     }
 
     #[test]
     fn cache_key_stable_when_inputs_unchanged() {
-        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        let b = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
+        let a = get_cache_key(
+            "/libraries/x.cbz",
+            1000,
+            1,
+            "webp",
+            80,
+            600,
+            FilterType::Triangle,
+        );
+        let b = get_cache_key(
+            "/libraries/x.cbz",
+            1000,
+            1,
+            "webp",
+            80,
+            600,
+            FilterType::Triangle,
+        );
         assert_eq!(a, b);
     }
 
     #[test]
     fn cache_key_changes_with_path_and_render_params() {
-        let base = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/y.cbz", 1000, 1, "webp", 80, 600)
+        let base = get_cache_key(
+            "/libraries/x.cbz",
+            1000,
+            1,
+            "webp",
+            80,
+            600,
+            FilterType::Triangle,
         );
         assert_ne!(
             base,
-            get_cache_key("/libraries/x.cbz", 1000, 2, "webp", 80, 600)
+            get_cache_key(
+                "/libraries/y.cbz",
+                1000,
+                1,
+                "webp",
+                80,
+                600,
+                FilterType::Triangle
+            )
         );
         assert_ne!(
             base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "jpeg", 80, 600)
+            get_cache_key(
+                "/libraries/x.cbz",
+                1000,
+                2,
+                "webp",
+                80,
+                600,
+                FilterType::Triangle
+            )
         );
         assert_ne!(
             base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 90, 600)
+            get_cache_key(
+                "/libraries/x.cbz",
+                1000,
+                1,
+                "jpeg",
+                80,
+                600,
+                FilterType::Triangle
+            )
         );
         assert_ne!(
             base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800)
+            get_cache_key(
+                "/libraries/x.cbz",
+                1000,
+                1,
+                "webp",
+                90,
+                600,
+                FilterType::Triangle
+            )
         );
+        assert_ne!(
+            base,
+            get_cache_key(
+                "/libraries/x.cbz",
+                1000,
+                1,
+                "webp",
+                80,
+                800,
+                FilterType::Triangle
+            )
+        );
+    }
+
+    #[test]
+    fn cache_key_follows_the_filter_of_resized_renders_only() {
+        let key =
+            |width, filter| get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, width, filter);
+
+        assert_ne!(
+            key(600, FilterType::Triangle),
+            key(600, FilterType::Lanczos3)
+        );
+        assert_ne!(
+            key(600, FilterType::Nearest),
+            key(600, FilterType::Lanczos3)
+        );
+        // No resize: the filter is unused, the key ignores it.
+        assert_eq!(key(0, FilterType::Triangle), key(0, FilterType::Lanczos3));
+    }
+
+    #[test]
+    fn unresized_cache_key_is_unchanged_so_the_disk_cache_stays_valid() {
+        // The key format before the filter was hashed: path, mtime, page,
+        // format, quality, width.
+        let mut hasher = Sha256::new();
+        hasher.update(b"/libraries/x.cbz");
+        hasher.update(1000i128.to_le_bytes());
+        hasher.update(1u32.to_le_bytes());
+        hasher.update(b"webp");
+        hasher.update(80u8.to_le_bytes());
+        hasher.update(0u32.to_le_bytes());
+        let legacy: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+
+        assert_eq!(
+            get_cache_key(
+                "/libraries/x.cbz",
+                1000,
+                1,
+                "webp",
+                80,
+                0,
+                FilterType::Lanczos3
+            ),
+            legacy
+        );
+    }
+
+    #[tokio::test]
+    async fn changing_the_resize_filter_renders_again_instead_of_serving_the_cache() {
+        let fixture = Fixture::new(FakePages::new(red_png()));
+        let renderer = fixture.renderer(Duration::from_secs(5));
+        let resized = |filter| {
+            PageSpec::new(
+                fixture.book.clone(),
+                BookFormat::Cbz,
+                1,
+                RenderOptions {
+                    width: 2,
+                    filter,
+                    ..PNG_OPTIONS
+                },
+            )
+        };
+        let triangle = resized(FilterType::Triangle);
+        let lanczos = resized(FilterType::Lanczos3);
+        assert_ne!(triangle.key(), lanczos.key(), "ETag must follow the filter");
+
+        renderer.get(&triangle, Urgency::Foreground).await.unwrap();
+        let after_change = renderer
+            .get(&lanczos, Urgency::Foreground)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(after_change.origin, Origin::Rendered);
+        assert_eq!(fixture.source.calls().len(), 2);
     }
 
     #[tokio::test]
