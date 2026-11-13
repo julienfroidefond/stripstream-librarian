@@ -19,6 +19,7 @@ pub mod settings;
 pub mod target;
 pub mod telegram_monitor;
 pub mod torrent_import;
+mod torrent_ledger;
 pub mod worker;
 
 // Re-export handler functions used in route registration

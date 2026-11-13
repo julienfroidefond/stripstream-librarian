@@ -90,6 +90,12 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Swagger** : accessible sur `/swagger-ui`, spec JSON sur `/openapi.json`.
 - **Torrent import, mode replace** : quand `replace_existing = true`, ne PAS filtrer par
   `expected_volumes` — importer tous les fichiers du torrent.
+- **Téléchargements torrent** : `torrent_downloads` est un ledger partagé par qBittorrent et
+  AllDebrid. Toutes ses écritures passent par `downloads/torrent_ledger.rs` : `TorrentStatus`
+  porte le vocabulaire des statuts et les transitions gardées (`mark_completed`, `begin_import`,
+  `finish_import`, `fail`, `restart`) refusent un statut inattendu. Ne pas écrire
+  `UPDATE torrent_downloads` ailleurs ; la progression (`record_progress`, `arm_stall`) est un
+  no-op sur une ligne qui n'est plus `downloading`.
 - **Compteurs d'import** : `ImportedFile.already_existed`
   (`downloads/torrent_import.rs`) distingue les fichiers réellement copiés de ceux déjà sur
   disque. Les compteurs et les notifications n'incluent que les vrais nouveaux fichiers.

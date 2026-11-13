@@ -42,6 +42,9 @@ use super::rate::TransferRate;
 use super::settings::DownloadSettings;
 use super::target::{sanitize_filename, DownloadProgress};
 use super::torrent_import::process_torrent_import;
+use super::torrent_ledger::{
+    self, ProgressUpdate, RestartScope, TorrentStatus, TorrentTransitionError,
+};
 use crate::error::ApiError;
 use crate::responses::OkResponse;
 use crate::state::AppState;
@@ -859,7 +862,9 @@ pub async fn restart_torrent_download(
     .ok_or_else(|| ApiError::not_found("AllDebrid torrent download not found"))?;
 
     let status: String = row.get("status");
-    if status != "error" {
+    let status = TorrentStatus::try_from(status.as_str())
+        .map_err(|_| ApiError::internal("unknown torrent download status"))?;
+    if status != TorrentStatus::Error {
         return Err(ApiError::bad_request(
             "only a failed AllDebrid download can be restarted",
         ));
@@ -878,14 +883,7 @@ pub async fn restart_torrent_download(
         }
     }
 
-    sqlx::query(
-        "UPDATE torrent_downloads SET status = 'downloading', error_message = NULL, \
-         progress = 0, download_speed = 0, eta = 0, stall_started_at = NULL, updated_at = NOW() \
-         WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
+    torrent_ledger::restart(&state.pool, id, RestartScope::Failed).await?;
 
     info!("[ALLDEBRID] Restarted magnet {external_id} for torrent {id}");
     Ok(Json(OkResponse::new()))
@@ -896,10 +894,11 @@ async fn find_active_alldebrid_by_hash(pool: &PgPool, hash: &str) -> Option<Uuid
     sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM torrent_downloads \
          WHERE client = 'alldebrid' AND LOWER(qb_hash) = LOWER($1) \
-           AND status IN ('downloading', 'completed', 'importing') \
+           AND status = ANY($2) \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(hash)
+    .bind(torrent_ledger::status_names(&TorrentStatus::ACTIVE))
     .fetch_optional(pool)
     .await
     .ok()
@@ -1187,47 +1186,27 @@ async fn record_inflight_progress(
     tid: Uuid,
     live: &InflightProgress<'_>,
 ) -> Option<DateTime<Utc>> {
+    let update = ProgressUpdate {
+        progress: live.progress,
+        speed: live.speed,
+        eta: live.eta,
+        // AllDebrid keeps the last known size when it reports zero bytes total.
+        file_size: Some(live.file_size).filter(|size| *size > 0),
+        seeders: live.seeders.map(|s| s as i32),
+        name: live.name,
+        downloaded: live.downloaded,
+    };
+
     if live.downloaded > 0 {
-        let result = sqlx::query(
-            "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-             seeders = $4, file_size = COALESCE(NULLIF($6, 0), file_size), name = COALESCE($7, name), stall_started_at = NULL, updated_at = NOW() \
-             WHERE id = $5 AND status = 'downloading'",
-        )
-        .bind(live.progress)
-        .bind(live.speed)
-        .bind(live.eta)
-        .bind(live.seeders.map(|s| s as i32))
-        .bind(tid)
-        .bind(live.file_size)
-        .bind(live.name)
-        .execute(pool)
-        .await;
-        if let Err(e) = result {
+        if let Err(e) = torrent_ledger::record_progress(pool, tid, &update).await {
             warn!("[ALLDEBRID] Failed to store progress for torrent {tid}: {e}");
         }
         return None;
     }
 
-    let stalled = sqlx::query_scalar::<_, DateTime<Utc>>(
-        "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-         seeders = $4, file_size = COALESCE(NULLIF($6, 0), file_size), name = COALESCE($7, name), \
-         stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
-         WHERE id = $5 AND status = 'downloading' \
-         RETURNING stall_started_at",
-    )
-    .bind(live.progress)
-    .bind(live.speed)
-    .bind(live.eta)
-    .bind(live.seeders.map(|s| s as i32))
-    .bind(tid)
-    .bind(live.file_size)
-    .bind(live.name)
-    .fetch_optional(pool)
-    .await;
-
     // `None` (no row matched, e.g. the row changed status since the query) is
     // normal; only a real query failure is worth logging.
-    match stalled {
+    match torrent_ledger::arm_stall(pool, tid, &update).await {
         Ok(stall) => stall,
         Err(e) => {
             warn!("[ALLDEBRID] Failed to arm the stall marker for torrent {tid}: {e}");
@@ -1329,15 +1308,14 @@ async fn download_ready_magnet(
     let staging_dir = remap_downloads_path(&staging_db);
     download_files_to(pool, client, tid, Path::new(&staging_dir), &files).await?;
 
-    sqlx::query(
-        "UPDATE torrent_downloads SET status = 'completed', content_path = $1, progress = 1, \
-         download_speed = 0, eta = 0, updated_at = NOW() \
-         WHERE id = $2 AND status = 'downloading'",
-    )
-    .bind(&staging_db)
-    .bind(tid)
-    .execute(pool)
-    .await?;
+    match torrent_ledger::mark_completed(pool, tid, &staging_db).await {
+        Ok(()) => {}
+        Err(TorrentTransitionError::Database(e)) => return Err(e.into()),
+        Err(e) => {
+            info!("[ALLDEBRID] Torrent {tid} was already completed: {e}");
+            return Ok(());
+        }
+    }
 
     // The local copy is complete; drop the magnet from AllDebrid's 30-slot
     // active list so it can process other torrents.
@@ -1500,39 +1478,23 @@ async fn report_progress(pool: &PgPool, tid: Uuid, written: i64, total: i64, rat
     } else {
         0
     };
-    if let Err(e) = sqlx::query(
-        "UPDATE torrent_downloads SET progress = $1, file_size = NULLIF($2, 0), \
-         download_speed = $3, eta = $4, updated_at = NOW() \
-         WHERE id = $5 AND status = 'downloading'",
-    )
-    .bind(fraction)
-    .bind(total)
-    .bind(speed)
-    .bind(eta)
-    .bind(tid)
-    .execute(pool)
-    .await
-    {
+    let update = ProgressUpdate {
+        progress: fraction,
+        speed,
+        eta,
+        file_size: Some(total),
+        seeders: None,
+        name: None,
+        downloaded: written,
+    };
+    if let Err(e) = torrent_ledger::record_progress(pool, tid, &update).await {
         warn!("[ALLDEBRID] Failed to report progress for torrent {tid}: {e}");
     }
 }
 
 async fn mark_error(pool: &PgPool, tid: Uuid, message: &str) {
-    let result = sqlx::query(
-        "UPDATE torrent_downloads SET status = 'error', error_message = $1, \
-         download_speed = 0, eta = 0, updated_at = NOW() \
-         WHERE id = $2 AND status = 'downloading'",
-    )
-    .bind(message)
-    .bind(tid)
-    .execute(pool)
-    .await;
-
-    match result {
-        Ok(done) if done.rows_affected() == 0 => {
-            warn!("[ALLDEBRID] Torrent {tid} left '{message}' unrecorded: row is no longer downloading");
-        }
-        Ok(_) => {}
+    match torrent_ledger::fail(pool, tid, message).await {
+        Ok(()) => {}
         Err(e) => warn!("[ALLDEBRID] Failed to mark torrent {tid} as error: {e}"),
     }
 }
