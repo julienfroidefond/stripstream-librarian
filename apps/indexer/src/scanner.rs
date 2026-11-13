@@ -40,10 +40,8 @@ mod tests {
     use super::*;
 
     use chrono::{DateTime, Utc};
-    use std::collections::HashMap;
     use uuid::Uuid;
 
-    use crate::scanner::discovery::get_or_create_series_id;
     use crate::scanner::mtime::should_skip_deletions;
 
     #[test]
@@ -135,123 +133,6 @@ mod tests {
         id
     }
 
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_new(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "test").await;
-        let mut cache = HashMap::new();
-        let id = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
-            .await
-            .unwrap();
-        assert_ne!(id, Uuid::nil());
-        assert_eq!(cache.len(), 1);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_cache_hit(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "test").await;
-        let mut cache = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
-            .await
-            .unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
-            .await
-            .unwrap();
-        assert_eq!(id1, id2);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_cache_case_insensitive(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "test").await;
-        let mut cache = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
-            .await
-            .unwrap();
-        // Different casing should hit cache
-        let id2 = get_or_create_series_id(&pool, lib_id, "one piece", &mut cache)
-            .await
-            .unwrap();
-        assert_eq!(id1, id2);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_db_case_insensitive(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "test").await;
-        // Use two separate caches to bypass cache and test DB lookup
-        let mut cache1 = HashMap::new();
-        let mut cache2 = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache1)
-            .await
-            .unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "dragon ball", &mut cache2)
-            .await
-            .unwrap();
-        assert_eq!(id1, id2, "DB lookup should be case-insensitive");
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_db_accent_insensitive(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "test").await;
-        let mut cache1 = HashMap::new();
-        let mut cache2 = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "Astérix", &mut cache1)
-            .await
-            .unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2)
-            .await
-            .unwrap();
-        assert_eq!(id1, id2, "DB lookup should be accent-insensitive");
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_finds_by_original_name(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "rename_test").await;
-        let mut cache = HashMap::new();
-
-        // Create series then simulate user rename
-        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
-            .bind("Dragon Ball Z")
-            .bind("Dragon Ball")
-            .bind(id1)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        // Clear cache to force DB lookup
-        let mut cache2 = HashMap::new();
-        let id2 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache2)
-            .await
-            .unwrap();
-        assert_eq!(
-            id1, id2,
-            "lookup by original_name should return the renamed series"
-        );
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_or_create_series_id_original_name_case_insensitive(pool: sqlx::PgPool) {
-        let lib_id = create_test_library(&pool, "rename_case").await;
-        let mut cache = HashMap::new();
-
-        let id1 = get_or_create_series_id(&pool, lib_id, "LES MYTHICS", &mut cache)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
-            .bind("Mythics")
-            .bind("LES MYTHICS")
-            .bind(id1)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let mut cache2 = HashMap::new();
-        let id2 = get_or_create_series_id(&pool, lib_id, "les mythics", &mut cache2)
-            .await
-            .unwrap();
-        assert_eq!(id1, id2, "original_name lookup should be case-insensitive");
-    }
     // ─── Discovery end-to-end: both directory paths reconcile the same way ───
 
     struct ScanFixture {

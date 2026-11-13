@@ -1,3 +1,4 @@
+use stripstream_core::series_identity;
 use uuid::Uuid;
 
 use crate::error::ApiError;
@@ -29,41 +30,6 @@ pub(crate) fn series_tome_counts(progress_alias: &str) -> String {
                 MAX({p}.last_read_at) FILTER (WHERE {p}.status IN ('read', 'reading')) AS last_read_at"#,
         p = progress_alias
     )
-}
-
-/// Get or create a series row, returning its UUID.
-/// Also checks `original_name` to prevent duplicates after user renames.
-pub(crate) async fn get_or_create_series(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-    name: &str,
-) -> Result<Uuid, ApiError> {
-    // Try to find existing by current name OR original_name (prevents duplicates after rename)
-    if let Some(id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 \
-         AND (norm_text(name) = norm_text($2) \
-              OR norm_text(original_name) = norm_text($2))",
-    )
-    .bind(library_id)
-    .bind(name)
-    .fetch_optional(pool)
-    .await?
-    {
-        return Ok(id);
-    }
-
-    let id = Uuid::new_v4();
-    sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) \
-         ON CONFLICT (library_id, name) DO UPDATE SET name = EXCLUDED.name \
-         RETURNING id",
-    )
-    .bind(id)
-    .bind(library_id)
-    .bind(name)
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
 }
 
 /// Resolve the library_id for a given series UUID.
@@ -141,8 +107,10 @@ pub(crate) async fn create_series_with_metadata(
 ) -> Result<CreateSeriesResult, ApiError> {
     let pool = &state.pool;
 
-    // 1. Create or find the series
-    let series_id = get_or_create_series(pool, params.library_id, &params.name).await?;
+    // 1. Create or find the series (name or original_name, see `series_identity`)
+    let series_id = series_identity::find_or_create(pool, params.library_id, &params.name)
+        .await?
+        .id;
 
     // 2. Restore metadata from archive if this series was previously deleted
     restore_series_from_archive(pool, params.library_id, &params.name).await;

@@ -17,6 +17,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use stripstream_core::series_identity;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -662,19 +663,11 @@ pub async fn update_book(
             .await?
             .ok_or_else(|| ApiError::not_found("book not found"))?;
         let lib_id: Uuid = book_row.get("library_id");
-        let sid: Uuid = sqlx::query_scalar(
-            r#"
-            INSERT INTO series (id, library_id, name, created_at, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, NOW(), NOW())
-            ON CONFLICT (library_id, name) DO UPDATE SET updated_at = NOW()
-            RETURNING id
-            "#,
+        Some(
+            series_identity::find_or_create(&state.pool, lib_id, s)
+                .await?
+                .id,
         )
-        .bind(lib_id)
-        .bind(s)
-        .fetch_one(&state.pool)
-        .await?;
-        Some(sid)
     } else {
         None
     };

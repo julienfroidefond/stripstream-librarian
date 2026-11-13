@@ -4,6 +4,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use stripstream_core::series_identity;
 use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -294,8 +295,9 @@ pub async fn create_metadata_match(
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
-    let series_id =
-        crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
+    let series_id = series_identity::find_or_create(&state.pool, library_id, &body.series_name)
+        .await?
+        .id;
 
     let link_id = links::propose(
         &state.pool,

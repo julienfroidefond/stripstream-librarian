@@ -1,4 +1,5 @@
 use sqlx::Row;
+use stripstream_core::series_identity;
 use uuid::Uuid;
 
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
@@ -17,9 +18,10 @@ async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
 async fn create_series_without_metadata(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "create_test").await;
 
-    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "New Series")
+    let series_id = series_identity::find_or_create(&pool, lib_id, "New Series")
         .await
-        .unwrap();
+        .unwrap()
+        .id;
 
     // Series exists
     let name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
@@ -43,9 +45,10 @@ async fn create_series_without_metadata(pool: sqlx::PgPool) {
 async fn create_series_with_metadata_link(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "create_meta").await;
 
-    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "Naruto")
+    let series_id = series_identity::find_or_create(&pool, lib_id, "Naruto")
         .await
-        .unwrap();
+        .unwrap()
+        .id;
 
     // Create approved metadata link
     let link_id: Uuid = sqlx::query_scalar(
@@ -85,9 +88,10 @@ async fn create_series_with_metadata_link(pool: sqlx::PgPool) {
 async fn create_series_metadata_updates_series_fields(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "create_sync").await;
 
-    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "Test Series")
+    let series_id = series_identity::find_or_create(&pool, lib_id, "Test Series")
         .await
-        .unwrap();
+        .unwrap()
+        .id;
 
     // Simulate syncing metadata to the series
     let metadata_json = serde_json::json!({
@@ -166,29 +170,13 @@ async fn create_series_metadata_updates_series_fields(pool: sqlx::PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn create_series_idempotent(pool: sqlx::PgPool) {
-    let lib_id = create_test_library(&pool, "create_idempotent").await;
-
-    let id1 = super::helpers::get_or_create_series(&pool, lib_id, "Same Series")
-        .await
-        .unwrap();
-    let id2 = super::helpers::get_or_create_series(&pool, lib_id, "Same Series")
-        .await
-        .unwrap();
-
-    assert_eq!(
-        id1, id2,
-        "creating the same series twice should return the same ID"
-    );
-}
-
-#[sqlx::test(migrations = "../../infra/migrations")]
 async fn create_series_metadata_link_upsert(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "create_upsert").await;
 
-    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "Upsert Test")
+    let series_id = series_identity::find_or_create(&pool, lib_id, "Upsert Test")
         .await
-        .unwrap();
+        .unwrap()
+        .id;
 
     // First link
     sqlx::query(
@@ -240,9 +228,10 @@ async fn create_series_metadata_link_upsert(pool: sqlx::PgPool) {
 async fn create_series_with_metadata_sets_cover_url(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "create_cover").await;
 
-    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "Cover Series")
+    let series_id = series_identity::find_or_create(&pool, lib_id, "Cover Series")
         .await
-        .unwrap();
+        .unwrap()
+        .id;
 
     // Run the same INSERT...ON CONFLICT sync SQL that sync_series_metadata uses,
     // with cover_url set in the metadata.
