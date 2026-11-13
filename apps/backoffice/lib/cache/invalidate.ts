@@ -26,6 +26,8 @@ export type DomainWrite =
   | { type: "jobs.started" }
   | { type: "jobs.finished" }
   | { type: "activeUser.changed" }
+  | { type: "tokens.changed" }
+  | { type: "users.changed" }
   | { type: "catalog.refreshRequested"; scope: "books" | "series" }
   | { type: "catalog.refreshRequested"; scope: "series-detail"; seriesId: string };
 
@@ -146,6 +148,10 @@ export function invalidationPlan(write: DomainWrite): InvalidationPlan {
       return { tags: [], paths: [page("/jobs")] };
     case "jobs.finished":
       return { tags: [cacheTags.books(), cacheTags.series(), cacheTags.stats()], paths: [] };
+    case "tokens.changed":
+    case "users.changed":
+      // Tokens and readers are only listed on the settings page (uncached reads).
+      return { tags: [], paths: [page("/settings")] };
     case "activeUser.changed":
       return { tags: [], paths: [{ path: "/", type: "layout" }] };
     case "catalog.refreshRequested":

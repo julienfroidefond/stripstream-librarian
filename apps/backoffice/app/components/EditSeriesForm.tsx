@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { useState, useTransition, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,7 @@ import { browserApi, browserErrorMessage, type SeriesUpdateRequest } from "@/lib
 import { ApiError } from "@/lib/api/errors";
 import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
+import { seriesEditDefaults, type EditSeriesModel } from "@/lib/series/editForm";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 
@@ -68,37 +69,13 @@ function GenreSuggestions({
 
 export interface EditSeriesFormProps {
   children?: (open: () => void) => React.ReactNode;
-  libraryId: string;
-  seriesId: string;
-  seriesName: string;
-  currentAuthors: string[];
-  currentGenres: string[];
-  currentPublishers: string[];
-  currentBookAuthor: string | null;
-  currentBookLanguage: string | null;
-  currentDescription: string | null;
-  currentStartYear: number | null;
-  currentTotalVolumes: number | null;
-  currentStatus: string | null;
-  currentLockedFields: Record<string, boolean>;
+  /** The series detail view model (`SeriesActionsModel`, or the slice the form reads). */
+  model: EditSeriesModel;
 }
 
-export function EditSeriesForm({
-  libraryId,
-  seriesId,
-  seriesName,
-  currentAuthors,
-  currentGenres,
-  currentPublishers,
-  currentBookAuthor,
-  currentBookLanguage,
-  currentDescription,
-  currentStartYear,
-  currentTotalVolumes,
-  currentStatus,
-  currentLockedFields,
-  children,
-}: EditSeriesFormProps) {
+export function EditSeriesForm({ model, children }: EditSeriesFormProps) {
+  const { seriesId, seriesName } = model;
+  const defaults = useMemo(() => seriesEditDefaults(model), [model]);
   const { t } = useTranslation();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -106,34 +83,34 @@ export function EditSeriesForm({
   const [error, setError] = useState<string | null>(null);
 
   // Champs propres à la série
-  const [newName, setNewName] = useState(seriesName === "unclassified" ? "" : seriesName);
-  const [authors, setAuthors] = useState<string[]>(currentAuthors);
+  const [newName, setNewName] = useState(defaults.name);
+  const [authors, setAuthors] = useState<string[]>(defaults.authors);
   const [authorInput, setAuthorInput] = useState("");
   const [authorInputEl, setAuthorInputEl] = useState<HTMLInputElement | null>(null);
-  const [genres, setGenres] = useState<string[]>(currentGenres);
+  const [genres, setGenres] = useState<string[]>(defaults.genres);
   const [genreInput, setGenreInput] = useState("");
   const genreInputRef = useRef<HTMLInputElement>(null);
   const [showGenreSuggestions, setShowGenreSuggestions] = useState(false);
   const [allGenres, setAllGenres] = useState<string[]>([]);
-  const [publishers, setPublishers] = useState<string[]>(currentPublishers);
+  const [publishers, setPublishers] = useState<string[]>(defaults.publishers);
   const [publisherInput, setPublisherInput] = useState("");
   const [publisherInputEl, setPublisherInputEl] = useState<HTMLInputElement | null>(null);
-  const [description, setDescription] = useState(currentDescription ?? "");
-  const [startYear, setStartYear] = useState(currentStartYear?.toString() ?? "");
-  const [totalVolumes, setTotalVolumes] = useState(currentTotalVolumes?.toString() ?? "");
-  const [status, setStatus] = useState(currentStatus ?? "");
+  const [description, setDescription] = useState(defaults.description);
+  const [startYear, setStartYear] = useState(defaults.startYear);
+  const [totalVolumes, setTotalVolumes] = useState(defaults.totalVolumes);
+  const [status, setStatus] = useState(defaults.status);
 
   // Lock states. The raw map is kept as-is; the catalog decides which keys are
   // still meaningful for the lock UI and the PATCH payload.
   const lockableFields = useLockableFields("series");
   const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(
-    () => currentLockedFields ?? {},
+    () => defaults.lockedFields,
   );
   const visibleLockedFields = pickLockableFields(lockedFields, lockableFields);
 
   // Propagation aux livres — opt-in via bouton
-  const [bookAuthor, setBookAuthor] = useState(currentBookAuthor ?? "");
-  const [bookLanguage, setBookLanguage] = useState(currentBookLanguage ?? "");
+  const [bookAuthor, setBookAuthor] = useState(defaults.bookAuthor);
+  const [bookLanguage, setBookLanguage] = useState(defaults.bookLanguage);
   const [showApplyToBooks, setShowApplyToBooks] = useState(false);
 
   const toggleLock = (field: string) => {
@@ -202,25 +179,25 @@ export function EditSeriesForm({
   };
 
   const handleClose = useCallback(() => {
-    setNewName(seriesName === "unclassified" ? "" : seriesName);
-    setAuthors(currentAuthors);
+    setNewName(defaults.name);
+    setAuthors(defaults.authors);
     setAuthorInput("");
-    setGenres(currentGenres);
+    setGenres(defaults.genres);
     setGenreInput("");
     setShowGenreSuggestions(false);
-    setPublishers(currentPublishers);
+    setPublishers(defaults.publishers);
     setPublisherInput("");
-    setDescription(currentDescription ?? "");
-    setStartYear(currentStartYear?.toString() ?? "");
-    setTotalVolumes(currentTotalVolumes?.toString() ?? "");
-    setStatus(currentStatus ?? "");
-    setLockedFields(currentLockedFields ?? {});
+    setDescription(defaults.description);
+    setStartYear(defaults.startYear);
+    setTotalVolumes(defaults.totalVolumes);
+    setStatus(defaults.status);
+    setLockedFields(defaults.lockedFields);
     setShowApplyToBooks(false);
-    setBookAuthor(currentBookAuthor ?? "");
-    setBookLanguage(currentBookLanguage ?? "");
+    setBookAuthor(defaults.bookAuthor);
+    setBookLanguage(defaults.bookLanguage);
     setError(null);
     setIsOpen(false);
-  }, [seriesName, currentAuthors, currentGenres, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentStatus, currentBookAuthor, currentBookLanguage, currentLockedFields]);
+  }, [defaults]);
 
   useEffect(() => {
     if (!isOpen) return;

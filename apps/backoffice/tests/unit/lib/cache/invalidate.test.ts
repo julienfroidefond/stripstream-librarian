@@ -88,6 +88,8 @@ const TABLE: Row[] = [
     paths: ["/libraries", "/libraries/l1", "/series", "/books"],
   },
   { write: { type: "library.updated", libraryId: "l1" }, tags: [], paths: ["/libraries", "/libraries/l1"] },
+  { write: { type: "tokens.changed" }, tags: [], paths: ["/settings"] },
+  { write: { type: "users.changed" }, tags: [], paths: ["/settings"] },
   {
     write: { type: "readingLists.changed" },
     tags: ["reading-lists"],

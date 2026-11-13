@@ -10,23 +10,35 @@ vi.mock("next/navigation", () => ({
 import { EditSeriesForm, type EditSeriesFormProps } from "@/app/components/EditSeriesForm";
 import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
 import { METADATA_FIELDS_CATALOG } from "../fixtures/metadataFields";
+import type { SeriesMetadataDto } from "@/lib/api";
 
-function makeProps(overrides: Partial<EditSeriesFormProps> = {}): EditSeriesFormProps {
+type ModelOverrides = {
+  seriesName?: string;
+  metadata?: Partial<SeriesMetadataDto>;
+};
+
+function makeProps({ seriesName = "Berserk", metadata = {} }: ModelOverrides = {}): EditSeriesFormProps {
   return {
-    libraryId: "l1",
-    seriesId: "s1",
-    seriesName: "Berserk",
-    currentAuthors: ["Kentaro Miura"],
-    currentGenres: ["Seinen"],
-    currentPublishers: ["Hakusensha"],
-    currentBookAuthor: "Kentaro Miura",
-    currentBookLanguage: "fr",
-    currentDescription: "A dark fantasy",
-    currentStartYear: 1989,
-    currentTotalVolumes: 41,
-    currentStatus: "ongoing",
-    currentLockedFields: {},
-    ...overrides,
+    model: {
+      seriesId: "s1",
+      seriesName,
+      editBookAuthor: "Kentaro Miura",
+      editBookLanguage: "fr",
+      metadata: {
+        series_name: seriesName,
+        authors: ["Kentaro Miura"],
+        genres: ["Seinen"],
+        publishers: ["Hakusensha"],
+        description: "A dark fantasy",
+        start_year: 1989,
+        total_volumes: 41,
+        status: "ongoing",
+        book_author: null,
+        book_language: null,
+        locked_fields: {},
+        ...metadata,
+      },
+    },
   };
 }
 
@@ -100,7 +112,7 @@ describe("EditSeriesForm", () => {
 
   it("adds and removes authors, genres and publishers", () => {
     stubFetch();
-    openForm(makeProps({ currentAuthors: [], currentGenres: [], currentPublishers: [] }));
+    openForm(makeProps({ metadata: { authors: [], genres: [], publishers: [] } }));
 
     const author = screen.getByPlaceholderText("editBook.addAuthor");
     fireEvent.change(author, { target: { value: "New Author" } });
@@ -123,7 +135,7 @@ describe("EditSeriesForm", () => {
 
   it("offers genre suggestions fetched from the API", async () => {
     stubFetch();
-    openForm(makeProps({ currentGenres: [] }));
+    openForm(makeProps({ metadata: { genres: [] } }));
 
     const genre = screen.getByPlaceholderText("editSeries.addGenre");
     fireEvent.focus(genre);
@@ -149,7 +161,7 @@ describe("EditSeriesForm", () => {
     const fetchMock = stubFetch();
     openForm(
       makeProps({
-        currentLockedFields: { genres: true, title: true, description: true },
+        metadata: { locked_fields: { genres: true, title: true, description: true } },
       })
     );
 
@@ -169,7 +181,7 @@ describe("EditSeriesForm", () => {
   it("uses the server catalog as the source of lockable keys", () => {
     stubFetch();
     openForm(
-      makeProps({ currentLockedFields: { start_year: true } }),
+      makeProps({ metadata: { locked_fields: { start_year: true } } }),
       {
         series: [{ key: "description", lockable: true, clearable: true }],
         books: [],

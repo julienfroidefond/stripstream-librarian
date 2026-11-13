@@ -1,109 +1,86 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { Button, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
-import type { MetadataProviderDto } from "../../lib/api";
+import type { LibraryDto, MetadataProviderDto } from "@/lib/api";
+import {
+  PREDEFINED_LIBRARY_TAGS,
+  applyLibraryWrites,
+  diffLibrarySettings,
+  librarySettingsFromForm,
+  librarySettingsOf,
+  type LibraryWriter,
+} from "@/lib/libraries/settings";
 
 interface LibraryActionsProps {
-  libraryId: string;
-  monitorEnabled: boolean;
-  scanMode: string;
-  watcherEnabled: boolean;
-  metadataProvider: string | null;
-  fallbackMetadataProvider: string | null;
-  metadataRefreshMode: string;
-  readingStatusProvider: string | null;
-  readingStatusPushMode: string;
-  downloadDetectionMode: string;
-  tags: string[];
-  onUpdate?: () => void;
+  library: LibraryDto;
+  /** Loaded once by the page, shared by every library card. */
+  providers: MetadataProviderDto[];
 }
 
-export function LibraryActions({
-  libraryId,
-  monitorEnabled,
-  scanMode,
-  watcherEnabled,
-  metadataProvider,
-  fallbackMetadataProvider,
-  metadataRefreshMode,
-  readingStatusProvider,
-  readingStatusPushMode,
-  downloadDetectionMode,
-  tags: initialTags,
-}: LibraryActionsProps) {
+const writeLibrary: LibraryWriter = (libraryId, write) => {
+  const api = browserApi.libraries;
+  switch (write.kind) {
+    case "monitoring":
+      return api.updateMonitoring(libraryId, {
+        monitor_enabled: write.monitor_enabled,
+        scan_mode: write.scan_mode,
+        watcher_enabled: write.watcher_enabled,
+        metadata_refresh_mode: write.metadata_refresh_mode,
+        download_detection_mode: write.download_detection_mode,
+      });
+    case "metadataProvider":
+      return api.updateMetadataProvider(libraryId, write.provider, write.fallbackProvider);
+    case "readingStatusProvider":
+      return api.updateReadingStatusProvider(libraryId, write.provider, write.pushMode);
+    case "tags":
+      return api.updateTags(libraryId, write.tags);
+  }
+};
+
+export function LibraryActions({ library, providers }: LibraryActionsProps) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const settings = librarySettingsOf(library);
+  const {
+    monitor_enabled: monitorEnabled,
+    scan_mode: scanMode,
+    watcher_enabled: watcherEnabled,
+    metadata_provider: metadataProvider,
+    fallback_metadata_provider: fallbackMetadataProvider,
+    metadata_refresh_mode: metadataRefreshMode,
+    reading_status_provider: readingStatusProvider,
+    reading_status_push_mode: readingStatusPushMode,
+    download_detection_mode: downloadDetectionMode,
+  } = settings;
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [tags, setTags] = useState<string[]>(initialTags);
-  const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
-
-  useEffect(() => {
-    browserApi.metadata.providers()
-      .then((data) => setProviders(data))
-      .catch(() => setProviders([]));
-  }, []);
-
-  const PREDEFINED_TAGS = [
-    "manga",
-    "manhwa",
-    "manhua",
-    "bd-jeunesse",
-    "bd-adulte",
-    "bd-franco-belge",
-    "comics",
-    "webtoon",
-    "light-novel",
-  ];
+  const [tags, setTags] = useState<string[]>(settings.tags);
 
   const handleSubmit = (formData: FormData) => {
     setSaveError(null);
     startTransition(async () => {
-      const monitorEnabled = formData.get("monitor_enabled") === "true";
-      const watcherEnabled = formData.get("watcher_enabled") === "true";
-      const scanMode = formData.get("scan_mode") as string;
-      const newMetadataProvider = (formData.get("metadata_provider") as string) || null;
-      const newFallbackProvider = (formData.get("fallback_metadata_provider") as string) || null;
-      const newMetadataRefreshMode = formData.get("metadata_refresh_mode") as string;
-      const newReadingStatusProvider = (formData.get("reading_status_provider") as string) || null;
-      const newReadingStatusPushMode = (formData.get("reading_status_push_mode") as string) || "manual";
-      const newDownloadDetectionMode = (formData.get("download_detection_mode") as string) || "manual";
+      const writes = diffLibrarySettings(settings, librarySettingsFromForm(formData, tags));
+      const result = await applyLibraryWrites(library.id, writes, writeLibrary);
 
-      try {
-        await Promise.all([
-          browserApi.libraries.updateMonitoring(libraryId, {
-            monitor_enabled: monitorEnabled,
-            scan_mode: scanMode,
-            watcher_enabled: watcherEnabled,
-            metadata_refresh_mode: newMetadataRefreshMode,
-            download_detection_mode: newDownloadDetectionMode,
-          }),
-          browserApi.libraries.updateMetadataProvider(libraryId, newMetadataProvider, newFallbackProvider),
-          browserApi.libraries.updateReadingStatusProvider(
-            libraryId,
-            newReadingStatusProvider,
-            newReadingStatusPushMode
-          ),
-          browserApi.libraries.updateTags(libraryId, tags),
-        ]);
-
+      // The route handlers invalidate the server cache; refresh re-renders the page.
+      if (result.applied.length > 0) router.refresh();
+      if (result.status === "ok") {
         setIsOpen(false);
-        window.location.reload();
-      } catch (error) {
-        const msg = error instanceof ApiError
-          ? browserErrorMessage(error, `HTTP ${error.status}`)
-          : error instanceof Error
-            ? error.message
-            : "Network error";
-        console.error("Failed to save settings:", msg);
-        setSaveError(msg);
+        return;
       }
+      setSaveError(
+        result.error instanceof ApiError
+          ? browserErrorMessage(result.error, t("settings.saveError"))
+          : t("common.networkError"),
+      );
     });
   };
 
@@ -112,7 +89,11 @@ export function LibraryActions({
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setTags(settings.tags);
+          setSaveError(null);
+          setIsOpen(true);
+        }}
         aria-label={t("libraryActions.settingsTitle")}
         title={t("libraryActions.settingsTitle")}
         className={isOpen ? "bg-accent" : ""}
@@ -292,7 +273,7 @@ export function LibraryActions({
                       {t("library.tags")}
                     </h3>
                     <div className="flex flex-wrap gap-2">
-                      {PREDEFINED_TAGS.map((tag) => {
+                      {PREDEFINED_LIBRARY_TAGS.map((tag) => {
                         const active = tags.includes(tag);
                         return (
                           <button

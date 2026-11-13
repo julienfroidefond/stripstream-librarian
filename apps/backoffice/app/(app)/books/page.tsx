@@ -1,7 +1,8 @@
 import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, SeriesHitDto, getBookCoverUrl } from "@/lib/api";
 import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
-import { LiveSearchForm } from "@/app/components/LiveSearchForm";
+import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
+import { hasActiveFilters, libraryOptions, metadataOptions, readingStatusOptions, sortOptions } from "@/lib/catalogFilters";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { OffsetPagination } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
@@ -65,18 +66,6 @@ export default async function BooksPage({
 
   const totalPages = Math.ceil(total / limit);
 
-  const libraryOptions = [
-    { value: "", label: t("books.allLibraries") },
-    ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
-  ];
-
-  const statusOptions = [
-    { value: "", label: t("common.all") },
-    { value: "unread", label: t("status.unread") },
-    { value: "reading", label: t("status.reading") },
-    { value: "read", label: t("status.read") },
-  ];
-
   const formatOptions = [
     { value: "", label: t("books.allFormats") },
     { value: "cbz", label: "CBZ" },
@@ -85,18 +74,23 @@ export default async function BooksPage({
     { value: "epub", label: "EPUB" },
   ];
 
-  const metadataOptions = [
-    { value: "", label: t("series.metadataAll") },
-    { value: "linked", label: t("series.metadataLinked") },
-    { value: "unlinked", label: t("series.metadataUnlinked") },
+  const filterValues: Record<string, string> = {
+    q: searchQuery,
+    library: libraryId || "",
+    status: readingStatus || "",
+    format: format || "",
+    metadata: metadataProvider || "",
+    sort: sort || "",
+  };
+  const filterFields: LiveSearchField[] = [
+    { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
+    { name: "library", type: "select", label: t("books.library"), options: libraryOptions(t, libraries) },
+    ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("books.status"), options: readingStatusOptions(t) }] : []),
+    { name: "format", type: "select", label: t("books.format"), options: formatOptions },
+    { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions(t) },
+    { name: "sort", type: "select", label: t("books.sort"), options: sortOptions(t, "books") },
   ];
-
-  const sortOptions = [
-    { value: "", label: t("books.sortTitle") },
-    { value: "latest", label: t("books.sortLatest") },
-  ];
-
-  const hasFilters = searchQuery || libraryId || (hasActiveUser && readingStatus) || format || metadataProvider || sort;
+  const hasFilters = hasActiveFilters(filterValues, filterFields);
 
   return (
     <>
@@ -113,22 +107,8 @@ export default async function BooksPage({
       <LiveSearchForm
         className="mb-6"
         basePath="/books"
-        initialValues={{
-          q: searchQuery,
-          library: libraryId || "",
-          status: readingStatus || "",
-          format: format || "",
-          metadata: metadataProvider || "",
-          sort: sort || "",
-        }}
-        fields={[
-          { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
-          { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-          ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("books.status"), options: statusOptions }] : []),
-          { name: "format", type: "select", label: t("books.format"), options: formatOptions },
-          { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions },
-          { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-        ]}
+        initialValues={filterValues}
+        fields={filterFields}
       />
 
       {/* Résultats */}
