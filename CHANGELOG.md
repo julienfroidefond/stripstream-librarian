@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.155 — 2026-11-13
+
+### Refactoring
+
+- **scanner** — reconcile a known file once through a pure decision and one writer ([#293](https://github.com/julienfroidefond/stripstream-librarian/pull/293))
+
 ## v3.32.154 — 2026-11-13
 
 ### Refactoring
