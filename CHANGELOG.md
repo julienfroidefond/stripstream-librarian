@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.146 — 2026-11-13
+
+### Refactoring
+
+- **downloads** — one transfer-progress module ([#285](https://github.com/julienfroidefond/stripstream-librarian/pull/285))
+
 ## v3.32.145 — 2026-11-13
 
 ### Documentation
