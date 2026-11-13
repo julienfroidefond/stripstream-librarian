@@ -260,7 +260,9 @@ verdict. Never compute a confidence or compare it to `1.0` by hand.
 Path handling uses typed `LibraryRoot` / `LibraryPath` values from `crates/core/src/paths.rs`
 (`resolve`, `to_local`, `to_db`) — never join `/libraries` by hand. The 2-phase indexer
 architecture (discovery then analysis) and the `books.analysis_status` lifecycle are documented in
-`apps/indexer/AGENTS.md`.
+`apps/indexer/AGENTS.md`. Every `analysis_status` transition (claim, release, failure, page counts,
+covers from the indexer or the API, cover reset) goes through `crates/core/src/analysis.rs`;
+never write that column in SQL elsewhere (discovery only inserts `discovered`).
 
 ---
 

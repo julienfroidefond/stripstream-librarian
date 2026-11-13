@@ -13,7 +13,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
 | `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) |
-| `batch.rs` | `ScanBatch::flush` avec UNNEST (`BookInsert/BookUpdate/BookCorrection/FileInsert/FileUpdate/EventInsert`), `claim_analysis_books` / `flush_analysis_status` |
+| `batch.rs` | `ScanBatch::flush` avec UNNEST (`BookInsert/BookUpdate/BookCorrection/FileInsert/FileUpdate/EventInsert`) ; les transitions d'analyse sont dans `stripstream_core::analysis` |
 | `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
 | `watcher.rs` | Polling filesystem toutes les **30 s** (snapshot, pas d'inotify) — crée des jobs `rebuild` |
 | `api.rs` | Handlers HTTP de l'indexer (`/health`, `/version`, `/ready`) |
@@ -116,7 +116,12 @@ Traitement progressif en background, piloté par `books.analysis_status` (voir c
 | `complete` | Nombre de pages et miniature connus | — |
 | `failed` | Dernière analyse sans nombre de pages | analyse complète (retry) |
 
-Transitions : skip/annulation → `discovered` ; erreur d'extraction ou page count irrécupérable →
+Toutes ces transitions vivent dans `stripstream_core::analysis` (ADR 0025) : `claim(pool, ids,
+AnalysisMode)`, `release`, `mark_failed`, `record_page_counts`, `record_covers` (indexer),
+`record_cover` (rendu à la volée de l'API) et `reset_covers` (régénération). La discovery n'écrit
+que `discovered` via `ScanBatch`. N'écrivez jamais `analysis_status` en SQL ailleurs.
+
+Transitions : skip/annulation d'un livre `analyzing` → `discovered` (un `cover_pending` le reste) ; erreur d'extraction ou page count irrécupérable →
 `failed` ; page count récupéré → `cover_pending` ou `complete` selon la miniature déjà présente ;
 miniature écrite → `complete`. Un échec de redimensionnement laisse l'état courant (`analyzing` en
 analyse complète, `cover_pending` en miniatures seules) pour que le prochain job reprenne le livre.

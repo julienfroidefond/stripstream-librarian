@@ -761,23 +761,9 @@ async fn persist_rendered_thumbnail(
         .map_err(|e| ApiError::internal(format!("cannot publish thumbnail: {e}")))?;
 
     let path = thumbnail_path.to_string_lossy().into_owned();
-    sqlx::query(
-        r#"
-        UPDATE books SET
-            thumbnail_path = $1,
-            analysis_status = CASE
-                WHEN analysis_status = 'cover_pending' AND page_count IS NOT NULL THEN 'complete'
-                ELSE analysis_status
-            END,
-            updated_at = NOW()
-        WHERE id = $2
-        "#,
-    )
-    .bind(&path)
-    .bind(book_id)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
+    stripstream_core::analysis::record_cover(&state.pool, book_id, &path)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
 
     Ok(path)
 }

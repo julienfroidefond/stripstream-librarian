@@ -9,16 +9,13 @@ use sqlx::Row;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use stripstream_core::analysis::AnalysisStatus;
+use stripstream_core::analysis::{self, AnalysisMode};
 use stripstream_core::settings::load_setting;
 use stripstream_jobs::is_job_cancelled;
 use stripstream_thumbnails::{ThumbnailSettings, ThumbnailStore};
 
 use crate::{
-    batch::{
-        claim_analysis_books, flush_analysis_status, flush_events, flush_page_counts,
-        flush_parse_errors, flush_thumbnails, EventInsert,
-    },
+    batch::{flush_events, flush_parse_errors, EventInsert},
     job::JobCancelled,
     AppState,
 };
@@ -178,27 +175,26 @@ pub async fn analyze_library_books(
         return Ok(());
     }
 
-    let query_filter = if thumbnail_only {
-        "b.analysis_status = 'cover_pending'"
+    let mode = if thumbnail_only {
+        AnalysisMode::CoverOnly
     } else {
-        "b.analysis_status IN ('discovered', 'analyzing', 'failed')"
+        AnalysisMode::Full
     };
+    let selected = mode.selected_values();
 
-    let count_sql = format!(
+    let total: i32 = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM books b
         JOIN book_files bf ON bf.book_id = b.id
         WHERE (b.library_id = $1 OR $1 IS NULL)
-          AND {}
+          AND b.analysis_status = ANY($2)
         "#,
-        query_filter
-    );
-
-    let total: i32 = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
-        .bind(library_id)
-        .fetch_one(&state.pool)
-        .await? as i32;
+    )
+    .bind(library_id)
+    .bind(&selected)
+    .fetch_one(&state.pool)
+    .await? as i32;
 
     if total == 0 {
         info!("[ANALYZER] No books to analyze");
@@ -238,18 +234,15 @@ pub async fn analyze_library_books(
     let mut attempted: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
     // Failed books keep matching the filter; excluding attempted ids guarantees termination.
-    let fetch_sql = format!(
-        r#"
+    const FETCH_SQL: &str = r#"
         SELECT b.id AS book_id, bf.abs_path, bf.format, (b.thumbnail_path IS NULL) AS needs_thumbnail
         FROM books b
         JOIN book_files bf ON bf.book_id = b.id
         WHERE (b.library_id = $1 OR $1 IS NULL)
-          AND {}
+          AND b.analysis_status = ANY($4)
           AND NOT (b.id = ANY($3))
         LIMIT $2
-        "#,
-        query_filter
-    );
+        "#;
 
     loop {
         if cancelled_flag.load(Ordering::Relaxed) {
@@ -257,10 +250,11 @@ pub async fn analyze_library_books(
         }
 
         let attempted_ids: Vec<Uuid> = attempted.iter().copied().collect();
-        let rows = sqlx::query(sqlx::AssertSqlSafe(fetch_sql.as_str()))
+        let rows = sqlx::query(FETCH_SQL)
             .bind(library_id)
             .bind(FETCH_BATCH)
             .bind(&attempted_ids)
+            .bind(&selected)
             .fetch_all(&state.pool)
             .await?;
 
@@ -283,7 +277,7 @@ pub async fn analyze_library_books(
         }
 
         let task_ids: Vec<Uuid> = tasks.iter().map(|task| task.book_id).collect();
-        claim_analysis_books(&state.pool, &task_ids).await?;
+        analysis::claim(&state.pool, &task_ids, mode).await?;
 
         let num_batches = tasks.len().div_ceil(BATCH_SIZE);
         let task_chunks: Vec<Vec<BookTask>> = tasks
@@ -518,7 +512,8 @@ pub async fn analyze_library_books(
 
             let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
             let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
-            let mut status_updates: Vec<(Uuid, AnalysisStatus)> = Vec::new();
+            let mut released: Vec<Uuid> = Vec::new();
+            let mut failed: Vec<Uuid> = Vec::new();
             let mut events: Vec<EventInsert> = Vec::new();
             let mut resource_forks: Vec<Uuid> = Vec::new();
 
@@ -527,7 +522,7 @@ pub async fn analyze_library_books(
             for outcome in batch_outcomes {
                 match outcome {
                     ExtractOutcome::Skipped { book_id } => {
-                        status_updates.push((book_id, AnalysisStatus::Discovered));
+                        released.push(book_id);
                     }
                     ExtractOutcome::ResourceFork { book_id } => resource_forks.push(book_id),
                     ExtractOutcome::Error {
@@ -537,7 +532,7 @@ pub async fn analyze_library_books(
                         message,
                     } => {
                         parse_errors.push((book_id, parse_error));
-                        status_updates.push((book_id, AnalysisStatus::Failed));
+                        failed.push(book_id);
                         events.push(EventInsert {
                             job_id,
                             event_type: "error".to_string(),
@@ -554,7 +549,7 @@ pub async fn analyze_library_books(
                         local_path,
                         message,
                     } => {
-                        status_updates.push((book_id, AnalysisStatus::Failed));
+                        failed.push(book_id);
                         events.push(EventInsert {
                             job_id,
                             event_type: "error".to_string(),
@@ -622,14 +617,17 @@ pub async fn analyze_library_books(
                 .await?;
             }
 
-            if let Err(e) = flush_page_counts(&state.pool, &mut page_count_updates).await {
-                warn!("[ANALYZER] Failed to flush page counts: {e}");
+            if let Err(e) = analysis::record_page_counts(&state.pool, &page_count_updates).await {
+                warn!("[ANALYZER] Failed to record page counts: {e}");
             }
             if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
                 warn!("[ANALYZER] Failed to flush parse errors: {e}");
             }
-            if let Err(e) = flush_analysis_status(&state.pool, &mut status_updates).await {
-                warn!("[ANALYZER] Failed to flush analysis statuses: {e}");
+            if let Err(e) = analysis::mark_failed(&state.pool, &failed).await {
+                warn!("[ANALYZER] Failed to record analysis failures: {e}");
+            }
+            if let Err(e) = analysis::release(&state.pool, &released).await {
+                warn!("[ANALYZER] Failed to release analysis claims: {e}");
             }
             if let Err(e) = flush_events(&state.pool, &mut events).await {
                 warn!("[ANALYZER] Failed to flush events: {e}");
@@ -766,8 +764,8 @@ pub async fn analyze_library_books(
             thumb_updates.push((book_id, page_count, thumb_path));
         }
 
-        if let Err(e) = flush_thumbnails(&state.pool, &mut thumb_updates).await {
-            warn!("[ANALYZER] Failed to flush thumbnails: {e}");
+        if let Err(e) = analysis::record_covers(&state.pool, &thumb_updates).await {
+            warn!("[ANALYZER] Failed to record thumbnails: {e}");
         }
         if let Err(e) = flush_events(&state.pool, &mut events).await {
             warn!("[ANALYZER] Failed to flush events: {e}");
@@ -834,19 +832,9 @@ pub async fn regenerate_thumbnails(
         return Ok(());
     }
 
-    let book_ids_to_clear: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT id FROM books
-        WHERE (library_id = $1 OR $1 IS NULL)
-          AND analysis_status = 'complete'
-          AND page_count IS NOT NULL
-          AND thumbnail_path IS NOT NULL
-        "#,
-    )
-    .bind(library_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    // Reset the rows first: a crash before the purge only leaves orphan files
+    // (removed by `purge_orphans`), never rows pointing at deleted covers.
+    let book_ids_to_clear = analysis::reset_covers(&state.pool, library_id).await?;
 
     let deleted_count = tokio::task::spawn_blocking(move || {
         book_ids_to_clear
@@ -859,21 +847,6 @@ pub async fn regenerate_thumbnails(
         "[ANALYZER] Deleted {} thumbnail files for regeneration",
         deleted_count
     );
-
-    sqlx::query(
-        r#"
-        UPDATE books SET
-            thumbnail_path = NULL,
-            analysis_status = 'cover_pending',
-            updated_at = NOW()
-        WHERE (library_id = $1 OR $1 IS NULL)
-          AND analysis_status = 'complete'
-          AND page_count IS NOT NULL
-        "#,
-    )
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
 
     analyze_library_books(state, job_id, library_id, true).await
 }
