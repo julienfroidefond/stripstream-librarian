@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import {
   TorrentDownloadDto,
@@ -30,10 +29,11 @@ import {
   type AvailableSourceFilter,
   type DownloadFilter,
 } from "@/lib/downloads";
-import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
-import { browserApi, browserErrorMessage } from "@/lib/api/browser";
-import { ApiError } from "@/lib/api/errors";
+import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
+import { browserApi } from "@/lib/api/browser";
+import type { DownloadAction } from "@/lib/downloadActions";
 import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
+import { DownloadActionsProvider, useDownloadActions } from "./useDownloadActions";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
@@ -52,12 +52,6 @@ interface DownloadsPageProps {
 }
 
 const PAGE_SIZE = 10;
-
-/** Upstream message for a failed action, preserving `Error N` for HTTP errors. */
-function browserFailureMessage(error: unknown): string {
-  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialDownloadClient = null, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
@@ -101,6 +95,22 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     }
   }, [setDownloads, setTelegramDownloads, setDdlProviderDownloads]);
 
+  /**
+   * What a successful write refreshes. Starting a Telegram download only flips
+   * that book to "queued" locally: the available endpoint stops listing it as
+   * soon as its status changes, and the SSE stream pushes the new download row.
+   */
+  const handleActionSuccess = useCallback((action: DownloadAction, id: string) => {
+    if (action.target === "telegram" && action.verb === "start") {
+      setTelegramAvailable(prev => prev.map(group => ({
+        ...group,
+        books: group.books.map(book => book.id === id ? { ...book, status: "queued" } : book),
+      })));
+      return;
+    }
+    void refresh(false);
+  }, [refresh]);
+
   const merged = mergeDownloads(downloads, telegramDownloads, ddlProviderDownloads);
 
   const statusFilters: Array<{ id: DownloadFilter; label: string }> = [
@@ -119,135 +129,120 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
 
   return (
     <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} initialClient={initialDownloadClient} onDownloadStarted={() => refresh(false)}>
-      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
-        <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
-          <Icon name="download" size="lg" className="sm:hidden text-success" />
-          <Icon name="download" size="xl" className="hidden sm:block text-success" />
-          {t("downloads.title")}
-        </h1>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <DownloadClientIndicator />
-          <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
-            {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
-            <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto scrollbar-none">
-        {statusFilters.map(f => (
-          <button
-            key={f.id}
-            onClick={() => handleStatusFilterChange(f.id)}
-            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              statusFilter === f.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
-          >
-            {f.label}
-            {f.id !== "all" && (
-              <span className="ml-1 sm:ml-1.5 text-3xs sm:text-xs opacity-60">
-                {merged.filter(item => matchesDownloadFilter(item, f.id)).length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {visible.length === 0 ? (
-        <Card className="mt-4">
-          <CardContent className="pt-16 pb-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-            <Icon name="download" size="xl" className="opacity-30" />
-            <p className="text-sm">{t("downloads.empty")}</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="space-y-1.5">
-            {paged.map(item => item.kind === "torrent"
-              ? <DownloadRow key={item.key} dl={item.data} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
-              : item.kind === "telegram"
-              ? <TelegramDownloadRow key={item.key} item={item.data} onRefresh={() => refresh(false)} />
-              : <DdlProviderDownloadRow key={item.key} item={item.data} onRefresh={() => refresh(false)} />
-            )}
+      <DownloadActionsProvider onRefresh={handleActionSuccess}>
+        <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
+          <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
+            <Icon name="download" size="lg" className="sm:hidden text-success" />
+            <Icon name="download" size="xl" className="hidden sm:block text-success" />
+            {t("downloads.title")}
+          </h1>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <DownloadClientIndicator />
+            <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
+              {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+              <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
+            </Button>
           </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-4">
-              <Button variant="outline" size="xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                <Icon name="chevronLeft" size="sm" />
-              </Button>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {page} / {totalPages}
-              </span>
-              <Button variant="outline" size="xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                <Icon name="chevronRight" size="sm" />
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+        </div>
 
-      {(latestFound.length > 0 || telegramAvailable.length > 0) && (
-        <AvailableDownloadsSection
-          latestFound={latestFound}
-          telegramAvailable={telegramAvailable}
-          onRefresh={() => refresh(false)}
-          onTelegramDownloaded={(bookId) => {
-            setTelegramAvailable(prev => prev.map(group => ({
-              ...group,
-              books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
-            })));
-          }}
-        />
-      )}
+        {/* Filter bar */}
+        <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto scrollbar-none">
+          {statusFilters.map(f => (
+            <button
+              key={f.id}
+              onClick={() => handleStatusFilterChange(f.id)}
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                statusFilter === f.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              }`}
+            >
+              {f.label}
+              {f.id !== "all" && (
+                <span className="ml-1 sm:ml-1.5 text-3xs sm:text-xs opacity-60">
+                  {merged.filter(item => matchesDownloadFilter(item, f.id)).length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {visible.length === 0 ? (
+          <Card className="mt-4">
+            <CardContent className="pt-16 pb-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Icon name="download" size="xl" className="opacity-30" />
+              <p className="text-sm">{t("downloads.empty")}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              {paged.map(item => item.kind === "torrent"
+                ? <DownloadRow key={item.key} dl={item.data} />
+                : item.kind === "telegram"
+                ? <TelegramDownloadRow key={item.key} item={item.data} />
+                : <DdlProviderDownloadRow key={item.key} item={item.data} />
+              )}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <Button variant="outline" size="xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                  <Icon name="chevronLeft" size="sm" />
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button variant="outline" size="xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                  <Icon name="chevronRight" size="sm" />
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+
+        {(latestFound.length > 0 || telegramAvailable.length > 0) && (
+          <AvailableDownloadsSection
+            latestFound={latestFound}
+            telegramAvailable={telegramAvailable}
+          />
+        )}
+      </DownloadActionsProvider>
     </DownloadClientProvider>
   );
 }
 
 const RETRYABLE_STATUSES = new Set(["importing", "error", "no_files_imported", "partial"]);
 
-export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
+export function DownloadRow({ dl }: { dl: TorrentDownloadDto }) {
   const { t } = useTranslation();
-  const [deleting, setDeleting] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const { busy, state, run } = useDownloadActions();
+  const actionState = state(dl.id);
+  const pendingVerb = actionState.status === "pending" ? actionState.verb : null;
+  const retrying = pendingVerb === "retry";
+  const deleting = pendingVerb === "delete";
   const allImported = Array.isArray(dl.imported_files) ? dl.imported_files : [];
   const importedCount = allImported.filter((f: { already_existed?: boolean }) => !f.already_existed).length;
   const alreadyExistedCount = allImported.filter((f: { already_existed?: boolean }) => f.already_existed).length;
 
-  async function handleDelete() {
-    setDeleting(true);
-    setShowConfirm(false);
-    try {
-      await browserApi.downloads.torrents.remove(dl.id);
-      onDeleted();
-    } catch {
-      // keep the row when the delete is rejected
-    } finally {
-      setDeleting(false);
-    }
+  function handleDelete() {
+    const cancelling = dl.status === "downloading";
+    run({ target: "torrent", verb: "delete" }, dl.id, {
+      confirm: {
+        title: cancelling ? t("downloads.cancel") : t("downloads.delete"),
+        message: cancelling ? t("downloads.confirmCancel") : t("downloads.confirmDelete"),
+        confirmLabel: cancelling ? t("downloads.cancel") : t("downloads.delete"),
+      },
+    });
   }
 
-  async function handleRetry() {
-    setRetrying(true);
-    try {
-      // A failed AllDebrid magnet never produced local files: restart the magnet
-      // itself instead of the (impossible) import. Import errors on a downloaded
-      // torrent keep going through the regular import retry.
-      const magnetFailed = dl.client === "alldebrid" && dl.status === "error" && !dl.content_path;
-      if (magnetFailed) {
-        await browserApi.downloads.alldebrid.restart(dl.id);
-      } else {
-        await browserApi.downloads.torrents.retry(dl.id);
-      }
-      onRetried();
-    } catch (error) {
-      toast(browserFailureMessage(error), "error");
-    } finally {
-      setRetrying(false);
-    }
+  function handleRetry() {
+    // A failed AllDebrid magnet never produced local files: restart the magnet
+    // itself instead of the (impossible) import. Import errors on a downloaded
+    // torrent keep going through the regular import retry.
+    const magnetFailed = dl.client === "alldebrid" && dl.status === "error" && !dl.content_path;
+    run(magnetFailed
+      ? { target: "alldebrid", verb: "retry" }
+      : { target: "torrent", verb: "retry" }, dl.id);
   }
 
   const canRetry = RETRYABLE_STATUSES.has(dl.status);
@@ -358,7 +353,7 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
           <button
             type="button"
             onClick={handleRetry}
-            disabled={retrying}
+            disabled={busy(dl.id)}
             className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
             title={t("downloads.retry")}
           >
@@ -367,44 +362,14 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
         )}
         <button
           type="button"
-          onClick={() => setShowConfirm(true)}
-          disabled={deleting || dl.status === "importing"}
+          onClick={handleDelete}
+          disabled={busy(dl.id) || dl.status === "importing"}
           className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
           title={dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
         >
           {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
         </button>
       </div>
-
-      {showConfirm && createPortal(
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {dl.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
-                </p>
-              </div>
-              <div className="flex justify-end gap-2 px-6 pb-6">
-                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleDelete}>
-                  {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
     </>
   );
 }
@@ -425,35 +390,29 @@ function TransferStats({ speed, eta }: { speed: number; eta: number }) {
   );
 }
 
-function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDto; onRefresh: () => void }) {
+function TelegramDownloadRow({ item }: { item: TelegramDownloadItemDto }) {
   const { t } = useTranslation();
-  const [retrying, setRetrying] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const { busy, state, run } = useDownloadActions();
+  const actionState = state(item.id);
+  const pendingVerb = actionState.status === "pending" ? actionState.verb : null;
+  const retrying = pendingVerb === "retry";
+  const deleting = pendingVerb === "dismiss" || pendingVerb === "delete";
 
-  async function handleRetry() {
-    setRetrying(true);
-    try {
-      await browserApi.telegram.downloadBook(item.id);
-      onRefresh();
-    } catch (error) {
-      toast(browserFailureMessage(error), "error");
-    } finally {
-      setRetrying(false);
-    }
+  function handleRetry() {
+    run({ target: "telegram", verb: "retry" }, item.id);
   }
 
-  async function handleDelete() {
-    setDeleting(true);
-    setShowConfirm(false);
-    try {
-      await browserApi.telegram.deleteBook(item.id);
-      onRefresh();
-    } catch {
-      // keep the row when the delete is rejected
-    } finally {
-      setDeleting(false);
-    }
+  // The trash hides the row and blacklists the release: it stays reversible from
+  // the hidden-releases panel, but a running transfer is cancelled on the spot.
+  function handleDelete() {
+    const cancelling = item.status === "queued" || item.status === "downloading";
+    run({ target: "telegram", verb: "dismiss" }, item.id, {
+      confirm: {
+        title: cancelling ? t("downloads.cancel") : t("downloads.delete"),
+        message: item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete"),
+        confirmLabel: cancelling ? t("downloads.cancel") : t("downloads.delete"),
+      },
+    });
   }
 
   // Map telegram statuses to qBit status classes/labels
@@ -544,7 +503,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
           <button
             type="button"
             onClick={handleRetry}
-            disabled={retrying}
+            disabled={busy(item.id)}
             className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
             title={t("downloads.retry")}
           >
@@ -553,89 +512,42 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
         )}
         <button
           type="button"
-          onClick={() => setShowConfirm(true)}
-          disabled={deleting}
+          onClick={handleDelete}
+          disabled={busy(item.id)}
           className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
           title={(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
         >
           {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
         </button>
       </div>
-
-      {showConfirm && createPortal(
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
-                </p>
-              </div>
-              <div className="flex justify-end gap-2 px-6 pb-6">
-                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleDelete}>
-                  {(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
     </>
   );
 }
 
-function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownloadDto; onRefresh: () => void }) {
+function DdlProviderDownloadRow({ item }: { item: DdlProviderDownloadDto }) {
   const { t } = useTranslation();
-  const [retrying, setRetrying] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const { busy, state, run } = useDownloadActions();
+  const actionState = state(item.id);
+  const pendingVerb = actionState.status === "pending" ? actionState.verb : null;
+  const retrying = pendingVerb === "retry";
+  const deleting = pendingVerb === "dismiss" || pendingVerb === "delete";
 
   const isActive = item.status === "queued" || item.status === "downloading";
   const canRetry = !!item.library_id && (item.status === "failed" || item.status === "imported" || item.status === "dismissed");
 
-  async function handleRetry() {
-    if (!item.library_id) return;
-    setRetrying(true);
-    try {
-      await browserApi.ddl.startDownload(item.provider, {
-        external_id: item.external_id,
-        filename: item.filename,
-        size: item.file_size,
-        library_id: item.library_id,
-        series_name: item.series_name ?? item.filename,
-        volume_number: item.volume_number,
-      });
-      onRefresh();
-    } catch (error) {
-      toast(browserFailureMessage(error), "error");
-    } finally {
-      setRetrying(false);
-    }
+  function handleRetry() {
+    run({ target: "ddl", verb: "retry" }, item.id, { context: { ddlDownload: item } });
   }
 
-  async function handleDelete() {
-    setDeleting(true);
-    setShowConfirm(false);
-    try {
-      // Active downloads are only dismissed (aborted + hidden); finished ones are removed.
-      await browserApi.ddl.dismissDownload(item.id, !isActive);
-      onRefresh();
-    } catch {
-      // keep the row when the delete is rejected
-    } finally {
-      setDeleting(false);
-    }
+  function handleDelete() {
+    // Active downloads are only dismissed (aborted + hidden); finished ones are removed.
+    run({ target: "ddl", verb: isActive ? "dismiss" : "delete" }, item.id, {
+      confirm: {
+        title: isActive ? t("downloads.cancel") : t("downloads.delete"),
+        message: item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete"),
+        confirmLabel: isActive ? t("downloads.cancel") : t("downloads.delete"),
+      },
+    });
   }
 
   const ddlStatus = item.status === "failed" ? "error" : item.status;
@@ -732,7 +644,7 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
           <button
             type="button"
             onClick={handleRetry}
-            disabled={retrying}
+            disabled={busy(item.id)}
             className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
             title={t("downloads.retry")}
           >
@@ -741,44 +653,14 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
         )}
         <button
           type="button"
-          onClick={() => setShowConfirm(true)}
-          disabled={deleting}
+          onClick={handleDelete}
+          disabled={busy(item.id)}
           className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
           title={isActive ? t("downloads.cancel") : t("downloads.delete")}
         >
           {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
         </button>
       </div>
-
-      {showConfirm && createPortal(
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {isActive ? t("downloads.cancel") : t("downloads.delete")}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
-                </p>
-              </div>
-              <div className="flex justify-end gap-2 px-6 pb-6">
-                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleDelete}>
-                  {isActive ? t("downloads.cancel") : t("downloads.delete")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
     </>
   );
 }
@@ -786,24 +668,16 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
 export function AvailableDownloadsSection({
   latestFound,
   telegramAvailable,
-  onRefresh,
-  onTelegramDownloaded,
 }: {
   latestFound: LatestFoundPerLibraryDto[];
   telegramAvailable: TelegramAvailableGroupDto[];
-  onRefresh: () => void;
-  onTelegramDownloaded?: (bookId: string) => void;
 }) {
   const { t } = useTranslation();
+  const { busy, state, run } = useDownloadActions();
   const [sort, setSort] = useState<AvailableSortKey>("recent");
   const [filterLib, setFilterLib] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<AvailableSourceFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [downloadingTelegramIds, setDownloadingTelegramIds] = useState<Set<string>>(new Set());
-  const [dismissingTelegramIds, setDismissingTelegramIds] = useState<Set<string>>(new Set());
-  const [deletingTelegramIds, setDeletingTelegramIds] = useState<Set<string>>(new Set());
-  const [downloadingDdlKeys, setDownloadingDdlKeys] = useState<Set<string>>(new Set());
 
   const allResults = buildAvailableGroups(latestFound, telegramAvailable);
   const sorted = sortAvailableGroups(
@@ -812,21 +686,21 @@ export function AvailableDownloadsSection({
   );
   const libraries = availableLibraries(allResults);
 
-  async function handleDeleteRelease(seriesId: string, releaseIdx: number, blacklist = false) {
-    const key = `${seriesId}-${releaseIdx}`;
-    setDeletingKey(key);
-    try {
-      await browserApi.downloads.available.removeRelease(seriesId, releaseIdx, blacklist);
-      onRefresh();
-      if (blacklist && showBlacklist) fetchBlacklist();
-    } catch {
-      // keep the release when the remove is rejected
-    } finally {
-      setDeletingKey(null);
-    }
+  /** The verb an item currently has in flight, so a row can pick its spinner. */
+  function pendingVerb(id: string) {
+    const current = state(id);
+    return current.status === "pending" ? current.verb : null;
   }
 
-  async function handleDeleteProwlarrEntries(group: AvailableGroup) {
+  function handleDeleteRelease(entryId: string, releaseIdx: number, blacklist = false) {
+    run(
+      { target: "release", verb: blacklist ? "dismiss" : "delete" },
+      `${entryId}-${releaseIdx}`,
+      { context: { release: { entryId, releaseIndex: releaseIdx } } },
+    );
+  }
+
+  function handleDeleteProwlarrEntries(group: AvailableGroup) {
     const ids = Array.from(new Set(
       group.sources
         .filter((source): source is Extract<AvailableSource, { kind: "prowlarr" } | { kind: "ddl" }> =>
@@ -834,74 +708,43 @@ export function AvailableDownloadsSection({
         )
         .map(source => source.entryId),
     ));
-    setDeletingKey(group.key);
-    try {
-      await Promise.allSettled(ids.map(id => browserApi.downloads.available.removeEntry(id)));
-      onRefresh();
-    } finally {
-      setDeletingKey(null);
-    }
+    if (ids.length === 0) return;
+    run({ target: "entries", verb: "delete" }, group.key, { context: { entryIds: ids } });
   }
 
-  async function handleDdlDownload(group: AvailableGroup, source: Extract<AvailableSource, { kind: "ddl" }>) {
+  function handleDdlDownload(group: AvailableGroup, source: Extract<AvailableSource, { kind: "ddl" }>) {
     const provider = source.release.provider;
     const externalId = source.release.external_id;
     if (!provider || !externalId) return;
-    const key = `${source.entryId}-${source.releaseIndex}`;
-    setDownloadingDdlKeys(prev => new Set(prev).add(key));
-    try {
-      const volume =
-        source.release.matched_missing_volumes[0] ?? source.release.all_volumes[0] ?? null;
-      await browserApi.ddl.startDownload(provider, {
-        external_id: externalId,
-        filename: source.release.title,
-        size: source.release.size,
-        library_id: group.library_id,
-        series_name: group.series_name,
-        volume_number: volume,
-      });
-      onRefresh();
-    } catch (error) {
-      toast(browserFailureMessage(error), "error");
-    } finally {
-      setDownloadingDdlKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
-    }
+    const volume =
+      source.release.matched_missing_volumes[0] ?? source.release.all_volumes[0] ?? null;
+    run({ target: "ddl", verb: "start" }, `${source.entryId}-${source.releaseIndex}`, {
+      context: {
+        ddlStart: {
+          provider,
+          body: {
+            external_id: externalId,
+            filename: source.release.title,
+            size: source.release.size,
+            library_id: group.library_id,
+            series_name: group.series_name,
+            volume_number: volume,
+          },
+        },
+      },
+    });
   }
 
-  async function handleTelegramDownload(bookId: string) {
-    setDownloadingTelegramIds(prev => new Set(prev).add(bookId));
-    try {
-      await browserApi.telegram.downloadBook(bookId);
-      onTelegramDownloaded?.(bookId);
-    } catch {
-      // leave the book available when the download cannot start
-    } finally {
-      setDownloadingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
-    }
+  function handleTelegramDownload(bookId: string) {
+    run({ target: "telegram", verb: "start" }, bookId);
   }
 
-  async function handleTelegramDismiss(bookId: string) {
-    setDismissingTelegramIds(prev => new Set(prev).add(bookId));
-    try {
-      await browserApi.telegram.deleteBook(bookId);
-      onRefresh();
-    } catch {
-      // keep the row when the dismiss is rejected
-    } finally {
-      setDismissingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
-    }
+  function handleTelegramDismiss(bookId: string) {
+    run({ target: "telegram", verb: "dismiss" }, bookId);
   }
 
-  async function handleTelegramDelete(bookId: string) {
-    setDeletingTelegramIds(prev => new Set(prev).add(bookId));
-    try {
-      await browserApi.telegram.deleteBook(bookId, true);
-      onRefresh();
-    } catch {
-      // keep the row when the delete is rejected
-    } finally {
-      setDeletingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
-    }
+  function handleTelegramDelete(bookId: string) {
+    run({ target: "telegram", verb: "delete" }, bookId);
   }
 
   const sortOptions: { id: AvailableSortKey; label: string }[] = [
@@ -916,13 +759,29 @@ export function AvailableDownloadsSection({
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
   const [loadingBlacklist, setLoadingBlacklist] = useState(false);
 
-  async function fetchBlacklist() {
+  // The blacklist panel is an admin list, not a download target: it keeps its
+  // own read and its own local filtering. It still refetches when it opens and
+  // whenever a refresh brings new detections, so a release that was just hidden
+  // from the list above shows up here too.
+  useEffect(() => {
+    if (!showBlacklist) return;
+    let cancelled = false;
     setLoadingBlacklist(true);
-    try {
-      setBlacklistItems(await browserApi.downloads.blacklist.list());
-    } catch { /* ignore */ }
-    finally { setLoadingBlacklist(false); }
-  }
+    browserApi.downloads.blacklist
+      .list()
+      .then((items) => {
+        if (!cancelled) setBlacklistItems(items);
+      })
+      .catch(() => {
+        /* keep the previous list when the read fails */
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBlacklist(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showBlacklist, latestFound]);
 
   async function handleUnblacklist(itemId: string) {
     try {
@@ -941,7 +800,7 @@ export function AvailableDownloadsSection({
           {t("downloads.availableTitle")}
           <span className="text-sm font-normal text-muted-foreground">({sorted.length})</span>
           <button
-            onClick={() => { setShowBlacklist(!showBlacklist); if (!showBlacklist) fetchBlacklist(); }}
+            onClick={() => setShowBlacklist((open) => !open)}
             className={`ml-2 px-2 py-1 text-xs rounded transition-colors ${showBlacklist ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
             title={t("downloads.blacklisted")}
           >
@@ -1138,11 +997,11 @@ export function AvailableDownloadsSection({
                           <button
                             type="button"
                             onClick={() => handleDdlDownload(r, source)}
-                            disabled={downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)}
+                            disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
                             title={t("ddlProviders.download")}
                             className="inline-flex items-center justify-center w-7 h-7 rounded-md text-success hover:bg-success/10 transition-colors disabled:opacity-30 shrink-0"
                           >
-                            {downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)
+                            {pendingVerb(`${source.entryId}-${source.releaseIndex}`) === "start"
                               ? <Icon name="spinner" size="sm" className="animate-spin" />
                               : <Icon name="download" size="sm" />}
                           </button>
@@ -1162,20 +1021,22 @@ export function AvailableDownloadsSection({
                         <button
                           type="button"
                           onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex, true)}
-                          disabled={deletingKey === `${source.entryId}-${source.releaseIndex}`}
+                          disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
                           title={t("downloads.blacklist")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                         >
-                          <Icon name="x" size="sm" />
+                          {pendingVerb(`${source.entryId}-${source.releaseIndex}`) === "dismiss"
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="x" size="sm" />}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex)}
-                          disabled={deletingKey === `${source.entryId}-${source.releaseIndex}`}
+                          disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
                           title={t("downloads.delete")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
                         >
-                          {deletingKey === `${source.entryId}-${source.releaseIndex}`
+                          {pendingVerb(`${source.entryId}-${source.releaseIndex}`) === "delete"
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : <Icon name="trash" size="sm" />}
                         </button>
@@ -1210,11 +1071,11 @@ export function AvailableDownloadsSection({
                         <button
                           type="button"
                           onClick={() => handleTelegramDownload(source.book.id)}
-                          disabled={downloadingTelegramIds.has(source.book.id)}
+                          disabled={busy(source.book.id)}
                           title={source.book.status === "failed" ? t("downloads.retry") : t("telegramMonitor.download")}
                           className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${source.book.status === "failed" ? "text-destructive hover:text-foreground hover:bg-muted" : "text-primary hover:bg-primary/10"}`}
                         >
-                          {downloadingTelegramIds.has(source.book.id)
+                          {pendingVerb(source.book.id) === "start" || pendingVerb(source.book.id) === "retry"
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : source.book.status === "failed" ? <Icon name="refresh" size="sm" /> : <Icon name="download" size="sm" />}
                         </button>
@@ -1222,22 +1083,22 @@ export function AvailableDownloadsSection({
                         <button
                           type="button"
                           onClick={() => handleTelegramDismiss(source.book.id)}
-                          disabled={dismissingTelegramIds.has(source.book.id)}
+                          disabled={busy(source.book.id)}
                           title={t("downloads.blacklist")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                         >
-                          {dismissingTelegramIds.has(source.book.id)
+                          {pendingVerb(source.book.id) === "dismiss"
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : <Icon name="x" size="sm" />}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleTelegramDelete(source.book.id)}
-                          disabled={deletingTelegramIds.has(source.book.id)}
+                          disabled={busy(source.book.id)}
                           title={t("downloads.delete")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
                         >
-                          {deletingTelegramIds.has(source.book.id)
+                          {pendingVerb(source.book.id) === "delete"
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : <Icon name="trash" size="sm" />}
                         </button>
@@ -1249,10 +1110,10 @@ export function AvailableDownloadsSection({
                     <button
                       type="button"
                       onClick={() => handleDeleteProwlarrEntries(r)}
-                      disabled={deletingKey === r.key}
+                      disabled={busy(r.key)}
                       className="text-3xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
                     >
-                      {deletingKey === r.key
+                      {pendingVerb(r.key) === "delete"
                         ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />
                         : t("downloads.dismissAll")}
                     </button>
