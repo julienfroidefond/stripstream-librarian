@@ -78,6 +78,27 @@ DDL) et le mémoïse pour le rendu. Le layout expose la valeur via `AcquisitionR
 les pages la passent aux toolbars : ne pas refetcher les settings pour décider d'afficher une
 action d'acquisition.
 
+## Détail de série (Series detail)
+
+`app/(app)/series/[seriesId]/page.tsx` ne fait que de la composition : il lit les `searchParams`
+et le cookie de vue, appelle `loadSeriesDetail`, `notFound()` sur un résultat `not-found`, puis
+rend les sections du modèle. Tout le fan-out de fetch vit dans `lib/series/detail.ts` (serveur,
+sans React ni JSX), qui renvoie `{ status: "ok", model }` ou `{ status: "not-found" }`.
+
+La politique de dégradation est unique et vit dans ce module :
+
+- **fatal** (indisponible ⇒ `not-found`) : la série elle-même et sa bibliothèque ;
+- **non fatal** (valeur vide/défaut + nom de la section dans `model.degraded`) : la page de livres
+  courante (grille vide, comme avant), métadonnées,
+  liens de métadonnées, lien AniList, fournisseurs masqués, formats de renommage, séries
+  similaires, listes de lecture, notes, activité des lecteurs, tomes possédés et rapport de tomes
+  manquants.
+
+La readiness d'acquisition garde son propre repli (`loadAcquisitionReadiness`) et n'apparaît donc
+pas dans `degraded`. `SeriesActionsToolbar` reçoit un unique prop `model` (`SeriesActionsModel`,
+dérivé du modèle de page) : toutes ses données viennent de là, jamais d'un fetch ou d'un calcul
+dans la page.
+
 ## Brouillon de paramètres (Settings draft)
 
 La page `/settings` édite plusieurs sections `app_settings` en parallèle. Le module

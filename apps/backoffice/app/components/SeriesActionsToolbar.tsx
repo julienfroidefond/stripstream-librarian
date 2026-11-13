@@ -1,8 +1,7 @@
 "use client";
 
 import nextDynamic from "next/dynamic";
-import type { ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { SeriesActionsModel } from "@/lib/series/detail";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
@@ -40,95 +39,64 @@ const RenameSeriesBooksModal = nextDynamic(
 );
 
 interface Props {
-  libraryId: string;
-  seriesId: string;
-  seriesName: string;
-  bookCount: number;
-  booksReadCount: number;
-  hasActiveUser?: boolean;
-  initialIsShelved?: boolean;
-  // Edit data
-  editAuthors: string[];
-  editGenres: string[];
-  editPublishers: string[];
-  editBookAuthor: string | null;
-  editBookLanguage: string | null;
-  editDescription: string | null;
-  editStartYear: number | null;
-  editTotalVolumes: number | null;
-  editStatus: string | null;
-  editLockedFields: Record<string, boolean>;
-  // Metadata
-  existingLink: ExternalMetadataLinkDto | null;
-  metadataLinks?: ExternalMetadataLinkDto[];
-  missingData: MissingBooksDto | null;
-  hiddenProviders: string[];
-  // Reading status
-  readingStatusProvider: string | null;
-  readingStatusLink: AnilistSeriesLinkDto | null;
-  // Acquisition (une seule valeur résolue côté serveur)
-  readiness: AcquisitionReadiness;
-  ownedVolumes?: number[];
-  // Rename
-  renameFormat: string | null;
-  renameFormatHs: string | null;
-  renameFormatInt?: string | null;
-  renameFormatOneshot?: string | null;
+  /** Résolu une seule fois par `loadSeriesDetail`. */
+  model: SeriesActionsModel;
 }
 
-export function SeriesActionsToolbar(props: Props) {
+export function SeriesActionsToolbar({ model }: Props) {
   const { t } = useTranslation();
+  const { metadata, renameFormats } = model;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {(props.hasActiveUser ?? true) && (
+      {model.hasActiveUser && (
         <MarkSeriesReadButton
-          seriesId={props.seriesId}
-          seriesName={props.seriesName}
-          bookCount={props.bookCount}
-          booksReadCount={props.booksReadCount}
+          seriesId={model.seriesId}
+          seriesName={model.seriesName}
+          bookCount={model.bookCount}
+          booksReadCount={model.booksReadCount}
         />
       )}
       <EditSeriesForm
-        libraryId={props.libraryId}
-        seriesId={props.seriesId}
-        seriesName={props.seriesName}
-        currentAuthors={props.editAuthors}
-        currentGenres={props.editGenres}
-        currentPublishers={props.editPublishers}
-        currentBookAuthor={props.editBookAuthor}
-        currentBookLanguage={props.editBookLanguage}
-        currentDescription={props.editDescription}
-        currentStartYear={props.editStartYear}
-        currentTotalVolumes={props.editTotalVolumes}
-        currentStatus={props.editStatus}
-        currentLockedFields={props.editLockedFields}
+        libraryId={model.libraryId}
+        seriesId={model.seriesId}
+        seriesName={model.seriesName}
+        currentAuthors={metadata?.authors ?? []}
+        currentGenres={metadata?.genres ?? []}
+        currentPublishers={metadata?.publishers ?? []}
+        currentBookAuthor={model.editBookAuthor}
+        currentBookLanguage={model.editBookLanguage}
+        currentDescription={metadata?.description ?? null}
+        currentStartYear={metadata?.start_year ?? null}
+        currentTotalVolumes={metadata?.total_volumes ?? null}
+        currentStatus={metadata?.status ?? null}
+        currentLockedFields={metadata?.locked_fields ?? {}}
       />
-      <RefreshButton target="series-detail" seriesId={props.seriesId} />
+      <RefreshButton target="series-detail" seriesId={model.seriesId} />
       <ActionsMenu label={t("common.more")}>
         <ActionsMenuSection label={t("actionsMenu.metadata")}>
           <MetadataSearchModal
-            libraryId={props.libraryId}
-            seriesName={props.seriesName}
-            existingLink={props.existingLink}
-            links={props.metadataLinks}
-            initialMissing={props.missingData}
-            initialHiddenProviders={props.hiddenProviders}
+            libraryId={model.libraryId}
+            seriesName={model.seriesName}
+            existingLink={model.existingLink}
+            links={model.metadataLinks}
+            initialMissing={model.missingData}
+            initialHiddenProviders={model.hiddenProviders}
           >
             {(open) => (
               <ActionsMenuItem icon="🔎" onClick={open}>
-                {props.existingLink && props.existingLink.status === "approved"
+                {model.existingLink && model.existingLink.status === "approved"
                   ? t("metadata.metadataButton")
                   : t("metadata.searchButton")}
               </ActionsMenuItem>
             )}
           </MetadataSearchModal>
           <ReadingStatusModal
-            libraryId={props.libraryId}
-            seriesId={props.seriesId}
-            seriesName={props.seriesName}
-            readingStatusProvider={props.readingStatusProvider}
-            existingLink={props.readingStatusLink}
+            libraryId={model.libraryId}
+            seriesId={model.seriesId}
+            seriesName={model.seriesName}
+            readingStatusProvider={model.readingStatusProvider}
+            existingLink={model.readingStatusLink}
           >
             {(open) => (
               <ActionsMenuItem icon="🔗" onClick={open}>
@@ -140,10 +108,10 @@ export function SeriesActionsToolbar(props: Props) {
 
         <ActionsMenuSection label={t("actionsMenu.download")}>
           <ProwlarrSearchModal
-            seriesName={props.seriesName}
-            libraryId={props.libraryId}
-            missingBooks={props.missingData?.missing_books ?? null}
-            initialReadiness={props.readiness}
+            seriesName={model.seriesName}
+            libraryId={model.libraryId}
+            missingBooks={model.missingData?.missing_books ?? null}
+            initialReadiness={model.readiness}
           >
             {(open) => (
               <ActionsMenuItem icon="⬇️" onClick={open}>
@@ -151,12 +119,12 @@ export function SeriesActionsToolbar(props: Props) {
               </ActionsMenuItem>
             )}
           </ProwlarrSearchModal>
-          {props.readiness.telegram && (
+          {model.readiness.telegram && (
             <TelegramSearchModal
-              seriesName={props.seriesName}
-              missingBooks={props.missingData?.missing_books ?? null}
-              ownedVolumes={props.ownedVolumes}
-              initialEnabled={props.readiness.telegram}
+              seriesName={model.seriesName}
+              missingBooks={model.missingData?.missing_books ?? null}
+              ownedVolumes={model.ownedVolumes ?? undefined}
+              initialEnabled={model.readiness.telegram}
             >
               {(open) => (
                 <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-info" />} onClick={open}>
@@ -165,12 +133,12 @@ export function SeriesActionsToolbar(props: Props) {
               )}
             </TelegramSearchModal>
           )}
-          {props.readiness.ddl && (
+          {model.readiness.ddl && (
             <DdlProviderSearchModal
-              seriesName={props.seriesName}
-              libraryId={props.libraryId}
-              missingBooks={props.missingData?.missing_books ?? null}
-              initialEnabled={props.readiness.ddl}
+              seriesName={model.seriesName}
+              libraryId={model.libraryId}
+              missingBooks={model.missingData?.missing_books ?? null}
+              initialEnabled={model.readiness.ddl}
             >
               {(open) => (
                 <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>
@@ -183,12 +151,12 @@ export function SeriesActionsToolbar(props: Props) {
 
         <ActionsMenuSection label={t("actionsMenu.files")}>
           <RenameSeriesBooksModal
-            seriesId={props.seriesId}
-            seriesName={props.seriesName}
-            initialFormat={props.renameFormat}
-            initialFormatHs={props.renameFormatHs}
-            initialFormatInt={props.renameFormatInt}
-            initialFormatOneshot={props.renameFormatOneshot}
+            seriesId={model.seriesId}
+            seriesName={model.seriesName}
+            initialFormat={renameFormats.regular}
+            initialFormatHs={renameFormats.hs}
+            initialFormatInt={renameFormats.integral}
+            initialFormatOneshot={renameFormats.oneshot}
           >
             {(open) => (
               <ActionsMenuItem icon="📝" onClick={open}>
@@ -197,8 +165,8 @@ export function SeriesActionsToolbar(props: Props) {
             )}
           </RenameSeriesBooksModal>
           <MergeSeriesButton
-            seriesId={props.seriesId}
-            seriesName={props.seriesName}
+            seriesId={model.seriesId}
+            seriesName={model.seriesName}
           >
             {(open) => (
               <ActionsMenuItem icon="🔀" onClick={open}>
@@ -209,7 +177,7 @@ export function SeriesActionsToolbar(props: Props) {
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.readingLists")}>
-          <AddToReadingListModal seriesId={props.seriesId} seriesName={props.seriesName}>
+          <AddToReadingListModal seriesId={model.seriesId} seriesName={model.seriesName}>
             {(open) => (
               <ActionsMenuItem icon="🔖" onClick={open}>
                 {t("readingLists.addToList")}
@@ -219,13 +187,13 @@ export function SeriesActionsToolbar(props: Props) {
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.actions")}>
-          {(props.hasActiveUser ?? true) && (
+          {model.hasActiveUser && (
             <SeriesShelfAction
-              seriesId={props.seriesId}
-              initialIsShelved={props.initialIsShelved ?? false}
+              seriesId={model.seriesId}
+              initialIsShelved={model.isShelved}
             />
           )}
-          <RefreshButton target="series-detail" seriesId={props.seriesId}>
+          <RefreshButton target="series-detail" seriesId={model.seriesId}>
             {(onClick, pending) => (
               <ActionsMenuItem
                 icon={<RefreshIcon spinning={pending} />}
@@ -237,7 +205,7 @@ export function SeriesActionsToolbar(props: Props) {
               </ActionsMenuItem>
             )}
           </RefreshButton>
-          <DeleteSeriesButton seriesId={props.seriesId}>
+          <DeleteSeriesButton seriesId={model.seriesId}>
             {(open) => (
               <ActionsMenuItem icon="🗑" variant="danger" onClick={open}>
                 {t("seriesDetail.delete")}

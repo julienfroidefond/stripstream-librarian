@@ -1,9 +1,8 @@
-import type { ComponentProps } from "react";
-
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { SeriesActionsModel } from "@/lib/series/detail";
 
 const readiness: AcquisitionReadiness = {
   downloads: true,
@@ -35,33 +34,26 @@ vi.mock("@/app/actions/cache", () => ({
 
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 
-const baseProps: ComponentProps<typeof SeriesActionsToolbar> = {
+const baseModel: SeriesActionsModel = {
   libraryId: "library-1",
   seriesId: "series-1",
   seriesName: "Series",
   bookCount: 3,
   booksReadCount: 1,
   hasActiveUser: false,
-  initialIsShelved: false,
-  editAuthors: [],
-  editGenres: [],
-  editPublishers: [],
+  isShelved: false,
+  metadata: null,
   editBookAuthor: null,
   editBookLanguage: null,
-  editDescription: null,
-  editStartYear: null,
-  editTotalVolumes: null,
-  editStatus: null,
-  editLockedFields: {},
-  existingLink: null,
   metadataLinks: [],
+  existingLink: null,
   missingData: null,
   hiddenProviders: [],
   readingStatusProvider: null,
   readingStatusLink: null,
   readiness,
-  renameFormat: null,
-  renameFormatHs: null,
+  ownedVolumes: null,
+  renameFormats: { regular: null, hs: null, integral: null, oneshot: null },
 };
 
 function menu(): HTMLElement {
@@ -70,7 +62,7 @@ function menu(): HTMLElement {
 
 describe("SeriesActionsToolbar", () => {
   it("shows the refresh button outside the More menu and refreshes the current series", async () => {
-    render(<SeriesActionsToolbar {...baseProps} />);
+    render(<SeriesActionsToolbar model={baseModel} />);
 
     const refreshButtons = screen.getAllByRole("button", { name: "common.refresh" });
     expect(refreshButtons).toHaveLength(1);
@@ -83,7 +75,7 @@ describe("SeriesActionsToolbar", () => {
   });
 
   it("keeps the refresh entry in the More menu and refreshes the current series", async () => {
-    render(<SeriesActionsToolbar {...baseProps} />);
+    render(<SeriesActionsToolbar model={baseModel} />);
 
     fireEvent.click(screen.getByRole("button", { name: "common.more" }));
 
@@ -97,7 +89,7 @@ describe("SeriesActionsToolbar", () => {
   });
 
   it("exposes the shelf action when a reader is selected", () => {
-    render(<SeriesActionsToolbar {...baseProps} hasActiveUser initialIsShelved={false} />);
+    render(<SeriesActionsToolbar model={{ ...baseModel, hasActiveUser: true }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "common.more" }));
 
@@ -105,7 +97,7 @@ describe("SeriesActionsToolbar", () => {
   });
 
   it("hides the shelf action in admin mode", () => {
-    render(<SeriesActionsToolbar {...baseProps} />);
+    render(<SeriesActionsToolbar model={baseModel} />);
 
     fireEvent.click(screen.getByRole("button", { name: "common.more" }));
 
