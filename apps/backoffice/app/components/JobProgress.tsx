@@ -1,24 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n/context";
+import { useJobStream } from "@/lib/useJobStream";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
-import { isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
-
-interface ProgressEvent {
-  job_id: string;
-  status: string;
-  current_file: string | null;
-  progress_percent: number | null;
-  processed_files: number | null;
-  total_files: number | null;
-  stats_json: {
-    scanned_files: number;
-    indexed_files: number;
-    removed_files: number;
-    errors: number;
-  } | null;
-}
+import { isPhase2Status } from "@/lib/jobStatus";
 
 interface JobProgressProps {
   jobId: string;
@@ -27,64 +12,14 @@ interface JobProgressProps {
 
 export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const { t } = useTranslation();
-  const [progress, setProgress] = useState<ProgressEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
+  const { job: progress, isComplete, error: streamError } = useJobStream(jobId, { onComplete });
 
-  // Stash mutable callbacks in refs so we don't re-open the SSE on every parent
-  // render (onComplete is typically an inline arrow function in the parent,
-  // and t changes shape often enough to retrigger the effect). The refs are
-  // synced in effects (never written during render).
-  const onCompleteRef = useRef(onComplete);
-  const tRef = useRef(t);
-
-  useEffect(() => {
-    onCompleteRef.current = onComplete;
-  }, [onComplete]);
-
-  useEffect(() => {
-    tRef.current = t;
-  }, [t]);
-
-  useEffect(() => {
-    const eventSource = new EventSource(`/api/jobs/${jobId}/stream`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        const progressData: ProgressEvent = {
-          job_id: data.id,
-          status: data.status,
-          current_file: data.current_file,
-          progress_percent: data.progress_percent,
-          processed_files: data.processed_files,
-          total_files: data.total_files,
-          stats_json: data.stats_json,
-        };
-
-        setProgress(progressData);
-
-        if (isTerminalJobStatus(data.status)) {
-          setIsComplete(true);
-          eventSource.close();
-          onCompleteRef.current?.();
-        }
-      } catch {
-        setError(tRef.current("jobProgress.sseError"));
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error("SSE error:", err);
-      eventSource.close();
-      setError(tRef.current("jobProgress.connectionLost"));
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [jobId]);
+  const error =
+    streamError === "parse"
+      ? t("jobProgress.sseError")
+      : streamError === "connection"
+        ? t("jobProgress.connectionLost")
+        : null;
 
   if (error) {
     return (
