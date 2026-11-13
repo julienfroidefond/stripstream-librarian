@@ -354,12 +354,16 @@ impl PageRenderer {
     }
 
     /// Permit → timeout → `spawn_blocking`. `None` when a prefetch found no permit.
+    ///
+    /// The permit moves into the blocking task: a timeout answers the request
+    /// but cannot stop the task, which keeps its render slot until it really
+    /// ends. `concurrent_renders` thus bounds running renders, not waiting requests.
     async fn run_with<T, F>(&self, urgency: Urgency, job: F) -> Result<Option<T>, ApiError>
     where
         T: Send + 'static,
         F: FnOnce(&dyn PageSource) -> Result<T, ApiError> + Send + 'static,
     {
-        let _permit = match urgency {
+        let permit = match urgency {
             Urgency::Foreground => self.limit.clone().acquire_owned().await.map_err(|e| {
                 error!("Failed to acquire render permit: {}", e);
                 ApiError::internal("render limiter unavailable")
@@ -377,7 +381,10 @@ impl PageRenderer {
         let source = self.source.clone();
         tokio::time::timeout(
             self.timeout,
-            tokio::task::spawn_blocking(move || job(source.as_ref())),
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                job(source.as_ref())
+            }),
         )
         .await
         .map_err(|_| ApiError::internal("page rendering timeout"))?
@@ -808,6 +815,69 @@ mod tests {
                 .is_cached(&spec, &spec.cache_path(&renderer.cache_dir))
                 .await
         );
+    }
+
+    /// Whether a render permit is unavailable for `wait`.
+    async fn permit_busy(limit: &Arc<RenderLimit>, wait: Duration) -> bool {
+        tokio::time::timeout(wait, limit.clone().acquire_owned())
+            .await
+            .is_err()
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_render_keeps_its_permit_until_it_really_ends() {
+        // One permit (`concurrent_renders = 1`), renders that outlive the timeout.
+        let delay = Duration::from_millis(300);
+        let fixture = Fixture::new(FakePages::slow(red_png(), delay));
+        let started = Instant::now();
+
+        let timed_out = fixture
+            .renderer(Duration::from_millis(20))
+            .get(&fixture.spec(1), Urgency::Foreground)
+            .await;
+        assert_eq!(
+            timed_out.err().map(|e| e.message),
+            Some("page rendering timeout".to_string())
+        );
+        assert!(
+            permit_busy(&fixture.limit, Duration::from_millis(50)).await,
+            "the abandoned render still runs and must hold the only permit"
+        );
+
+        // A second request waits for the first render to finish before starting.
+        let second = fixture
+            .renderer(Duration::from_secs(5))
+            .get(&fixture.spec(2), Urgency::Foreground)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.origin, Origin::Rendered);
+        assert!(
+            started.elapsed() >= delay * 2,
+            "renders overlapped: {:?}",
+            started.elapsed()
+        );
+        assert!(!permit_busy(&fixture.limit, Duration::from_millis(50)).await);
+    }
+
+    #[tokio::test]
+    async fn run_keeps_the_permit_of_a_timed_out_job() {
+        let fixture = Fixture::new(FakePages::new(red_png()));
+        let renderer = fixture.renderer(Duration::from_millis(20));
+
+        let timed_out = renderer
+            .run(|_| {
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(())
+            })
+            .await;
+
+        assert_eq!(
+            timed_out.err().map(|e| e.message),
+            Some("page rendering timeout".to_string())
+        );
+        assert!(permit_busy(&fixture.limit, Duration::from_millis(50)).await);
+        assert!(!permit_busy(&fixture.limit, Duration::from_secs(2)).await);
     }
 
     #[tokio::test]
