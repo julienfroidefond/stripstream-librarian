@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.159 — 2026-11-13
+
+### Corrections
+
+- address the code-review findings on the architecture refactors ([#300](https://github.com/julienfroidefond/stripstream-librarian/pull/300))
+
 ## v3.32.158 — 2026-11-13
 
 <details>
