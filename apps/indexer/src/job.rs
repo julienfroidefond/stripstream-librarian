@@ -1,14 +1,133 @@
+//! Indexer job runner: one typed outcome per job.
+//!
+//! [`process_job`] runs a claimed job and returns either a [`JobOutcome`] (the
+//! job ran to the end, possibly with failed units) or a [`RunError`]
+//! (cancelled, or aborted). [`finish`] turns an outcome into the terminal
+//! status of ADR 0002 through `classify_job`: `success`, `partial` or `failed`.
+
+use std::fmt;
+
 use anyhow::Result;
+use serde_json::Value;
 use sqlx::{PgPool, Row};
 use tracing::{error, info};
 use uuid::Uuid;
 
 use stripstream_jobs::{
-    begin_analysis, begin_thumbnail_job, claim_next, cleanup_stale_jobs as cleanup_owner_jobs,
-    finish_success, purge_terminal_jobs, set_total_files, JobOwner,
+    begin_analysis, begin_thumbnail_job, classify_job, cleanup_stale_jobs as cleanup_owner_jobs,
+    finish_job, purge_terminal_jobs, set_total_files, JobOwner, JobStatus,
 };
 
 use crate::{analyzer, converter, scanner, AppState};
+
+/// Error raised by the scanner and the analyzer when the user cancelled the job.
+///
+/// Cancellation is recognised by this type only, never by an error message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JobCancelled;
+
+impl fmt::Display for JobCancelled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Job cancelled by user")
+    }
+}
+
+impl std::error::Error for JobCancelled {}
+
+/// Whether `err` (or an error it wraps with context) is a [`JobCancelled`].
+pub fn is_cancellation(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<JobCancelled>().is_some()
+}
+
+/// Why a job stopped without an outcome.
+#[derive(Debug)]
+pub enum RunError {
+    /// The user cancelled the job: its row is already `cancelled`.
+    Cancelled,
+    /// The job could not run to the end: its row must be marked `failed`.
+    Failed(anyhow::Error),
+}
+
+impl From<anyhow::Error> for RunError {
+    fn from(err: anyhow::Error) -> Self {
+        if is_cancellation(&err) {
+            Self::Cancelled
+        } else {
+            Self::Failed(err)
+        }
+    }
+}
+
+/// What a job that ran to the end did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobOutcome {
+    /// Units the job attempted (libraries for a scan, 1 for single-unit jobs).
+    pub attempted: usize,
+    /// Units that failed.
+    pub errors: usize,
+    /// New `stats_json`; `None` keeps what the job stored while running.
+    pub stats: Option<Value>,
+}
+
+impl JobOutcome {
+    /// A job made of a single unit that succeeded (conversion, thumbnails).
+    pub fn single_success() -> Self {
+        Self {
+            attempted: 1,
+            errors: 0,
+            stats: None,
+        }
+    }
+
+    /// Terminal status: `success`, `partial` or `failed` (ADR 0002).
+    pub fn status(&self) -> JobStatus {
+        classify_job(self.attempted, self.errors)
+    }
+
+    /// Human-readable summary stored in `error_opt` when some units failed.
+    pub fn error_summary(&self) -> Option<String> {
+        (self.errors > 0).then(|| format!("{}/{} unit(s) failed", self.errors, self.attempted))
+    }
+}
+
+/// Write the terminal status of a job that ran to the end and return it.
+///
+/// A job cancelled in the meantime stays `cancelled` (`finish_job` never
+/// overwrites a cancellation).
+pub async fn finish(
+    pool: &PgPool,
+    job_id: Uuid,
+    outcome: &JobOutcome,
+) -> Result<JobStatus, sqlx::Error> {
+    let status = outcome.status();
+    finish_job(
+        pool,
+        job_id,
+        status,
+        outcome.stats.clone(),
+        outcome.error_summary().as_deref(),
+    )
+    .await?;
+    Ok(status)
+}
+
+/// Fold one library's discovery result into the scan: a cancellation stops the
+/// job, any other error counts against that library and the scan goes on.
+fn fold_library_scan(
+    library_id: Uuid,
+    result: Result<()>,
+    stats: &mut scanner::JobStats,
+) -> Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) if is_cancellation(&err) => Err(err),
+        Err(err) => {
+            stats.errors += 1;
+            error!(library_id = %library_id, error = %err, "library scan failed");
+            Ok(())
+        }
+    }
+}
 
 /// Re-match external_book_metadata with book_id IS NULL by volume number.
 async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
@@ -86,26 +205,23 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)>> {
-    Ok(claim_next(pool, JobOwner::Indexer)
-        .await?
-        .map(|job| (job.id, job.library_id)))
-}
-
-pub async fn fail_job(pool: &PgPool, job_id: Uuid, error_message: &str) -> Result<()> {
-    stripstream_jobs::fail_job(pool, job_id, error_message, None).await?;
-    Ok(())
-}
-
-pub async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> Result<bool> {
-    Ok(stripstream_jobs::is_job_cancelled(pool, job_id).await)
-}
-
+/// Run a claimed job to its outcome. The caller writes the terminal status
+/// ([`finish`] on success, `fail_job` on [`RunError::Failed`]).
 pub async fn process_job(
     state: &AppState,
     job_id: Uuid,
     target_library_id: Option<Uuid>,
-) -> Result<()> {
+) -> Result<JobOutcome, RunError> {
+    run_job(state, job_id, target_library_id)
+        .await
+        .map_err(RunError::from)
+}
+
+async fn run_job(
+    state: &AppState,
+    job_id: Uuid,
+    target_library_id: Option<Uuid>,
+) -> Result<JobOutcome> {
     info!(
         "[JOB] Processing {} library={:?}",
         job_id, target_library_id
@@ -124,29 +240,21 @@ pub async fn process_job(
         let book_id =
             book_id.ok_or_else(|| anyhow::anyhow!("cbr_to_cbz job {} has no book_id", job_id))?;
         converter::convert_book(state, job_id, book_id).await?;
-        return Ok(());
+        return Ok(JobOutcome::single_success());
     }
 
     // Thumbnail rebuild: generate thumbnails for books missing them
     if job_type == "thumbnail_rebuild" {
         begin_thumbnail_job(&state.pool, job_id).await?;
-
         analyzer::analyze_library_books(state, job_id, target_library_id, true).await?;
-
-        finish_success(&state.pool, job_id).await?;
-
-        return Ok(());
+        return Ok(JobOutcome::single_success());
     }
 
     // Thumbnail regenerate: clear all thumbnails then re-generate
     if job_type == "thumbnail_regenerate" {
         begin_thumbnail_job(&state.pool, job_id).await?;
-
         analyzer::regenerate_thumbnails(state, job_id, target_library_id).await?;
-
-        finish_success(&state.pool, job_id).await?;
-
-        return Ok(());
+        return Ok(JobOutcome::single_success());
     }
 
     let is_full_rebuild = job_type == "full_rebuild";
@@ -287,7 +395,7 @@ pub async fn process_job(
             .resolve(&root_path)?
             .to_local()
             .to_string();
-        match scanner::scan_library_discovery(
+        let result = scanner::scan_library_discovery(
             state,
             job_id,
             library_id,
@@ -297,18 +405,8 @@ pub async fn process_job(
             total_files,
             is_full_rebuild,
         )
-        .await
-        {
-            Ok(()) => {}
-            Err(err) => {
-                let err_str = err.to_string();
-                if err_str.contains("cancelled") || err_str.contains("Cancelled") {
-                    return Err(err);
-                }
-                stats.errors += 1;
-                error!(library_id = %library_id, error = %err, "library scan failed");
-            }
-        }
+        .await;
+        fold_library_scan(library_id, result, &mut stats)?;
     }
 
     // For full rebuild: clean up orphaned thumbnail files (old UUIDs)
@@ -333,7 +431,207 @@ pub async fn process_job(
         rematch_unlinked_books(&state.pool, lib_id).await;
     }
 
-    finish_success(&state.pool, job_id).await?;
+    Ok(JobOutcome {
+        attempted: libraries.len(),
+        errors: stats.errors,
+        stats: Some(serde_json::to_value(&stats)?),
+    })
+}
 
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_stats() -> scanner::JobStats {
+        scanner::JobStats {
+            scanned_files: 0,
+            indexed_files: 0,
+            removed_files: 0,
+            errors: 0,
+            warnings: 0,
+            new_series: 0,
+            new_series_names: Vec::new(),
+            new_book_titles: Vec::new(),
+        }
+    }
+
+    fn outcome(attempted: usize, errors: usize) -> JobOutcome {
+        JobOutcome {
+            attempted,
+            errors,
+            stats: None,
+        }
+    }
+
+    #[test]
+    fn an_error_mentioning_cancelled_is_not_a_cancellation() {
+        for message in ["Job cancelled by user", "upstream request Cancelled"] {
+            assert!(
+                matches!(
+                    RunError::from(anyhow::anyhow!("{message}")),
+                    RunError::Failed(_)
+                ),
+                "{message:?} is a failure, not a cancellation"
+            );
+        }
+    }
+
+    #[test]
+    fn a_typed_cancellation_is_recognised_even_with_context() {
+        assert!(matches!(
+            RunError::from(anyhow::Error::new(JobCancelled)),
+            RunError::Cancelled
+        ));
+        let wrapped = anyhow::Error::new(JobCancelled).context("scanning library");
+        assert!(matches!(RunError::from(wrapped), RunError::Cancelled));
+    }
+
+    #[test]
+    fn a_failed_library_counts_and_the_scan_goes_on() {
+        let mut stats = empty_stats();
+        let library = Uuid::new_v4();
+
+        fold_library_scan(library, Ok(()), &mut stats).unwrap();
+        fold_library_scan(
+            library,
+            Err(anyhow::anyhow!("walk cancelled by the filesystem")),
+            &mut stats,
+        )
+        .unwrap();
+
+        assert_eq!(stats.errors, 1);
+    }
+
+    #[test]
+    fn a_cancelled_library_stops_the_scan_without_counting() {
+        let mut stats = empty_stats();
+
+        let err = fold_library_scan(
+            Uuid::new_v4(),
+            Err(anyhow::Error::new(JobCancelled)),
+            &mut stats,
+        )
+        .unwrap_err();
+
+        assert!(is_cancellation(&err));
+        assert_eq!(stats.errors, 0);
+    }
+
+    #[test]
+    fn outcome_status_follows_attempted_and_failed_units() {
+        assert_eq!(outcome(0, 0).status(), JobStatus::Success);
+        assert_eq!(outcome(2, 0).status(), JobStatus::Success);
+        assert_eq!(outcome(2, 1).status(), JobStatus::Partial);
+        assert_eq!(outcome(2, 2).status(), JobStatus::Failed);
+        assert_eq!(outcome(2, 0).error_summary(), None);
+        assert_eq!(
+            outcome(2, 1).error_summary().as_deref(),
+            Some("1/2 unit(s) failed")
+        );
+    }
+
+    async fn insert_job(pool: &PgPool, job_type: &str, status: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO index_jobs (id, type, status) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(job_type)
+            .bind(status)
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn job_status(pool: &PgPool, job_id: Uuid) -> (String, Option<String>) {
+        sqlx::query_as("SELECT status, error_opt FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn finish_writes_partial_and_failed_scans(pool: PgPool) {
+        let partial = insert_job(&pool, "rebuild", "generating_thumbnails").await;
+        let failed = insert_job(&pool, "rebuild", "generating_thumbnails").await;
+
+        assert_eq!(
+            finish(&pool, partial, &outcome(2, 1)).await.unwrap(),
+            JobStatus::Partial
+        );
+        assert_eq!(
+            finish(&pool, failed, &outcome(2, 2)).await.unwrap(),
+            JobStatus::Failed
+        );
+
+        assert_eq!(
+            job_status(&pool, partial).await,
+            (
+                "partial".to_string(),
+                Some("1/2 unit(s) failed".to_string())
+            )
+        );
+        assert_eq!(
+            job_status(&pool, failed).await,
+            ("failed".to_string(), Some("2/2 unit(s) failed".to_string()))
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn finish_keeps_a_cancellation(pool: PgPool) {
+        let job = insert_job(&pool, "rebuild", "cancelled").await;
+
+        finish(&pool, job, &outcome(1, 0)).await.unwrap();
+
+        assert_eq!(job_status(&pool, job).await.0, "cancelled");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn a_scan_of_an_empty_library_succeeds(pool: PgPool) {
+        let root = tempfile::tempdir().unwrap();
+        let library = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'lib', $2)")
+            .bind(library)
+            .bind(root.path().to_string_lossy().to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let job = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) \
+             VALUES ($1, $2, 'rebuild', 'running')",
+        )
+        .bind(job)
+        .bind(library)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let state = crate::test_state(pool.clone());
+
+        let outcome = process_job(&state, job, Some(library)).await.unwrap();
+        assert_eq!((outcome.attempted, outcome.errors), (1, 0));
+        assert_eq!(
+            finish(&pool, job, &outcome).await.unwrap(),
+            JobStatus::Success
+        );
+
+        let (status, error) = job_status(&pool, job).await;
+        assert_eq!((status.as_str(), error), ("success", None));
+        let stats: Value = sqlx::query_scalar("SELECT stats_json FROM index_jobs WHERE id = $1")
+            .bind(job)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stats["errors"], 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn a_thumbnail_job_is_a_single_unit(pool: PgPool) {
+        let job = insert_job(&pool, "thumbnail_rebuild", "running").await;
+        let state = crate::test_state(pool.clone());
+
+        let outcome = process_job(&state, job, None).await.unwrap();
+
+        assert_eq!(outcome, JobOutcome::single_success());
+    }
 }

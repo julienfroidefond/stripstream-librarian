@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use stripstream_core::analysis::AnalysisStatus;
 use stripstream_core::settings::load_setting;
+use stripstream_jobs::is_job_cancelled;
 use stripstream_thumbnails::{ThumbnailSettings, ThumbnailStore};
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
         claim_analysis_books, flush_analysis_status, flush_events, flush_page_counts,
         flush_parse_errors, flush_thumbnails, EventInsert,
     },
-    job::is_job_cancelled,
+    job::JobCancelled,
     AppState,
 };
 
@@ -672,7 +673,7 @@ pub async fn analyze_library_books(
             "[ANALYZER] Job {} cancelled during extraction phase",
             job_id
         );
-        return Err(anyhow::anyhow!("Job cancelled by user"));
+        return Err(JobCancelled.into());
     }
 
     let extracted_total = all_extracted.len() as i32;
@@ -793,7 +794,7 @@ pub async fn analyze_library_books(
 
     if cancelled_flag.load(Ordering::Relaxed) {
         info!("[ANALYZER] Job {} cancelled during resize phase", job_id);
-        return Err(anyhow::anyhow!("Job cancelled by user"));
+        return Err(JobCancelled.into());
     }
 
     let final_count = resize_count.load(Ordering::Relaxed);
@@ -912,13 +913,9 @@ fn spawn_cancellation_poller(
     let handle = tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            match is_job_cancelled(&pool, job_id).await {
-                Ok(true) => {
-                    flag_clone.store(true, Ordering::Relaxed);
-                    break;
-                }
-                Ok(false) => {}
-                Err(_) => break,
+            if is_job_cancelled(&pool, job_id).await {
+                flag_clone.store(true, Ordering::Relaxed);
+                break;
             }
         }
     });

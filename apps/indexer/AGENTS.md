@@ -9,7 +9,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `main.rs` | Point d'entrée, initialisation, lancement du worker, démarrage du serveur HTTP |
 | `lib.rs` | `AppState` (pool) |
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** |
-| `job.rs` | `claim_next_job` (verrouillage exclusif), `process_job`, `fail_job`, `cleanup_stale_jobs`, `is_job_cancelled` |
+| `job.rs` | `process_job` → `Result<JobOutcome, RunError>`, `finish` (statut terminal via `classify_job`), `JobCancelled`, `cleanup_stale_jobs` ; claim, échec et annulation viennent directement de `stripstream_jobs` |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
 | `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) |
@@ -22,8 +22,9 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 ## Cycle de vie d'un job
 
 ```
-claim_next_job (SELECT ... FOR UPDATE SKIP LOCKED puis UPDATE, status pending→running)
-  └─ process_job
+stripstream_jobs::claim_next (SELECT ... FOR UPDATE SKIP LOCKED puis UPDATE, status pending→running)
+  └─ process_job → JobOutcome { attempted, errors, stats } | RunError::{Cancelled, Failed}
+       (le worker écrit ensuite job::finish ⇒ success / partial / failed, ou fail_job)
        ├─ Phase 1 : scanner::scan_library_discovery
        │    ├─ WalkDir + parse_metadata_fast (zéro I/O archive)
        │    ├─ skip dossiers via directory_mtimes (table DB)
@@ -43,13 +44,17 @@ Jobs spéciaux :
   full_rebuild         → supprime les données, ignore fingerprints + directory_mtimes
 ```
 
-- **Verrouillage exclusif** : `claim_next_job` n'accorde un job exclusif (`rebuild`, `full_rebuild`,
+- **Verrouillage exclusif** : `claim_next` n'accorde un job exclusif (`rebuild`, `full_rebuild`,
   `rescan`, `scan`, `thumbnail_rebuild`, `thumbnail_regenerate`) que s'il n'y a **aucun** job actif
   (`running`, `extracting_pages`, `generating_thumbnails`). `cbr_to_cbz` n'est **pas** exclusif.
   Les types `API_ONLY_JOB_TYPES` (metadata_*, reading_status_push, rating_pull, download_detection,
   prowlarr_rss, telegram_sync, telegram_sync_incremental, ddl_search) ne sont jamais réclamés ici.
 - **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers ou 1 s (scanner) ; poller séparé
-  de 2 s côté analyzer — retourne `Err("Job cancelled by user")`.
+  de 2 s côté analyzer — retourne l'erreur typée `job::JobCancelled`, reconnue par type
+  (`RunError::Cancelled`), jamais par son message.
+- **Résultat** : un scan compte une unité par bibliothèque ; une bibliothèque en échec incrémente
+  `stats.errors` sans arrêter le job, qui finit `partial` (au moins une réussie) ou `failed` (toutes
+  en échec, `error_opt` = « n/m unit(s) failed »). Conversion et miniatures sont une unité unique.
 - **Jobs stale** : `cleanup_stale_jobs` marque `failed` les jobs actifs dont `started_at < NOW() - 5 min`,
   les `pending` de plus de 30 min, et purge les jobs terminaux de plus de 90 jours.
 

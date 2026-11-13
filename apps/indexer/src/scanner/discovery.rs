@@ -9,7 +9,9 @@ use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::job::is_job_cancelled;
+use stripstream_jobs::is_job_cancelled;
+
+use crate::job::JobCancelled;
 use crate::utils;
 use crate::AppState;
 
@@ -396,10 +398,10 @@ pub async fn scan_library_discovery(
 
             last_progress_update = std::time::Instant::now();
 
-            if is_job_cancelled(&state.pool, job_id).await? {
+            if is_job_cancelled(&state.pool, job_id).await {
                 info!("[JOB] Job {} cancelled by user, stopping...", job_id);
                 writer.flush().await?;
-                return Err(anyhow::anyhow!("Job cancelled by user"));
+                return Err(JobCancelled.into());
             }
         }
 

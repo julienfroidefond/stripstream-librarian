@@ -115,6 +115,8 @@ pub async fn fail_job(
 
 /// Finish a job with an explicit terminal status.
 ///
+/// `stats` replaces `stats_json` when given; `None` keeps what the job already
+/// stored (e.g. the scan stats persisted by [`begin_analysis`]).
 /// `error` is stored as-is (use `None` for a clean run) and `progress_percent`
 /// is set to 100 except for `failed`, which keeps whatever progress the job had
 /// reached. Callers pass a human-readable summary for `partial` runs so the UI
@@ -125,13 +127,14 @@ pub async fn finish_job(
     pool: &PgPool,
     job_id: Uuid,
     status: JobStatus,
-    stats: Value,
+    stats: impl Into<Option<Value>>,
     error: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    let stats: Option<Value> = stats.into();
     sqlx::query(
         "UPDATE index_jobs \
-         SET status = $2, finished_at = NOW(), \
-             stats_json = $3, error_opt = $4, \
+         SET status = $2, finished_at = NOW(), current_file = NULL, \
+             stats_json = COALESCE($3, stats_json), error_opt = $4, \
              progress_percent = CASE WHEN $2 = 'failed' \
                                       THEN progress_percent ELSE 100 END \
          WHERE id = $1 AND status <> 'cancelled'",
@@ -148,19 +151,6 @@ pub async fn finish_job(
 /// Mark a job as `success` and store its final `stats_json` payload.
 pub async fn complete_job(pool: &PgPool, job_id: Uuid, stats: Value) -> Result<(), sqlx::Error> {
     finish_job(pool, job_id, JobStatus::Success, stats, None).await
-}
-
-/// Mark a job as `success` without touching its stats.
-pub async fn finish_success(pool: &PgPool, job_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE index_jobs \
-         SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL \
-         WHERE id = $1 AND status <> 'cancelled'",
-    )
-    .bind(job_id)
-    .execute(pool)
-    .await
-    .map(|_| ())
 }
 
 /// Mark a claimed (or directly created) job as `running`.
