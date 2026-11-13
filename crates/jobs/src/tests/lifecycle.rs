@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::lifecycle::{
     begin_analysis, begin_extraction, begin_thumbnail_generation, begin_thumbnail_job, cancel_job,
-    classify_job, complete_job, fail_job, finish_job, finish_success, job_in_flight, start_job,
-    JobScope, JobStatus,
+    classify_job, complete_job, fail_job, finish_job, job_in_flight, start_job, JobScope,
+    JobStatus,
 };
 use crate::tests::support::{create_library, insert_job, job_row, status};
 use crate::JobState;
@@ -306,20 +306,36 @@ async fn phase_transitions_do_not_resurrect_cancelled_jobs(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn finish_success_clears_current_file(pool: PgPool) {
+async fn finish_job_clears_current_file_and_keeps_stats_without_new_ones(pool: PgPool) {
     let job = insert_job(&pool, None, "scan", "generating_thumbnails").await;
-    sqlx::query("UPDATE index_jobs SET current_file = 'book.cbz' WHERE id = $1")
-        .bind(job)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE index_jobs SET current_file = 'book.cbz', stats_json = '{\"errors\": 1}' \
+         WHERE id = $1",
+    )
+    .bind(job)
+    .execute(&pool)
+    .await
+    .unwrap();
 
-    finish_success(&pool, job).await.unwrap();
+    finish_job(
+        &pool,
+        job,
+        JobStatus::Partial,
+        None::<serde_json::Value>,
+        Some("1/2"),
+    )
+    .await
+    .unwrap();
 
     let row = job_row(&pool, job).await;
-    assert_eq!(row.get::<String, _>("status"), "success");
+    assert_eq!(row.get::<String, _>("status"), "partial");
     assert_eq!(row.get::<i32, _>("progress_percent"), 100);
     assert!(row.get::<Option<String>, _>("current_file").is_none());
+    assert_eq!(
+        row.get::<serde_json::Value, _>("stats_json"),
+        json!({"errors": 1}),
+        "no new stats keeps the stored ones"
+    );
 }
 
 #[test]

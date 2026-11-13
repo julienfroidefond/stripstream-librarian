@@ -6,9 +6,10 @@ use uuid::Uuid;
 
 use stripstream_core::availability::{self, PresentVolumes, PruneOutcome};
 use stripstream_core::coverage::SeriesCoverage;
-use stripstream_jobs::JobCategory;
+use stripstream_jobs::{claim_next, fail_job, JobCategory, JobOwner, JobStatus};
 
-use crate::{job, scheduler, watcher, AppState};
+use crate::job::{self, RunError};
+use crate::{scheduler, watcher, AppState};
 
 pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
@@ -281,15 +282,15 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
     }
 
     loop {
-        match job::claim_next_job(&state.pool).await {
-            Ok(Some((job_id, library_id))) => {
+        match claim_next(&state.pool, JobOwner::Indexer).await {
+            Ok(Some(claimed)) => {
+                let (job_id, library_id) = (claimed.id, claimed.library_id);
                 info!("[INDEXER] Starting job {} library={:?}", job_id, library_id);
                 let started_at = std::time::Instant::now();
                 let info = load_job_info(&state.pool, job_id, library_id).await;
 
-                if let Err(err) = job::process_job(&state, job_id, library_id).await {
-                    let err_str = err.to_string();
-                    if err_str.contains("cancelled") || err_str.contains("Cancelled") {
+                let failure = match job::process_job(&state, job_id, library_id).await {
+                    Err(RunError::Cancelled) => {
                         info!("[INDEXER] Job {} was cancelled by user", job_id);
                         notifications::notify(
                             state.pool.clone(),
@@ -298,22 +299,44 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                                 library_name: info.library_name.clone(),
                             },
                         );
-                    } else {
-                        error!("[INDEXER] Job {} failed: {}", job_id, err);
-                        let _ = job::fail_job(&state.pool, job_id, &err_str).await;
-                        notifications::notify(
-                            state.pool.clone(),
-                            build_failed_event(
-                                &info.job_type,
-                                info.library_name.clone(),
-                                info.book_title.clone(),
-                                info.thumbnail_path.clone(),
-                                err_str,
-                            ),
-                        );
+                        continue;
                     }
+                    Err(RunError::Failed(err)) => {
+                        let message = err.to_string();
+                        error!("[INDEXER] Job {} failed: {:#}", job_id, err);
+                        let _ = fail_job(&state.pool, job_id, &message, None).await;
+                        Some(message)
+                    }
+                    Ok(outcome) => match job::finish(&state.pool, job_id, &outcome).await {
+                        Ok(JobStatus::Failed) => {
+                            error!("[INDEXER] Job {} failed: every unit failed", job_id);
+                            outcome.error_summary()
+                        }
+                        Ok(status) => {
+                            info!("[INDEXER] Job {} finished: {}", job_id, status.as_str());
+                            None
+                        }
+                        Err(err) => {
+                            let message = format!("Failed to record the job outcome: {err}");
+                            error!("[INDEXER] Job {}: {}", job_id, message);
+                            let _ = fail_job(&state.pool, job_id, &message, None).await;
+                            Some(message)
+                        }
+                    },
+                };
+
+                if let Some(error) = failure {
+                    notifications::notify(
+                        state.pool.clone(),
+                        build_failed_event(
+                            &info.job_type,
+                            info.library_name.clone(),
+                            info.book_title.clone(),
+                            info.thumbnail_path.clone(),
+                            error,
+                        ),
+                    );
                 } else {
-                    info!("[INDEXER] Job {} completed", job_id);
                     let stats = load_scan_stats(&state.pool, job_id).await;
                     if notifications::job_type_category(&info.job_type) == JobCategory::Scan {
                         if let Some(lid) = library_id {
