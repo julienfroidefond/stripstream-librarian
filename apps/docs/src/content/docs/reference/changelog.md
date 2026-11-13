@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.148 — 2026-11-13
+
+### Refactoring
+
+- **series** — one series-detail loader and view model ([#283](https://github.com/julienfroidefond/stripstream-librarian/pull/283))
+
 ## v3.32.147 — 2026-11-13
 
 ### Refactoring
