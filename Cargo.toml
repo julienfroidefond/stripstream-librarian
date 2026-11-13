@@ -53,3 +53,13 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [patch.crates-io]
 core2 = { path = "crates/core2-shim" }
+
+# Keep local and CI build artifacts small. Line tables are enough for useful
+# backtraces; dependency debug info is not needed day to day. Override once with
+# `CARGO_PROFILE_DEV_DEBUG=2 cargo build` when debugging a dependency.
+# Use scripts/prune-rust-target.sh to reclaim the incremental cache.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

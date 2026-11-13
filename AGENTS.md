@@ -39,6 +39,10 @@ DATABASE_URL="postgres://stripstream:stripstream@localhost:6432/stripstream" car
 ```
 
 - **Tests are mandatory.** Any code change MUST ship with tests. Always run them before committing.
+- **Rust build cache**: `target/` grows to several GB per worktree. The dev profile keeps only
+  line tables (`debug = "line-tables-only"`) and no dependency debug info. When disk fills up, run
+  `./scripts/prune-rust-target.sh --apply` to drop the `incremental` caches of the repo and all its
+  git worktrees; add `--stale-days 30` to also prune old artifacts with `cargo-sweep`.
 - `#[sqlx::test(migrations = "../../infra/migrations")]` creates a throwaway database per test with
   migrations applied. The PostgreSQL user needs the `CREATEDB` right:
   `ALTER USER stripstream CREATEDB;`.
