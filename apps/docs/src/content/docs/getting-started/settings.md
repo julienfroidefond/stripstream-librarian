@@ -46,7 +46,9 @@ Trois cartes :
 
 - **Traitement d'images** — format de sortie par défaut (WebP / JPEG / PNG), qualité (1–100),
   filtre de redimensionnement (lanczos3, triangle, nearest) et largeur maximale autorisée. Ces
-  valeurs s'appliquent au **rendu des pages** servi aux lecteurs, pas aux miniatures.
+  valeurs s'appliquent au **rendu des pages** servi aux lecteurs, pas aux miniatures. Changer le
+  filtre fait recalculer les pages redimensionnées (nouvelle clé de cache et nouvel `ETag`) ; les
+  anciennes restent sur disque jusqu'à **Vider le cache**.
 - **Cache** — statistiques du cache de pages (taille disque, fichiers, cache RAM occupé sur le
   plafond, pages en mémoire, répertoire), puis réglages : **répertoire du cache**, **taille max
   (Mo)** sur disque et **cache pages en RAM (Mo)**. Le bouton **Vider le cache** purge mémoire et

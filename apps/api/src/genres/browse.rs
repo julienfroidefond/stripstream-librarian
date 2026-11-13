@@ -18,6 +18,9 @@ use crate::{error::ApiError, series::SeriesItem, state::AppState};
 
 const DEFAULT_LIMIT: i64 = 100;
 const MAX_LIMIT: i64 = 500;
+/// Highest accepted `page`: far beyond any real catalogue (500 M series at the
+/// max limit) while keeping `(page - 1) * limit` well inside `i64`.
+const MAX_PAGE: i64 = 1_000_000;
 
 /// Parsed `GET /genres/browse` query. Repeated keys (`genres=a&genres=b`) and
 /// their bracketed form (`genres[]=a`) are both accepted.
@@ -62,7 +65,15 @@ impl GenreBrowseQuery {
                     let q = value.trim();
                     query.q = (!q.is_empty()).then(|| q.to_string());
                 }
-                "page" => query.page = parse_int(key, &value)?.max(1),
+                "page" => {
+                    let page = parse_int(key, &value)?;
+                    if page > MAX_PAGE {
+                        return Err(ApiError::bad_request(format!(
+                            "page must be at most {MAX_PAGE}"
+                        )));
+                    }
+                    query.page = page.max(1);
+                }
                 "limit" => query.limit = parse_int(key, &value)?.clamp(1, MAX_LIMIT),
                 _ => {}
             }
@@ -71,7 +82,7 @@ impl GenreBrowseQuery {
     }
 
     fn offset(&self) -> i64 {
-        (self.page - 1) * self.limit
+        (self.page - 1).saturating_mul(self.limit)
     }
 
     fn library_scope(&self) -> Option<Vec<Uuid>> {
@@ -155,7 +166,7 @@ pub struct GenreBrowsePage {
         ("library_ids" = Option<Vec<String>>, Query, description = "Repeatable. Library scope for the items and the facets (default: every library)"),
         ("untagged" = Option<bool>, Query, description = "Only series without any genre"),
         ("q" = Option<String>, Query, description = "Filter by series name (case- and accent-insensitive, partial match)"),
-        ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
+        ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1, max 1000000)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 500, default 100)"),
     ),
     responses(
