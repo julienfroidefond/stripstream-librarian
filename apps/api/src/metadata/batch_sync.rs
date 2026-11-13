@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use super::shared_sync;
+use stripstream_core::series_identity;
+
+use super::links;
 use crate::metadata_providers;
 
 // ---------------------------------------------------------------------------
@@ -62,39 +64,26 @@ pub(super) fn has_approved_link(links: &ApprovedLinks, series_name: &str, provid
 pub(super) enum SearchOutcome {
     AutoMatch(metadata_providers::SeriesCandidate),
     NoResults,
-    TooManyResults(i32, Option<metadata_providers::SeriesCandidate>),
     LowConfidence(metadata_providers::SeriesCandidate),
     Error(String),
 }
 
-/// The prudence rule shared by every provider: only a perfect confidence is
-/// auto-approved. Anything below stays for manual review.
-pub(super) fn is_confident_match(confidence: f32) -> bool {
-    (confidence - 1.0).abs() < f32::EPSILON
-}
-
 /// Turn raw candidates into an outcome without touching the network or the DB.
+///
+/// Candidates arrive best first. Only the best one can be auto-matched, and
+/// only when its [`Score`](metadata_providers::scoring::Score) passes the
+/// shared auto-match verdict; anything else stays for manual review.
 pub(super) fn evaluate_candidates(
     candidates: Vec<metadata_providers::SeriesCandidate>,
 ) -> SearchOutcome {
-    // Only auto-match if exactly 1 result with confidence == 1.0
-    if candidates.len() == 1 && is_confident_match(candidates[0].confidence) {
-        return SearchOutcome::AutoMatch(candidates.into_iter().next().unwrap());
-    }
-
-    // Check if best candidate has perfect confidence
     let Some(best) = candidates.into_iter().next() else {
         return SearchOutcome::NoResults;
     };
-    if is_confident_match(best.confidence) {
-        return SearchOutcome::AutoMatch(best);
+    if best.score.is_auto_match() {
+        SearchOutcome::AutoMatch(best)
+    } else {
+        SearchOutcome::LowConfidence(best)
     }
-
-    if best.confidence < 1.0 {
-        return SearchOutcome::LowConfidence(best);
-    }
-
-    SearchOutcome::TooManyResults(0, None)
 }
 
 pub(super) async fn search_and_evaluate(
@@ -125,7 +114,7 @@ pub(super) async fn search_and_evaluate(
         return SearchOutcome::NoResults;
     }
 
-    // Boost confidence based on local book count vs candidate total_volumes
+    // Book-count bonus, added before each score's cap (see `scoring`)
     let local_count: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
@@ -140,7 +129,7 @@ pub(super) async fn search_and_evaluate(
 
     let mut candidates = candidates;
     if let Some(count) = local_count {
-        super::config::boost_confidence_by_book_count(&mut candidates, count);
+        metadata_providers::scoring::apply_book_count(&mut candidates, count);
     }
 
     evaluate_candidates(candidates)
@@ -276,7 +265,7 @@ fn candidate_detail(
             "cover_url": candidate.cover_url,
             "total_volumes": candidate.total_volumes,
             "start_year": candidate.start_year,
-            "confidence": candidate.confidence,
+            "confidence": candidate.score.value(),
         })
     } else {
         serde_json::json!({
@@ -307,7 +296,7 @@ pub(super) async fn evaluate_provider(
                     provider: provider_name.to_string(),
                     fallback_used,
                     candidates_count: 1,
-                    best_confidence: Some(candidate.confidence),
+                    best_confidence: Some(candidate.score.value()),
                     best_candidate: Some(candidate_detail(&candidate, false)),
                     link_id: Some(link_id),
                     message: None,
@@ -317,7 +306,7 @@ pub(super) async fn evaluate_provider(
                     provider: provider_name.to_string(),
                     fallback_used,
                     candidates_count: 1,
-                    best_confidence: Some(candidate.confidence),
+                    best_confidence: Some(candidate.score.value()),
                     best_candidate: None,
                     link_id: None,
                     message: Some(format!("Auto-apply failed: {e}")),
@@ -334,27 +323,17 @@ pub(super) async fn evaluate_provider(
             link_id: None,
             message: Some("No results found".to_string()),
         },
-        SearchOutcome::TooManyResults(count, best) => ProviderOutcome {
-            status: "too_many_results",
-            provider: provider_name.to_string(),
-            fallback_used,
-            candidates_count: count,
-            best_confidence: best.as_ref().map(|c| c.confidence),
-            best_candidate: best.as_ref().map(|c| candidate_detail(c, true)),
-            link_id: None,
-            message: Some(format!("{count} results, manual review needed")),
-        },
         SearchOutcome::LowConfidence(candidate) => ProviderOutcome {
             status: "low_confidence",
             provider: provider_name.to_string(),
             fallback_used,
             candidates_count: 1,
-            best_confidence: Some(candidate.confidence),
+            best_confidence: Some(candidate.score.value()),
             best_candidate: Some(candidate_detail(&candidate, true)),
             link_id: None,
             message: Some(format!(
                 "Best confidence: {:.0}%",
-                candidate.confidence * 100.0
+                candidate.score.value() * 100.0
             )),
         },
         SearchOutcome::Error(e) => ProviderOutcome {
@@ -377,64 +356,29 @@ pub(super) async fn auto_apply(
     provider_name: &str,
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<Uuid, String> {
-    // Resolve series_id from series name
-    let series_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
-            .bind(library_id)
-            .bind(series_name)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
+    // Resolve the series through the canonical identity key (ADR 0007).
+    let series_id = series_identity::find_id(pool, library_id, series_name)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
 
-    // Create the external_metadata_link
-    let metadata_json = &candidate.metadata_json;
-    let (pr_rating, pr_rating_count, pr_rating_scale) =
-        shared_sync::extract_provider_rating(metadata_json);
-    let row = sqlx::query(
-        r#"
-        INSERT INTO external_metadata_links
-            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external,
-             provider_rating, provider_rating_count, provider_rating_scale)
-        VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8, $9, $10, $11)
-        ON CONFLICT (series_id, provider)
-        DO UPDATE SET
-            external_id = EXCLUDED.external_id,
-            external_url = EXCLUDED.external_url,
-            status = 'approved',
-            confidence = EXCLUDED.confidence,
-            metadata_json = EXCLUDED.metadata_json,
-            total_volumes_external = EXCLUDED.total_volumes_external,
-            provider_rating = EXCLUDED.provider_rating,
-            provider_rating_count = EXCLUDED.provider_rating_count,
-            provider_rating_scale = EXCLUDED.provider_rating_scale,
-            matched_at = NOW(),
-            approved_at = NOW(),
-            updated_at = NOW()
-        RETURNING id
-        "#,
+    // Approve the link; the first approved link of a series becomes primary.
+    let link_id = links::approve(
+        pool,
+        &links::LinkCandidate {
+            library_id,
+            series_id,
+            provider: provider_name,
+            external_id: &candidate.external_id,
+            external_url: candidate.external_url.as_deref(),
+            confidence: Some(candidate.score.value()),
+            metadata_json: &candidate.metadata_json,
+            total_volumes: candidate.total_volumes,
+        },
+        links::OnConflict::Replace,
     )
-    .bind(library_id)
-    .bind(series_id)
-    .bind(provider_name)
-    .bind(&candidate.external_id)
-    .bind(&candidate.external_url)
-    .bind(candidate.confidence)
-    .bind(metadata_json)
-    .bind(candidate.total_volumes)
-    .bind(pr_rating)
-    .bind(pr_rating_count)
-    .bind(pr_rating_scale)
-    .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
-
-    let link_id: Uuid = row.get("id");
-
-    // The first approved link of a series becomes the primary.
-    shared_sync::promote_if_no_primary(pool, series_id, link_id)
-        .await
-        .map_err(|e| e.to_string())?;
 
     // Sync the whole series from all approved links (primary first, secondaries
     // as fallback), so an auto-matched secondary never overwrites the primary.
@@ -449,41 +393,27 @@ pub(super) async fn auto_apply(
 ///
 /// The configured providers are kept on purpose: now that one job can match
 /// both the primary and the secondary, deleting the freshly created secondary
-/// link would undo half of the job (#150). Removing the old primary would also
-/// leave the series without a reference provider, so the oldest remaining
-/// approved link is promoted afterwards.
+/// link would undo half of the job (#150). The after-removal policy of
+/// [`links::remove`] then promotes a new primary and re-merges the series.
 pub(super) async fn cleanup_rematch_links(
     pool: &PgPool,
     library_id: Uuid,
     series_name: &str,
     keep_providers: &[String],
-) -> Result<u64, sqlx::Error> {
-    let series_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
-            .bind(library_id)
-            .bind(series_name)
-            .fetch_optional(pool)
-            .await?;
-
-    let Some(series_id) = series_id else {
+) -> Result<u64, links::LinkError> {
+    let Some(series_id) = series_identity::find_id(pool, library_id, series_name).await? else {
         return Ok(0);
     };
 
-    let result = sqlx::query(
-        "DELETE FROM external_metadata_links \
-         WHERE library_id = $1 AND series_id = $2 AND provider <> ALL($3)",
+    let after = links::remove(
+        pool,
+        links::Removal::ProvidersNotIn {
+            series_id,
+            keep: keep_providers,
+        },
     )
-    .bind(library_id)
-    .bind(series_id)
-    .bind(keep_providers)
-    .execute(pool)
     .await?;
-
-    if result.rows_affected() > 0 {
-        shared_sync::promote_oldest_approved(pool, series_id).await?;
-    }
-
-    Ok(result.rows_affected())
+    Ok(after.removed)
 }
 
 #[cfg(test)]

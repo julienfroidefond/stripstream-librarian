@@ -54,7 +54,7 @@ pub(crate) async fn sync_series_from_links(
         }
 
         for link in &links {
-            shared_sync::update_link_synced_at(pool, link.id).await?;
+            super::links::mark_synced(pool, link.id).await?;
         }
     }
 

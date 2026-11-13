@@ -10,10 +10,10 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `lib.rs` | `AppState` (pool) |
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** |
 | `job.rs` | `claim_next_job` (verrouillage exclusif), `process_job`, `fail_job`, `cleanup_stale_jobs`, `is_job_cancelled` |
-| `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), skip dossiers inchangés via mtime, batching DB |
+| `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
 | `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) |
-| `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/BookUpdate/FileInsert/FileUpdate/ErrorInsert/EventInsert`, `claim_analysis_books` / `flush_analysis_status` |
+| `batch.rs` | `ScanBatch::flush` avec UNNEST (`BookInsert/BookUpdate/BookCorrection/FileInsert/FileUpdate/EventInsert`), `claim_analysis_books` / `flush_analysis_status` |
 | `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
 | `watcher.rs` | Polling filesystem toutes les **30 s** (snapshot, pas d'inotify) — crée des jobs `rebuild` |
 | `api.rs` | Handlers HTTP de l'indexer (`/health`, `/version`, `/ready`) |
@@ -55,19 +55,19 @@ Jobs spéciaux :
 
 ## Pattern batch (batch.rs)
 
-Toutes les opérations DB massives passent par `flush_all_batches` avec UNNEST :
+Les écritures de la discovery passent par `ScanBatch` (UNNEST), via `scanner::writer::ScanWriter` :
 
 ```rust
-// Accumuler dans des Vec<BookInsert>, Vec<FileInsert>, etc.
-books_to_insert.push(BookInsert { ... });
-
-// Flush quand plein ou en fin de scan
-if books_to_insert.len() >= BATCH_SIZE {
-    flush_all_batches(&pool, &mut books_update, &mut files_update,
-                      &mut books_insert, &mut files_insert,
-                      &mut errors_insert, &mut events_insert).await?;
-}
+// Fichier connu : décision pure, puis un seul écrivain (séries, batch, événements)
+let reconciliation = reconcile(existing_file, &parsed, Observation::of(existing_file, stat));
+writer.apply(reconciliation, &abs_path, &file_name, stats).await?;
+// Nouveau fichier
+writer.insert_new(parsed, stat, &abs_path, &file_name, stats).await?;
+// Le writer flush à BATCH_SIZE ; flush explicite à l'annulation et en fin de scan
+writer.flush().await?;
 ```
+
+Ne jamais écrire `books`/`book_files` ligne à ligne depuis la boucle de scan.
 
 Toutes les opérations du flush sont dans une seule transaction.
 
@@ -77,7 +77,7 @@ Toutes les opérations du flush sont dans une seule transaction.
 
 Pipeline allégé — **zéro ouverture d'archive** :
 1. Charger `directory_mtimes` depuis la DB
-2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké → skip si inchangé
+2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké ; dans un dossier inchangé, seuls les fichiers déjà connus sont relus (même chemin que le cas normal : stat, fingerprint, progression, annulation, `reconcile`)
 3. Pour chaque fichier : `parse_metadata_fast` (title/series/volume depuis filename uniquement)
 4. INSERT/UPDATE avec `analysis_status = 'discovered'` et `page_count = NULL` — les livres sont visibles immédiatement
 5. Upsert `directory_mtimes` en fin de scan

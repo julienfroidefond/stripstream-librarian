@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod index_jobs;
+pub mod launcher;
 pub mod poller;
 
 /// Re-exported from the shared lifecycle crate so existing

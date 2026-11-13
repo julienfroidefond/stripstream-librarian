@@ -15,10 +15,10 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
 | `books/` | `mod.rs` (CRUD livres), `pages.rs` (rendu + double cache), `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
-| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
+| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
 | `downloads/` | `prowlarr`, `qbittorrent`, `torrent_import`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
-| `jobs/` | `index_jobs.rs` (suivi + SSE), `poller.rs`, `helpers.rs` |
+| `jobs/` | `index_jobs.rs` (suivi + SSE), `launcher.rs` (lancement des jobs in-process), `poller.rs`, `helpers.rs` |
 | `reading/` | `progress.rs`, `status_match.rs`, `status_pull.rs`, `status_push.rs` |
 | `series/` | `list`, `create`, `merge`, `update`, `archive`, `favorites`, `ratings`, `recommendations`, `related`, `ongoing`, `helpers` |
 | `reading_lists/` | Listes de lecture |
@@ -117,9 +117,20 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
   (`normalize_library`) des releases `available_downloads`. Le `missing_count` ne décrémente que
   des volumes distincts réellement retirés d'au moins une release — jamais du nombre de fichiers
   importés. Ne pas refiltrer le JSON dans les handlers.
+- **Lancement de jobs in-process** : un handler qui crée un job exécuté par l'API le décrit par un
+  `JobSpec` (type, conflits, notification d'échec, stats partielles) et passe par
+  `jobs/launcher.rs` (`launch` pour une bibliothèque ou un job global, `launch_each` pour toutes).
+  Ne pas réécrire `job_in_flight` + `INSERT index_jobs` + `tokio::spawn` + `fail_job` dans un
+  handler ; renvoyer `JobLaunchResponse` (ADR 0019).
 - **Identité de série** : `stripstream_core::series_identity` possède la clé normalisée
   (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
   Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
   écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
+- **Liens de métadonnées** : `metadata/links.rs` est le seul écrivain de
+  `external_metadata_links` (ADR 0017) : `propose`, `approve`, `approve_existing`,
+  `set_primary`, `remove(Removal::…)`, `reassign`, `record_provider_snapshot`, `mark_synced`.
+  Il garde l'invariant « un seul primaire approuvé par série » et applique une politique unique
+  après retrait d'un lien approuvé (promotion, puis refusion des champs de série ou effacement).
+  Ne pas écrire `INSERT`/`UPDATE`/`DELETE external_metadata_links` ailleurs.
 - **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
   `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

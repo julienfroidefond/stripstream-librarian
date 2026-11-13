@@ -8,6 +8,9 @@ vi.mock("@/lib/api", async () => {
   return createApiMock();
 });
 
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
+
+import { revalidatePath, revalidateTag } from "next/cache";
 import { apiFetch } from "@/lib/api";
 import { GET as listGenres } from "@/app/api/genres/route";
 import { PATCH as patchGenre, DELETE as deleteGenre } from "@/app/api/genres/[name]/route";
@@ -41,12 +44,15 @@ describe("/api/genres", () => {
     mockApi.mockResolvedValue({ ok: true });
     await patchGenre(jsonRequest("/api/genres/Sci%20Fi", { method: "PATCH", body: { name: "SF" } }), routeCtx({ name: "Sci Fi" }));
     expect(mockApi).toHaveBeenCalledWith("/genres/Sci%20Fi", expect.objectContaining({ method: "PATCH" }));
+    expect(vi.mocked(revalidateTag)).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/genres");
   });
 
   it("DELETE encodes the genre name", async () => {
     mockApi.mockResolvedValue({ deleted: true });
     await deleteGenre(jsonRequest("/api/genres/Sci%20Fi", { method: "DELETE" }), routeCtx({ name: "Sci Fi" }));
     expect(mockApi).toHaveBeenCalledWith("/genres/Sci%20Fi", { method: "DELETE" });
+    expect(vi.mocked(revalidateTag)).toHaveBeenCalledWith("series", { expire: 0 });
   });
 
   it("POST ai-suggest forwards body", async () => {
@@ -56,7 +62,9 @@ describe("/api/genres", () => {
 
   it("POST assign forwards body", async () => {
     mockApi.mockResolvedValue({ ok: true });
-    expect((await assign(jsonRequest("/api/genres/assign", { method: "POST", body: { genres: [] } }))).status).toBe(200);
+    const body = { genre: "SF", series_ids: ["s1"] };
+    expect((await assign(jsonRequest("/api/genres/assign", { method: "POST", body }))).status).toBe(200);
+    expect(vi.mocked(revalidateTag)).toHaveBeenCalledWith("series:s1", { expire: 0 });
   });
 
   it("GET untagged forwards query", async () => {

@@ -29,7 +29,7 @@ async fn parses_series_and_volume_metadata() {
     assert_eq!(results[0].publishers, vec!["Glénat"]);
     assert_eq!(results[0].start_year, Some(2020));
     assert_eq!(results[0].total_volumes, Some(12));
-    assert_eq!(results[0].confidence, 1.0);
+    assert!(results[0].score.is_auto_match());
     assert_eq!(results[1].external_id, "25070/simon-et-lucie");
     assert_eq!(results[1].cover_url, None);
     assert_eq!(
@@ -199,7 +199,7 @@ async fn search_retries_with_the_article_moved_to_the_front() {
     assert_eq!(results[0].external_id, "1200/les-cites-obscures");
     // Moving the article is a faithful rewrite: an exact title match may still
     // auto-match.
-    assert_eq!(results[0].confidence, 1.0);
+    assert!(results[0].score.is_auto_match());
 }
 
 #[tokio::test]
@@ -225,7 +225,9 @@ async fn search_drops_the_subtitle_but_caps_confidence() {
     assert_eq!(results[0].title, "Spawn");
     // A stripped subtitle may hide a sub-series (`X - Saga` vs `X`), so the hit
     // stays a review candidate instead of auto-matching.
-    assert!(results[0].confidence < 1.0);
+    assert!(results[0].score.value() < 1.0);
+    // Capped: even the exact volume total cannot promote it to an auto-match.
+    assert!(!results[0].score.with_book_count(5, Some(5)).is_auto_match());
 }
 
 #[tokio::test]

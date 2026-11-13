@@ -27,24 +27,6 @@ pub(crate) struct LocalBookForMatching {
 type LocalBookRow = (Uuid, Option<i32>, String, Option<String>, String);
 
 // ---------------------------------------------------------------------------
-// Series field extraction
-// ---------------------------------------------------------------------------
-
-/// Extract provider rating fields from a metadata_json blob.
-/// Returns (rating, rating_count, rating_scale) — all optional.
-pub(crate) fn extract_provider_rating(
-    metadata_json: &serde_json::Value,
-) -> (Option<f64>, Option<i64>, Option<f64>) {
-    let rating = metadata_json
-        .get("rating")
-        .and_then(|v| v.as_f64())
-        .filter(|&r| r > 0.0);
-    let rating_count = metadata_json.get("rating_count").and_then(|v| v.as_i64());
-    let rating_scale = metadata_json.get("rating_scale").and_then(|v| v.as_f64());
-    (rating, rating_count, rating_scale)
-}
-
-// ---------------------------------------------------------------------------
 // Multi-provider merge (primary + secondary fallback)
 // ---------------------------------------------------------------------------
 
@@ -430,111 +412,6 @@ pub(crate) async fn delete_link_book_metadata(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Update synced_at on a link
-// ---------------------------------------------------------------------------
-
-pub(crate) async fn update_link_synced_at(pool: &PgPool, link_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1",
-    )
-    .bind(link_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Primary link management
-// ---------------------------------------------------------------------------
-
-/// Promote `link_id` to primary if the series currently has no approved primary
-/// link. Used when approving/creating a link. Returns true if it was promoted.
-pub(crate) async fn promote_if_no_primary(
-    pool: &PgPool,
-    series_id: Uuid,
-    link_id: Uuid,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE external_metadata_links
-        SET is_primary = true, updated_at = NOW()
-        WHERE id = $2
-          AND status = 'approved'
-          AND NOT EXISTS (
-              SELECT 1 FROM external_metadata_links e2
-              WHERE e2.series_id = $1
-                AND e2.status = 'approved'
-                AND e2.is_primary
-          )
-        "#,
-    )
-    .bind(series_id)
-    .bind(link_id)
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected() > 0)
-}
-
-/// Promote the oldest approved link of a series to primary if none is primary.
-/// Used after rejecting/deleting the current primary. Returns the promoted id.
-pub(crate) async fn promote_oldest_approved(
-    pool: &PgPool,
-    series_id: Uuid,
-) -> Result<Option<Uuid>, sqlx::Error> {
-    let promoted: Option<Uuid> = sqlx::query_scalar(
-        r#"
-        UPDATE external_metadata_links
-        SET is_primary = true, updated_at = NOW()
-        WHERE id = (
-            SELECT e2.id FROM external_metadata_links e2
-            WHERE e2.series_id = $1
-              AND e2.status = 'approved'
-              AND NOT EXISTS (
-                  SELECT 1 FROM external_metadata_links e3
-                  WHERE e3.series_id = $1
-                    AND e3.status = 'approved'
-                    AND e3.is_primary
-              )
-            ORDER BY e2.approved_at ASC NULLS LAST, e2.id ASC
-            LIMIT 1
-        )
-        RETURNING id
-        "#,
-    )
-    .bind(series_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(promoted)
-}
-
-/// Set `link_id` as the primary link of its series, clearing any other primary.
-/// The caller must have verified the link is approved.
-pub(crate) async fn set_primary_link(
-    pool: &PgPool,
-    series_id: Uuid,
-    link_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
-    sqlx::query(
-        "UPDATE external_metadata_links SET is_primary = false, updated_at = NOW()
-         WHERE series_id = $1 AND is_primary",
-    )
-    .bind(series_id)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "UPDATE external_metadata_links SET is_primary = true, updated_at = NOW()
-         WHERE id = $1 AND series_id = $2 AND status = 'approved'",
-    )
-    .bind(link_id)
-    .bind(series_id)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -772,97 +649,11 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn promote_if_no_primary_only_first_wins(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        let b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-
-        assert!(promote_if_no_primary(&pool, series_id, a).await.unwrap());
-        assert!(!promote_if_no_primary(&pool, series_id, b).await.unwrap());
-
-        let primary: Uuid = sqlx::query_scalar(
-            "SELECT id FROM external_metadata_links WHERE series_id = $1 AND is_primary AND status = 'approved'",
-        )
-        .bind(series_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(primary, a);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn set_primary_link_switches_and_clears_previous(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        let b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-
-        set_primary_link(&pool, series_id, a).await.unwrap();
-        set_primary_link(&pool, series_id, b).await.unwrap();
-
-        let primaries: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM external_metadata_links WHERE series_id = $1 AND is_primary",
-        )
-        .bind(series_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(primaries, vec![b]);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn unique_index_blocks_two_approved_primaries(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        let b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-        set_primary_link(&pool, series_id, a).await.unwrap();
-
-        let err = sqlx::query("UPDATE external_metadata_links SET is_primary = true WHERE id = $1")
-            .bind(b)
-            .execute(&pool)
-            .await;
-        assert!(
-            err.is_err(),
-            "two approved primaries must violate the unique index"
-        );
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn promote_oldest_approved_after_reject(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        let b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-        set_primary_link(&pool, series_id, a).await.unwrap();
-
-        // Reject the primary (mirrors reject_metadata).
-        sqlx::query(
-            "UPDATE external_metadata_links SET status = 'rejected', is_primary = false WHERE id = $1",
-        )
-        .bind(a)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let promoted = promote_oldest_approved(&pool, series_id).await.unwrap();
-        assert_eq!(promoted, Some(b));
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn promote_oldest_approved_noop_when_primary_exists(pool: sqlx::PgPool) {
-        let (lib_id, series_id) = seed_series(&pool).await;
-        let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
-        let _b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-        set_primary_link(&pool, series_id, a).await.unwrap();
-
-        let promoted = promote_oldest_approved(&pool, series_id).await.unwrap();
-        assert_eq!(promoted, None);
-    }
-
-    #[sqlx::test(migrations = "../../infra/migrations")]
     async fn fetch_approved_links_orders_primary_first(pool: sqlx::PgPool) {
         let (lib_id, series_id) = seed_series(&pool).await;
         let a = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
         let b = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-        set_primary_link(&pool, series_id, b).await.unwrap();
+        crate::metadata::links::set_primary(&pool, b).await.unwrap();
 
         let links = fetch_approved_links(&pool, series_id).await.unwrap();
         assert_eq!(links.len(), 2);
@@ -877,7 +668,9 @@ mod tests {
         let (lib_id, series_id) = seed_series(&pool).await;
         let primary = seed_link(&pool, lib_id, series_id, "google_books", "approved").await;
         let secondary = seed_link(&pool, lib_id, series_id, "bdtheque", "approved").await;
-        set_primary_link(&pool, series_id, primary).await.unwrap();
+        crate::metadata::links::set_primary(&pool, primary)
+            .await
+            .unwrap();
 
         let book_id = Uuid::new_v4();
         sqlx::query(

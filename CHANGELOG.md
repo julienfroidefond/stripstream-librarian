@@ -4,6 +4,60 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.155 — 2026-11-13
+
+### Refactoring
+
+- **scanner** — reconcile a known file once through a pure decision and one writer ([#293](https://github.com/julienfroidefond/stripstream-librarian/pull/293))
+
+## v3.32.154 — 2026-11-13
+
+### Refactoring
+
+- **jobs** — one launcher for in-process API jobs ([#296](https://github.com/julienfroidefond/stripstream-librarian/pull/296))
+
+## v3.32.153 — 2026-11-13
+
+### Refactoring
+
+- **metadata** — one owner module for external_metadata_links ([#294](https://github.com/julienfroidefond/stripstream-librarian/pull/294))
+
+## v3.32.152 — 2026-11-13
+
+### Corrections
+
+- **reading-lists** — route series moves to a dedicated move proxy ([#289](https://github.com/julienfroidefond/stripstream-librarian/pull/289))
+
+### Refactoring
+
+- **settings** — one loader for the settings page ([#291](https://github.com/julienfroidefond/stripstream-librarian/pull/291))
+
+## v3.32.151 — 2026-11-13
+
+### Refactoring
+
+- **metadata** — one match-scoring policy for every provider ([#297](https://github.com/julienfroidefond/stripstream-librarian/pull/297))
+
+## v3.32.150 — 2026-11-13
+
+### Refactoring
+
+- **backoffice** — one cache invalidation seam for the Next data cache ([#290](https://github.com/julienfroidefond/stripstream-librarian/pull/290))
+
+## v3.32.149 — 2026-11-13
+
+### Corrections
+
+- **discovery** — report owned volumes through the shared coverage rule ([#292](https://github.com/julienfroidefond/stripstream-librarian/pull/292))
+
+### Refactoring
+
+- **jobs** — one job-type descriptor and one live-job seam ([#284](https://github.com/julienfroidefond/stripstream-librarian/pull/284))
+
+### Documentation
+
+- **adr** — record the architecture-review decisions ([#287](https://github.com/julienfroidefond/stripstream-librarian/pull/287))
+
 ## v3.32.148 — 2026-11-13
 
 ### Refactoring

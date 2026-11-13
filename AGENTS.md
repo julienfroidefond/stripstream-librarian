@@ -250,6 +250,11 @@ canonicalizes, but keeps the historic `google_books` fallback for links that wer
 the metadata providers (e.g. Prowlarr downloads). Migration `0129` heals legacy links that stored an
 alias.
 
+Match scores live in `metadata_providers/scoring.rs` (ADR 0015): providers build a `Score` with
+`Score::of_titles(title, query, cap)` (one normalized `title_similarity`), the book-count bonus is
+added before the cap (`apply_book_count`) and `Score::is_auto_match()` is the only auto-approval
+verdict. Never compute a confidence or compare it to `1.0` by hand.
+
 ### Path Remapping & Indexer Pipeline
 
 Path handling uses typed `LibraryRoot` / `LibraryPath` values from `crates/core/src/paths.rs`
