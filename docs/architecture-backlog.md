@@ -35,24 +35,24 @@ downloads / série / jobs. Tous les chantiers sont retenus.
 
 | # | Zone | Bug | Traité par |
 |---|------|-----|------------|
-| B1 | Discovery · API Rust | La requête des tomes possédés lit `books.volume_number` (la colonne est `volume`) ; l'erreur est avalée, `volumes_already_owned` est toujours vide | PR dédiée |
-| B2 | Reading lists · Backoffice | `moveSeries` appelle `.../series/{id}/move`, route inexistante ; chaque moitié est mockée dans les tests | PR dédiée |
-| B3 | Settings · Backoffice | API injoignable ⇒ brouillon amorcé avec les défauts sans signal ; une sauvegarde peut écraser la config stockée | chantier 17 |
-| B4 | Metadata · API Rust | Le bonus « nombre de tomes » s'applique après le plafond 0,7 : une variante plafonnée peut auto-matcher | chantier B4 (score) |
-| B5 | Metadata · API Rust | La fusion de séries déplace les liens externes sans gérer `is_primary` (index unique « un primaire par série ») | chantier 12 |
+| B1 | Discovery · API Rust | La requête des tomes possédés lit `books.volume_number` (la colonne est `volume`) ; l'erreur est avalée, `volumes_already_owned` est toujours vide | PR #292 |
+| B2 | Reading lists · Backoffice | `moveSeries` appelle `.../series/{id}/move`, route inexistante ; chaque moitié est mockée dans les tests | PR #289 |
+| B3 | Settings · Backoffice | API injoignable ⇒ brouillon amorcé avec les défauts sans signal ; une sauvegarde peut écraser la config stockée | PR #291 (chantier 17) |
+| B4 | Metadata · API Rust | Le bonus « nombre de tomes » s'applique après le plafond 0,7 : une variante plafonnée peut auto-matcher | PR #297 |
+| B5 | Metadata · API Rust | La fusion de séries déplace les liens externes sans gérer `is_primary` (index unique « un primaire par série ») | PR #294 (chantier 12) |
 
 ### Chantiers
 
 | # | Zone | Titre | Force | Statut |
 |---|------|-------|-------|--------|
-| 11 | Jobs · API Rust | Un seul lanceur de jobs d'arrière-plan | Strong | en cours |
-| 12 | Metadata · API Rust | Un module propriétaire de `external_metadata_links` (corrige B5) | Strong | en cours |
-| 13 | Indexer · Rust | Réconcilier un fichier existant une seule fois (ex-05) | Strong | en cours |
-| 14 | Crates · Rust | Un magasin de miniatures partagé API / indexer | Strong | en cours |
+| 11 | Jobs · API Rust | Un seul lanceur de jobs d'arrière-plan | Strong | PR #296 |
+| 12 | Metadata · API Rust | Un module propriétaire de `external_metadata_links` (corrige B5) | Strong | PR #294 |
+| 13 | Indexer · Rust | Réconcilier un fichier existant une seule fois (ex-05) | Strong | PR #293 |
+| 14 | Crates · Rust | Un magasin de miniatures partagé API / indexer | Strong | PR #295 |
 | 15 | Crates · Rust | `series_identity::find_or_create` (prolonge l'ADR 0007) | Strong | à faire (après 12, 13) |
-| 16 | Cache · Backoffice | Une seule politique d'invalidation du cache Next | Strong | en cours |
-| 17 | Settings · Backoffice | Un loader pour `/settings` (corrige B3) | Strong | en cours |
-| B4 | Metadata · API Rust | Une seule politique de score de correspondance | Strong | en cours |
+| 16 | Cache · Backoffice | Une seule politique d'invalidation du cache Next | Strong | PR #290 |
+| 17 | Settings · Backoffice | Un loader pour `/settings` (corrige B3) | Strong | PR #291 |
+| B4 | Metadata · API Rust | Une seule politique de score de correspondance | Strong | PR #297 |
 | 18 | Books · API Rust | Un rendu de page unique et un `current_book_file` | Worth exploring | à faire |
 | 19 | Indexer · Rust | Un résultat de job typé (annulation, `partial`) | Worth exploring | à faire (après 14) |
 | 20 | Crates · Rust | Les transitions de `analysis_status` dans un seul module | Worth exploring | à faire (après 14) |
@@ -61,6 +61,13 @@ downloads / série / jobs. Tous les chantiers sont retenus.
 | 23 | Genres · Backoffice + API | Une requête de navigation par genres côté serveur | Worth exploring | à faire |
 | 24 | Libraries / Series · Backoffice | Passer le DTO plutôt que ses champs en props | Worth exploring | à faire |
 | 25 | Workspace | Ménage : `core2-shim`, `MonitoringForm.tsx`, `BookFormat::from_str` | — | à faire |
+
+Décisions notables de la vague 1 :
+
+- **14** : la config des miniatures ne vient que de `app_settings.thumbnail` ; les variables `THUMBNAIL_*` (jamais lues) sont supprimées.
+- **12** : une seule politique après retrait d'un lien approuvé (promotion puis refusion depuis les liens stockés, ou effacement) ; l'upsert de création de série garde volontairement l'identité existante (`OnConflict::KeepExisting`, #25).
+- **B4** : bonus nombre de tomes appliqué avant le plafond ; SensCritique note par similarité. Reste ouvert : la variante « article déplacé + sous-titre retiré » de `scraping::query_variants` n'est pas plafonnée.
+- **11** : le batch metadata global respecte désormais `force_rematch` et les mêmes conflits que le mode par bibliothèque.
 
 Constats détaillés (avec références `fichier:ligne`) : voir les descriptions des PR et les ADR
 0015 et suivantes.
@@ -175,3 +182,4 @@ composant n'instancie `EventSource`.
 | 2026-11-13 | #286 (chantier 07), #283 (chantier 08) et #284 (chantier 09) fusionnés |
 | 2026-11-13 | ADR 0010–0014 ajoutées (chantiers 01, 02, 07, 08, 09) |
 | 2026-11-13 | Second audit : 5 bugs (B1–B5), chantiers 11–25 ; vague 1 lancée |
+| 2026-11-13 | Vague 1 ouverte : #289–#297 (ADR 0015–0021, sauf 0019 → #296) |
