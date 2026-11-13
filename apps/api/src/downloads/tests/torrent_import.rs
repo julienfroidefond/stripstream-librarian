@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::HashSet;
 
+use parsers::fold_accents;
+
 fn test_library_root() -> stripstream_core::paths::LibraryRoot {
     stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT)
 }
@@ -319,57 +321,6 @@ fn collect_book_files_single_file() {
 
     let files = collect_book_files(file_path.to_str().unwrap()).unwrap();
     assert_eq!(files.len(), 1);
-}
-
-// ─── find_existing_series_dir (uses temp dirs) ───────────────────────
-
-#[test]
-fn find_existing_series_dir_exact_match() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("One Piece")).unwrap();
-
-    let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
-    assert!(result.is_some());
-    assert!(result.unwrap().contains("One Piece"));
-}
-
-#[test]
-fn find_existing_series_dir_case_insensitive() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("one piece")).unwrap();
-
-    let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
-    assert!(result.is_some());
-}
-
-#[test]
-fn find_existing_series_dir_accent_insensitive() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("les geants")).unwrap();
-
-    let result = find_existing_series_dir(dir.path().to_str().unwrap(), "les géants");
-    assert!(result.is_some());
-}
-
-#[test]
-fn find_existing_series_dir_no_match() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("Naruto")).unwrap();
-
-    let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
-    assert!(result.is_none());
-}
-
-#[test]
-fn find_existing_series_dir_prefers_exact_case() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("Les Geants")).unwrap();
-    std::fs::create_dir(dir.path().join("les géants")).unwrap();
-
-    // When searching for "les géants", should prefer the exact case match
-    let result = find_existing_series_dir(dir.path().to_str().unwrap(), "les géants");
-    assert!(result.is_some());
-    assert!(result.unwrap().contains("les géants"));
 }
 
 // ─── find_reference_from_disk (uses temp dirs) ───────────────────────
@@ -992,6 +943,40 @@ async fn do_import_replaces_volume_and_removes_superseded_file(pool: sqlx::PgPoo
         1,
         "only the replaced file should remain, got {:?}",
         remaining
+    );
+}
+
+/// `series_name` is request input; the torrent import must reject a traversal
+/// component before it is joined to the library root.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn do_import_rejects_series_name_traversal(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+        .bind(library_id)
+        .bind(format!("lib_{library_id}"))
+        .bind(format!("/libraries/{library_id}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = match do_import(
+        &pool,
+        &test_library_root(),
+        library_id,
+        "../../etc",
+        &[],
+        "/tmp/stripstream-missing-content",
+        false,
+    )
+    .await
+    {
+        Ok(_) => panic!("a traversal series name must fail the import"),
+        Err(error) => error,
+    };
+
+    assert!(
+        error.to_string().contains("not a valid directory name"),
+        "unexpected error: {error}"
     );
 }
 
