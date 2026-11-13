@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.151 — 2026-11-13
+
+### Refactoring
+
+- **metadata** — one match-scoring policy for every provider ([#297](https://github.com/julienfroidefond/stripstream-librarian/pull/297))
+
 ## v3.32.150 — 2026-11-13
 
 ### Refactoring

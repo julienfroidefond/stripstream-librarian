@@ -47,8 +47,12 @@ export function SettingsDraftProvider({
   children,
   writer = writeSettingsSection,
 }: {
-  /** Values loaded by the server page; defaults are merged here. */
-  initial: Record<string, unknown>;
+  /**
+   * Values loaded by the server page; defaults are merged here. `null` means
+   * the stored settings could not be read: the draft is seeded with defaults
+   * for display only and refuses every edit and write.
+   */
+  initial: Record<string, unknown> | null;
   children: ReactNode;
   /** Test seam: replace the proxy write without mounting the whole page. */
   writer?: SettingsSectionWriter;
@@ -56,7 +60,8 @@ export function SettingsDraftProvider({
   const { t } = useTranslation();
   const [draft] = useState<SettingsDraft>(() =>
     createSettingsDraft({
-      initial: seedSettingsSections(initial),
+      initial: seedSettingsSections(initial ?? {}),
+      readOnly: initial === null,
       write: writer,
       validate: validateSettingsSection,
       onResult: (key, result) => {
@@ -129,6 +134,11 @@ export function useSettingsSection<T>(key: string): SettingsSectionHandle<T> {
     saving: snapshot.saving,
     error: snapshot.error,
   };
+}
+
+/** True when the stored settings were not loaded and saving is disabled. */
+export function useSettingsReadOnly(): boolean {
+  return useSettingsDraft().readOnly;
 }
 
 /** True while any section has a request in flight (tab-level saving badge). */

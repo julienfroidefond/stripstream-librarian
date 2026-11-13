@@ -28,6 +28,7 @@ Exemples :
 | `API_LISTEN_ADDR` | Adresse d'écoute du service API | `0.0.0.0:7080` |
 | `API_DB_MAX_CONNECTIONS` | Taille maximale du pool de connexions PostgreSQL | `10` |
 | `API_BASE_URL` | URL de l'API vue par le backoffice | `http://api:7080` |
+| `INDEXER_BASE_URL` | URL de l'indexer vue par le backoffice (version affichée dans les paramètres) | `http://indexer:7081` |
 | `INDEXER_LISTEN_ADDR` | Adresse d'écoute du service Indexer | `0.0.0.0:7081` |
 | `INDEXER_SCAN_INTERVAL_SECONDS` | Intervalle de vérification du watcher filesystem | `5` |
 

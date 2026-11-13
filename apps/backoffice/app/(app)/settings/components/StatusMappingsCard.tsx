@@ -2,13 +2,13 @@
 
 import { useState, useMemo } from "react";
 import { SettingsCard, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
-import { StatusMappingDto } from "@/lib/api";
+import type { StatusMappingDto } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: { initialStatusMappings: Record<string, unknown>[]; initialSeriesStatuses: string[]; initialProviderStatuses: string[] }) {
+export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: { initialStatusMappings: StatusMappingDto[]; initialSeriesStatuses: string[]; initialProviderStatuses: string[] }) {
   const { t } = useTranslation();
-  const [mappings, setMappings] = useState<StatusMappingDto[]>(initialStatusMappings as unknown as StatusMappingDto[]);
+  const [mappings, setMappings] = useState<StatusMappingDto[]>(initialStatusMappings);
   const [targetStatuses, setTargetStatuses] = useState<string[]>(initialSeriesStatuses);
   const [providerStatuses] = useState<string[]>(initialProviderStatuses);
   const [newTargetName, setNewTargetName] = useState("");

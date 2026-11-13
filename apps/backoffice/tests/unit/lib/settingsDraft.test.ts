@@ -248,3 +248,31 @@ describe("createSettingsDraft", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("createSettingsDraft in read-only mode", () => {
+  it("is writable by default", () => {
+    expect(makeDraft().draft.readOnly).toBe(false);
+  });
+
+  it("ignores edits and never writes, so defaults cannot overwrite the stored config", async () => {
+    const { draft, write, onResult } = makeDraft({ readOnly: true });
+    const listener = vi.fn();
+    draft.subscribe(listener);
+
+    expect(draft.readOnly).toBe(true);
+    draft.patch("limits", { concurrent: 8 });
+    draft.set("rename_format", "custom");
+
+    expect(draft.get("limits")).toEqual({ concurrent: 2, timeout: 12 });
+    expect(draft.get("rename_format")).toBe("default");
+    expect(draft.getSnapshot().dirtyKeys).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+
+    await expect(draft.save("limits")).resolves.toEqual({ status: "readonly" });
+    await expect(draft.save("rename_format")).resolves.toEqual({ status: "readonly" });
+    await flush();
+    expect(write).not.toHaveBeenCalled();
+    expect(onResult).not.toHaveBeenCalled();
+    expect(draft.getSnapshot().savingKeys).toEqual([]);
+  });
+});
