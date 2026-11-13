@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.156 — 2026-11-13
+
+### Refactoring
+
+- **thumbnails** — one thumbnail store shared by API and indexer ([#295](https://github.com/julienfroidefond/stripstream-librarian/pull/295))
+
 ## v3.32.155 — 2026-11-13
 
 ### Refactoring
