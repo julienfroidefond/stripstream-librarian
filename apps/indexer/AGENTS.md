@@ -127,8 +127,9 @@ que `discovered` via `ScanBatch`. N'écrivez jamais `analysis_status` en SQL ail
 
 Transitions : skip/annulation d'un livre `analyzing` → `discovered` (un `cover_pending` le reste) ; erreur d'extraction ou page count irrécupérable →
 `failed` ; page count récupéré → `cover_pending` ou `complete` selon la miniature déjà présente ;
-miniature écrite → `complete`. Un échec de redimensionnement laisse l'état courant (`analyzing` en
-analyse complète, `cover_pending` en miniatures seules) pour que le prochain job reprenne le livre.
+miniature écrite → `complete`. Un échec d'encodage/publication en sous-phase B enregistre le page
+count de la sous-phase A (`record_page_counts` ⇒ `cover_pending`, événement `pages_extracted` en
+warning) et supprime le `.raw` : un job miniatures reprendra la couverture.
 Si les miniatures sont désactivées, l'analyse complète extrait seulement le page count
 (`page_count_only`) et laisse le livre en `cover_pending` ; aucun fichier n'est supprimé par une
 regénération. `failed` n'est pas compté comme « en attente » dans les diagnostics : il est exposé
