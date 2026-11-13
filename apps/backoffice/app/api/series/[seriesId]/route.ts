@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
-import { revalidatePath, revalidateTag } from "next/cache";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 type Params = Promise<{ seriesId: string }>;
 
@@ -12,16 +12,13 @@ export const PATCH = withRoute(async (request: NextRequest, { params }: { params
     method: "PATCH",
     body: JSON.stringify(body),
   });
-  revalidatePath("/series");
-  revalidatePath(`/series/${seriesId}`);
-  revalidateTag("series", { expire: 0 });
-  revalidateTag(`series:${seriesId}`, { expire: 0 });
+  invalidateAfter({ type: "series.updated", seriesId });
   return NextResponse.json(data);
 }, { fallback: "Failed to update series" });
 
 export const DELETE = withRoute(async (request: NextRequest, { params }: { params: Params }) => {
   const { seriesId } = await params;
   const data = await apiFetch(`/series/${seriesId}`, { method: "DELETE" });
-  revalidatePath("/series");
+  invalidateAfter({ type: "series.deleted", seriesId });
   return NextResponse.json(data);
 }, { fallback: "Failed to delete series" });

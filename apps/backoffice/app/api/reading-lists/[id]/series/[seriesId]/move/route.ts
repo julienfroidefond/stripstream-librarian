@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
-import { revalidateReadingLists } from "@/lib/readingListsCache";
+import { invalidateAfter } from "@/lib/cache";
 
 type Params = Promise<{ id: string; seriesId: string }>;
 
@@ -13,6 +13,6 @@ export const POST = withRoute(async (request: NextRequest, { params }: { params:
     method: "POST",
     body: JSON.stringify({ to_list_id: body.to_list_id }),
   });
-  revalidateReadingLists();
+  invalidateAfter({ type: "readingLists.changed" });
   return new NextResponse(null, { status: 204 });
 }, { fallback: "Failed" });

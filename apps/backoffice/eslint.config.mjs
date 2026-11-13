@@ -14,6 +14,25 @@ const config = [
     },
   },
   {
+    // Cache invalidation goes through `invalidateAfter` (lib/cache, ADR 0021).
+    files: ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
+    ignores: ["lib/cache/**", "app/(app)/settings/components/TokensTab.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/cache",
+              importNames: ["revalidateTag", "revalidatePath", "updateTag"],
+              message: "Use invalidateAfter() from @/lib/cache.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     ignores: ["coverage/**", "playwright-report/**", "test-results/**"],
   },
 ];

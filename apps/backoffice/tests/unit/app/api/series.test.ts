@@ -93,6 +93,8 @@ describe("/api/series", () => {
     const res = await createSeries(jsonRequest("/api/series/create", { method: "POST", body: { name: "X" } }));
     expect(mockApi).toHaveBeenCalledWith("/series/create", expect.objectContaining({ method: "POST" }));
     expect(res.status).toBe(200);
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series");
   });
 
   it("POST mark-read calls markSeriesRead with defaults", async () => {
@@ -370,6 +372,10 @@ describe("/api/series", () => {
     const res = await deleteSeries(jsonRequest("/api/series/s1", { method: "DELETE" }), routeCtx({ seriesId: "s1" }));
     expect(mockApi).toHaveBeenCalledWith("/series/s1", { method: "DELETE" });
     expect(res.status).toBe(200);
+    // DELETE now expires the same caches as PATCH (and more), not only the list path.
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/series/s1");
   });
 
   it("PATCH series returns 500 on error", async () => {
@@ -396,10 +402,13 @@ describe("/api/series", () => {
   it("POST merge forwards", async () => {
     mockApi.mockResolvedValue({ merged: true });
     const res = await mergeSeries(
-      jsonRequest("/api/series/s1/merge", { method: "POST", body: { target: "s2" } }),
+      jsonRequest("/api/series/s1/merge", { method: "POST", body: { source_id: "s2" } }),
       routeCtx({ seriesId: "s1" })
     );
     expect(res.status).toBe(200);
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s2", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("books", { expire: 0 });
   });
 
   it("PUT rating returns 204", async () => {
@@ -460,6 +469,8 @@ describe("/api/series", () => {
       routeCtx({ seriesId: "s1" })
     );
     expect(res.status).toBe(200);
+    expect(mockRevalidateTag).toHaveBeenCalledWith("books", { expire: 0 });
+    expect(mockRevalidateTag).toHaveBeenCalledWith("series:s1", { expire: 0 });
   });
 
   it("GET anilist passthrough", async () => {

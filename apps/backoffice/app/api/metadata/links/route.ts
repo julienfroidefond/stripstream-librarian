@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { apiFetch, ExternalMetadataLinkDto } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 export const GET = withRoute(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
@@ -23,8 +23,7 @@ export const DELETE = withRoute(async (request: NextRequest) => {
   const data = await apiFetch<{ deleted: boolean }>(`/metadata/links/${id}`, {
     method: "DELETE",
   });
-  revalidateTag("metadata", { expire: 0 });
-  revalidateTag("series", { expire: 0 });
+  invalidateAfter({ type: "metadata.changed", linkId: id });
   return NextResponse.json(data);
 }, { fallback: "Failed to delete metadata link" });
 
@@ -39,7 +38,6 @@ export const PATCH = withRoute(async (request: NextRequest) => {
     `/metadata/links/${id}`,
     { method: "PATCH", body: JSON.stringify(body) },
   );
-  revalidateTag("metadata", { expire: 0 });
-  revalidateTag("series", { expire: 0 });
+  invalidateAfter({ type: "metadata.changed", linkId: id });
   return NextResponse.json(data);
 }, { fallback: "Failed to update metadata link" });

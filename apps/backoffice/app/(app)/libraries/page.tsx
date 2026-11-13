@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+import { invalidateAfter } from "@/lib/cache";
 import Image from "next/image";
 import Link from "next/link";
 import { listFolders, createLibrary, deleteLibrary, fetchLibraries, getBookCoverUrl, LibraryDto, FolderItem } from "@/lib/api";
@@ -47,7 +47,7 @@ export default async function LibrariesPage() {
     const rootPath = formData.get("root_path") as string;
     if (name && rootPath) {
       await createLibrary(name, rootPath);
-      revalidatePath("/libraries");
+      invalidateAfter({ type: "library.created" });
     }
   }
 
@@ -55,7 +55,7 @@ export default async function LibrariesPage() {
     "use server";
     const id = formData.get("id") as string;
     await deleteLibrary(id);
-    revalidatePath("/libraries");
+    invalidateAfter({ type: "library.deleted", libraryId: id });
   }
 
   return (
