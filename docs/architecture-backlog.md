@@ -35,32 +35,32 @@ downloads / série / jobs. Tous les chantiers sont retenus.
 
 | # | Zone | Bug | Traité par |
 |---|------|-----|------------|
-| B1 | Discovery · API Rust | La requête des tomes possédés lit `books.volume_number` (la colonne est `volume`) ; l'erreur est avalée, `volumes_already_owned` est toujours vide | PR #292 |
-| B2 | Reading lists · Backoffice | `moveSeries` appelle `.../series/{id}/move`, route inexistante ; chaque moitié est mockée dans les tests | PR #289 |
-| B3 | Settings · Backoffice | API injoignable ⇒ brouillon amorcé avec les défauts sans signal ; une sauvegarde peut écraser la config stockée | PR #291 (chantier 17) |
-| B4 | Metadata · API Rust | Le bonus « nombre de tomes » s'applique après le plafond 0,7 : une variante plafonnée peut auto-matcher | PR #297 |
-| B5 | Metadata · API Rust | La fusion de séries déplace les liens externes sans gérer `is_primary` (index unique « un primaire par série ») | PR #294 (chantier 12) |
+| B1 | Discovery · API Rust | La requête des tomes possédés lit `books.volume_number` (la colonne est `volume`) ; l'erreur est avalée, `volumes_already_owned` est toujours vide | **fusionné** (#292) |
+| B2 | Reading lists · Backoffice | `moveSeries` appelle `.../series/{id}/move`, route inexistante ; chaque moitié est mockée dans les tests | **fusionné** (#289) |
+| B3 | Settings · Backoffice | API injoignable ⇒ brouillon amorcé avec les défauts sans signal ; une sauvegarde peut écraser la config stockée | **fusionné** #291 (chantier 17) |
+| B4 | Metadata · API Rust | Le bonus « nombre de tomes » s'applique après le plafond 0,7 : une variante plafonnée peut auto-matcher | **fusionné** (#297) |
+| B5 | Metadata · API Rust | La fusion de séries déplace les liens externes sans gérer `is_primary` (index unique « un primaire par série ») | **fusionné** #294 (chantier 12) |
 
 ### Chantiers
 
 | # | Zone | Titre | Force | Statut |
 |---|------|-------|-------|--------|
-| 11 | Jobs · API Rust | Un seul lanceur de jobs d'arrière-plan | Strong | PR #296 |
-| 12 | Metadata · API Rust | Un module propriétaire de `external_metadata_links` (corrige B5) | Strong | PR #294 |
-| 13 | Indexer · Rust | Réconcilier un fichier existant une seule fois (ex-05) | Strong | PR #293 |
-| 14 | Crates · Rust | Un magasin de miniatures partagé API / indexer | Strong | PR #295 |
-| 15 | Crates · Rust | `series_identity::find_or_create` (prolonge l'ADR 0007) | Strong | à faire (après 12, 13) |
-| 16 | Cache · Backoffice | Une seule politique d'invalidation du cache Next | Strong | PR #290 |
-| 17 | Settings · Backoffice | Un loader pour `/settings` (corrige B3) | Strong | PR #291 |
-| B4 | Metadata · API Rust | Une seule politique de score de correspondance | Strong | PR #297 |
-| 18 | Books · API Rust | Un rendu de page unique et un `current_book_file` | Worth exploring | à faire |
-| 19 | Indexer · Rust | Un résultat de job typé (annulation, `partial`) | Worth exploring | à faire (après 14) |
-| 20 | Crates · Rust | Les transitions de `analysis_status` dans un seul module | Worth exploring | à faire (après 14) |
-| 21 | Settings · API Rust | Un schéma typé pour `app_settings.limits` | Worth exploring | à faire |
-| 22 | Reading lists · Backoffice | Un store d'écriture unique (ex-10) | Worth exploring | à faire |
-| 23 | Genres · Backoffice + API | Une requête de navigation par genres côté serveur | Worth exploring | à faire |
-| 24 | Libraries / Series · Backoffice | Passer le DTO plutôt que ses champs en props | Worth exploring | à faire |
-| 25 | Workspace | Ménage : `core2-shim`, `MonitoringForm.tsx`, `BookFormat::from_str` | — | à faire |
+| 11 | Jobs · API Rust | Un seul lanceur de jobs d'arrière-plan | Strong | **fusionné** (#296) |
+| 12 | Metadata · API Rust | Un module propriétaire de `external_metadata_links` (corrige B5) | Strong | **fusionné** (#294) |
+| 13 | Indexer · Rust | Réconcilier un fichier existant une seule fois (ex-05) | Strong | **fusionné** (#293) |
+| 14 | Crates · Rust | Un magasin de miniatures partagé API / indexer | Strong | **fusionné** (#295) |
+| 15 | Crates · Rust | `series_identity::find_or_create` (prolonge l'ADR 0007) | Strong | vague 2 (PR unique) |
+| 16 | Cache · Backoffice | Une seule politique d'invalidation du cache Next | Strong | **fusionné** (#290) |
+| 17 | Settings · Backoffice | Un loader pour `/settings` (corrige B3) | Strong | **fusionné** (#291) |
+| B4 | Metadata · API Rust | Une seule politique de score de correspondance | Strong | **fusionné** (#297) |
+| 18 | Books · API Rust | Un rendu de page unique et un `current_book_file` | Worth exploring | vague 2 (PR unique) |
+| 19 | Indexer · Rust | Un résultat de job typé (annulation, `partial`) | Worth exploring | vague 2 (PR unique) |
+| 20 | Crates · Rust | Les transitions de `analysis_status` dans un seul module | Worth exploring | vague 2 (PR unique) |
+| 21 | Settings · API Rust | Un schéma typé pour `app_settings.limits` | Worth exploring | vague 2 (PR unique) |
+| 22 | Reading lists · Backoffice | Un store d'écriture unique (ex-10) | Worth exploring | vague 2 (PR unique) |
+| 23 | Genres · Backoffice + API | Une requête de navigation par genres côté serveur | Worth exploring | vague 2 (PR unique) |
+| 24 | Libraries / Series · Backoffice | Passer le DTO plutôt que ses champs en props | Worth exploring | vague 2 (PR unique) |
+| 25 | Workspace | Ménage : `core2-shim`, `MonitoringForm.tsx`, `BookFormat::from_str` | — | vague 2 (PR unique) |
 
 Décisions notables de la vague 1 :
 
@@ -77,6 +77,30 @@ le vrai problème est l'existence de quatre politiques d'échec pour douze écri
 
 Vagues d'exécution (pour limiter les conflits) : **vague 1** = B1, B2, B4, 11, 12, 13, 14, 16,
 17 ; **vague 2** = 15, 18, 19, 20, 21, 22, 23, 24, 25, une fois la vague 1 fusionnée.
+
+Écart de méthode pour la vague 2 : **une seule PR** (`refactor/architecture-wave-2`) au lieu
+d'une PR par chantier. Un sous-agent par chantier, un commit par chantier sur une branche locale
+`wave2/*`, vérifications légères (clippy du crate touché, tests du module, `tsc` et vitest ciblés) ;
+les branches sont fusionnées dans la branche d'intégration, puis la suite complète (fmt, clippy
+workspace, `cargo test --workspace`, `tsc`, lint, vitest complet) tourne **une fois** à la fin.
+Les ADR 0022–0029 accompagnent les chantiers qui le justifient.
+
+Décisions notables de la vague 2 :
+
+- **15** : identité de série = `norm_text(name)` ou `norm_text(original_name)` (nom actuel
+  prioritaire, puis la plus ancienne) pour toutes les recherches ; création protégée par
+  `pg_advisory_xact_lock`, sans migration (les doublons normalisés existants ne sont pas fusionnés).
+- **18** : le format d'un livre vient toujours de la base ; le moteur de rendu est injecté
+  (`PageSource`) ; deux sommes `DISTINCT ON` des stats gardent leur SQL propre.
+- **19** : annulation typée (`JobCancelled`) ; un job indexer finit en `success` / `partial` /
+  `failed` via `classify_job`.
+- **20** : les écritures de `analysis_status` passent par `core::analysis` ; les lectures SQL
+  restent littérales ; la discovery écrit encore `discovered` elle-même.
+- **21** : `Limits` typé ; une valeur stockée hors plage revient à son défaut ;
+  `concurrent_renders` est rechargé à chaud (`RenderLimit`). L'indexer lit encore ses propres
+  défauts de rendu.
+- **23** : `GET /genres/browse` ; plusieurs genres sélectionnés = intersection (ET).
+- **25** : `core2-shim`, `rayon`, `tower-http` 0.7 et `MonitoringForm.tsx` supprimés.
 
 ## Méthode
 
@@ -183,3 +207,5 @@ composant n'instancie `EventSource`.
 | 2026-11-13 | ADR 0010–0014 ajoutées (chantiers 01, 02, 07, 08, 09) |
 | 2026-11-13 | Second audit : 5 bugs (B1–B5), chantiers 11–25 ; vague 1 lancée |
 | 2026-11-13 | Vague 1 ouverte : #289–#297 (ADR 0015–0021, sauf 0019 → #296) |
+| 2026-11-13 | Vague 1 fusionnée (#289–#297) |
+| 2026-11-13 | Vague 2 : chantiers 15, 18–25 intégrés dans `refactor/architecture-wave-2` (ADR 0022–0029) |
