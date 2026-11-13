@@ -15,14 +15,14 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    downloads::settings::{
-        DownloadSettings, MAX_DOWNLOAD_CONCURRENCY, MAX_HTTP_CONNECTIONS,
-        MAX_MAGNET_STALL_TIMEOUT_MINUTES, MAX_MAX_ATTEMPTS, MAX_STALL_TIMEOUT_SECS,
-        MAX_TELEGRAM_CONNECTIONS, MAX_TRANSFER_TIMEOUT_MINUTES,
-    },
+    downloads::settings::DownloadSettings,
     error::ApiError,
     state::{load_dynamic_settings, AppState, DiskCacheStatsSnapshot},
 };
+
+pub mod limits;
+
+use limits::{Limits, LIMITS_KEY};
 
 const DISK_CACHE_STATS_TTL: Duration = Duration::from_secs(30);
 
@@ -208,79 +208,18 @@ fn validate_setting(
     thumbnail_directory: &FsPath,
 ) -> Result<(), ApiError> {
     match key {
-        "limits" => validate_limits(value),
+        LIMITS_KEY => validate_limits(value),
         "cache" => validate_cache(value, library_root, thumbnail_directory),
         _ => Ok(()),
     }
 }
 
+/// `limits` is validated by its typed schema: every bad field is reported.
 fn validate_limits(value: &Value) -> Result<(), ApiError> {
-    // Every key here is a positive integer. A stored 0 would build a
-    // `Semaphore::new(0)` (blocking every download) or a zero-length timeout;
-    // both are rejected up front so the read-side clamp is only a safety net.
-    for field in [
-        "concurrent_renders",
-        "concurrent_telegram_downloads",
-        "concurrent_ddl_provider_downloads",
-        "concurrent_alldebrid_downloads",
-        "rate_limit_per_second",
-        "timeout_seconds",
-        "telegram_download_connections",
-        "ddl_download_connections",
-        "download_max_attempts",
-        "download_stall_timeout_seconds",
-        "download_timeout_minutes",
-        "alldebrid_stall_timeout_minutes",
-    ] {
-        if let Some(n) = value.get(field) {
-            let n = n.as_u64().ok_or_else(|| {
-                ApiError::bad_request(format!("limits.{field} must be a positive integer"))
-            })?;
-            if n == 0 {
-                return Err(ApiError::bad_request(format!(
-                    "limits.{field} must be greater than 0"
-                )));
-            }
-        }
-    }
-
-    // Per-field ceilings: a typo must not open hundreds of sockets or hold a
-    // download slot for a day.
-    for (field, max) in [
-        (
-            "concurrent_telegram_downloads",
-            MAX_DOWNLOAD_CONCURRENCY as u64,
-        ),
-        (
-            "concurrent_ddl_provider_downloads",
-            MAX_DOWNLOAD_CONCURRENCY as u64,
-        ),
-        (
-            "concurrent_alldebrid_downloads",
-            MAX_DOWNLOAD_CONCURRENCY as u64,
-        ),
-        (
-            "telegram_download_connections",
-            MAX_TELEGRAM_CONNECTIONS as u64,
-        ),
-        ("ddl_download_connections", MAX_HTTP_CONNECTIONS as u64),
-        ("download_max_attempts", MAX_MAX_ATTEMPTS as u64),
-        ("download_stall_timeout_seconds", MAX_STALL_TIMEOUT_SECS),
-        ("download_timeout_minutes", MAX_TRANSFER_TIMEOUT_MINUTES),
-        (
-            "alldebrid_stall_timeout_minutes",
-            MAX_MAGNET_STALL_TIMEOUT_MINUTES,
-        ),
-    ] {
-        if let Some(n) = value.get(field).and_then(|v| v.as_u64()) {
-            if n > max {
-                return Err(ApiError::bad_request(format!(
-                    "limits.{field} must be at most {max}"
-                )));
-            }
-        }
-    }
-    Ok(())
+    Limits::parse(value).map(drop).map_err(|errors| {
+        let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
+        ApiError::bad_request(messages.join("; "))
+    })
 }
 
 fn validate_cache(
@@ -392,34 +331,49 @@ pub async fn update_setting(
     let mut value: Value = row.get("value");
     redact_secrets(&key, &mut value);
 
-    // Rechargement des settings dynamiques si la clé affecte le comportement runtime
-    if key == "limits" || key == "image_processing" || key == "cache" {
-        let new_settings = load_dynamic_settings(&state.pool).await;
-        state
-            .page_cache
-            .lock()
-            .await
-            .set_max_size_mb(new_settings.page_cache_max_size_mb);
-        *state.settings.write().await = new_settings;
-        if key == "cache" {
-            *state.disk_cache_stats.lock().await = None;
-        }
-    }
-
-    // Download tuning lives under the same `limits` key: apply it to the running
-    // semaphores so a Backoffice change no longer needs an API restart.
-    if key == "limits" {
-        let download_settings = DownloadSettings::load(&state.pool).await;
-        state
-            .telegram_downloads
-            .set_limit(download_settings.telegram_concurrency);
-        state
-            .ddl_provider_downloads
-            .set_limit(download_settings.ddl_concurrency);
-        *state.download_settings.write().await = download_settings;
-    }
+    apply(&state, &key).await;
 
     Ok(Json(value))
+}
+
+/// The single hot-reload point: pushes a freshly saved setting into the
+/// running process, so a Backoffice change never needs an API restart.
+/// Keys without a runtime effect are ignored.
+pub(crate) async fn apply(state: &AppState, key: &str) {
+    match key {
+        LIMITS_KEY => apply_limits(state, &Limits::load(&state.pool).await).await,
+        "image_processing" | "cache" => {
+            let new_settings = load_dynamic_settings(&state.pool).await;
+            state
+                .page_cache
+                .lock()
+                .await
+                .set_max_size_mb(new_settings.page_cache_max_size_mb);
+            *state.settings.write().await = new_settings;
+            if key == "cache" {
+                *state.disk_cache_stats.lock().await = None;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Applies every runtime consumer of `limits`: request admission and render
+/// timeout, the render ceiling and the download queues. Running renders and
+/// transfers are never interrupted; a lower ceiling only stops admitting new
+/// ones until enough of them finish.
+pub(crate) async fn apply_limits(state: &AppState, limits: &Limits) {
+    state.settings.write().await.apply_limits(limits);
+    state.page_render_limit.set_limit(limits.concurrent_renders);
+
+    let downloads = DownloadSettings::from(limits);
+    state
+        .telegram_downloads
+        .set_limit(downloads.telegram_concurrency);
+    state
+        .ddl_provider_downloads
+        .set_limit(downloads.ddl_concurrency);
+    *state.download_settings.write().await = downloads;
 }
 
 /// Clear the image page cache

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{atomic::AtomicU64, Arc};
 use std::time::{Duration, Instant};
 
@@ -6,11 +7,12 @@ use lru::LruCache;
 use sqlx::{Pool, Postgres};
 use stripstream_core::paths::LibraryRoot;
 use stripstream_core::settings::load_setting;
-use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
+use tokio::sync::{AcquireError, Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
 use crate::downloads::settings::DownloadSettings;
 use crate::downloads::telegram_monitor::PendingAuth;
 use crate::downloads::worker::DownloadSlots;
+use crate::settings::limits::Limits;
 use crate::stats::StatsCache;
 
 #[derive(Clone)]
@@ -26,9 +28,9 @@ pub struct AppState {
     pub disk_cache_stats: Arc<Mutex<Option<DiskCacheStatsSnapshot>>>,
     /// Coalesces concurrent cache misses for the same rendered page.
     pub page_render_locks: Arc<PageRenderLocks>,
-    pub page_render_limit: Arc<Semaphore>,
-    /// Configured `concurrent_renders` limit, for the diagnostics panel.
-    pub page_render_limit_total: usize,
+    /// Bounds concurrent page renders to `limits.concurrent_renders`; resized
+    /// in place when that setting is saved.
+    pub page_render_limit: Arc<RenderLimit>,
     pub metrics: Arc<Metrics>,
     /// In-memory sliding-window limiter. A plain (non-async) mutex is used
     /// because the critical section never awaits, avoiding serialisation on
@@ -72,9 +74,10 @@ pub struct DynamicSettings {
 
 impl Default for DynamicSettings {
     fn default() -> Self {
+        let limits = Limits::default();
         Self {
-            rate_limit_per_second: 120,
-            timeout_seconds: 12,
+            rate_limit_per_second: limits.rate_limit_per_second.get(),
+            timeout_seconds: limits.timeout_seconds.get(),
             image_format: "webp".to_string(),
             image_quality: 85,
             image_filter: "triangle".to_string(),
@@ -82,6 +85,112 @@ impl Default for DynamicSettings {
             cache_directory: std::env::var("IMAGE_CACHE_DIR")
                 .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string()),
             page_cache_max_size_mb: 128,
+        }
+    }
+}
+
+impl DynamicSettings {
+    /// Copies the request-path knobs of the `limits` row.
+    pub fn apply_limits(&mut self, limits: &Limits) {
+        self.rate_limit_per_second = limits.rate_limit_per_second.get();
+        self.timeout_seconds = limits.timeout_seconds.get();
+    }
+}
+
+/// A page-render concurrency limit that can be resized while renders run.
+///
+/// It wraps a `tokio` [`Semaphore`] so waiters keep its fair FIFO queue.
+/// Growing adds permits at once. Shrinking forgets the idle permits and records
+/// the rest as a debt: the next permits released by running renders are
+/// forgotten instead of returned, so no render is interrupted and the new
+/// ceiling holds as soon as enough of them finish. A later growth repays the
+/// debt first.
+pub struct RenderLimit {
+    semaphore: Arc<Semaphore>,
+    sizing: std::sync::Mutex<RenderSizing>,
+}
+
+struct RenderSizing {
+    /// The configured ceiling.
+    limit: usize,
+    /// Permits still owed by running renders after a shrink.
+    debt: usize,
+}
+
+impl RenderLimit {
+    pub fn new(limit: NonZeroUsize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(limit.get())),
+            sizing: std::sync::Mutex::new(RenderSizing {
+                limit: limit.get(),
+                debt: 0,
+            }),
+        }
+    }
+
+    fn sizing(&self) -> std::sync::MutexGuard<'_, RenderSizing> {
+        // The critical sections never panic; recover the data if one ever did.
+        self.sizing.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The configured ceiling.
+    pub fn limit(&self) -> usize {
+        self.sizing().limit
+    }
+
+    /// Renders currently holding a permit. Right after a shrink it may exceed
+    /// [`Self::limit`] until enough running renders finish.
+    pub fn in_flight(&self) -> usize {
+        let sizing = self.sizing();
+        (sizing.limit + sizing.debt).saturating_sub(self.semaphore.available_permits())
+    }
+
+    /// Applies a new ceiling without interrupting running renders.
+    pub fn set_limit(&self, limit: NonZeroUsize) {
+        let limit = limit.get();
+        let mut sizing = self.sizing();
+        if limit > sizing.limit {
+            let grow = limit - sizing.limit;
+            let repaid = grow.min(sizing.debt);
+            sizing.debt -= repaid;
+            self.semaphore.add_permits(grow - repaid);
+        } else if limit < sizing.limit {
+            let shrink = sizing.limit - limit;
+            let forgotten = self.semaphore.forget_permits(shrink);
+            sizing.debt += shrink - forgotten;
+        }
+        sizing.limit = limit;
+    }
+
+    /// Waits for a render slot under the current ceiling.
+    pub async fn acquire_owned(self: Arc<Self>) -> Result<RenderPermit, AcquireError> {
+        let permit = self.semaphore.clone().acquire_owned().await?;
+        Ok(RenderPermit {
+            permit: Some(permit),
+            limit: self,
+        })
+    }
+}
+
+/// One render slot of a [`RenderLimit`], released on drop.
+pub struct RenderPermit {
+    permit: Option<OwnedSemaphorePermit>,
+    limit: Arc<RenderLimit>,
+}
+
+impl Drop for RenderPermit {
+    fn drop(&mut self) {
+        let Some(permit) = self.permit.take() else {
+            return;
+        };
+        // Decide and release under the sizing lock so `set_limit` always sees
+        // a consistent count of available permits.
+        let mut sizing = self.limit.sizing();
+        if sizing.debt > 0 {
+            sizing.debt -= 1;
+            permit.forget();
+        } else {
+            drop(permit);
         }
     }
 }
@@ -162,18 +271,6 @@ impl Metrics {
     }
 }
 
-pub async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
-    let default_concurrency = 8;
-    load_setting::<serde_json::Value>(pool, "limits")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|value| value.get("concurrent_renders").and_then(|v| v.as_u64()))
-        // Clamp to >= 1: `Semaphore::new(0)` would block every page render forever.
-        .map(|v| (v as usize).max(1))
-        .unwrap_or(default_concurrency)
-}
-
 /// Minimal [`AppState`] for unit and DB tests: all fields are present but only
 /// `pool` carries meaningful state. Shared by every test module so adding a
 /// field to `AppState` touches a single place.
@@ -187,8 +284,7 @@ pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
         page_cache: Arc::new(Mutex::new(PageCache::new(1))),
         disk_cache_stats: Arc::new(Mutex::new(None)),
         page_render_locks: Arc::new(PageRenderLocks::new(1)),
-        page_render_limit: Arc::new(Semaphore::new(1)),
-        page_render_limit_total: 1,
+        page_render_limit: Arc::new(RenderLimit::new(NonZeroUsize::MIN)),
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
@@ -203,20 +299,7 @@ pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
 
 pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
     let mut s = DynamicSettings::default();
-
-    if let Some(v) = load_setting::<serde_json::Value>(pool, "limits")
-        .await
-        .ok()
-        .flatten()
-    {
-        if let Some(n) = v.get("rate_limit_per_second").and_then(|x| x.as_u64()) {
-            // A rate limit of 0 would reject every read request (429) permanently.
-            s.rate_limit_per_second = (n as u32).max(1);
-        }
-        if let Some(n) = v.get("timeout_seconds").and_then(|x| x.as_u64()) {
-            s.timeout_seconds = n.max(1);
-        }
-    }
+    s.apply_limits(&Limits::load(pool).await);
 
     if let Some(v) = load_setting::<serde_json::Value>(pool, "image_processing")
         .await
@@ -353,10 +436,75 @@ impl PageCache {
 
 #[cfg(test)]
 mod tests {
-    use super::{PageCache, PageRenderLocks};
+    use super::{PageCache, PageRenderLocks, RenderLimit};
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::{sync::oneshot, time::timeout};
+
+    fn nz(n: usize) -> NonZeroUsize {
+        NonZeroUsize::new(n).unwrap()
+    }
+
+    async fn blocked(limit: &Arc<RenderLimit>) -> bool {
+        timeout(Duration::from_millis(30), limit.clone().acquire_owned())
+            .await
+            .is_err()
+    }
+
+    #[tokio::test]
+    async fn render_limit_grows_at_once() {
+        let limit = Arc::new(RenderLimit::new(nz(1)));
+        let _first = limit.clone().acquire_owned().await.unwrap();
+        assert!(blocked(&limit).await);
+
+        limit.set_limit(nz(2));
+        let _second = limit.clone().acquire_owned().await.unwrap();
+        assert_eq!(limit.limit(), 2);
+        assert_eq!(limit.in_flight(), 2);
+        assert!(blocked(&limit).await);
+    }
+
+    #[tokio::test]
+    async fn render_limit_shrinks_without_interrupting_running_renders() {
+        let limit = Arc::new(RenderLimit::new(nz(3)));
+        let a = limit.clone().acquire_owned().await.unwrap();
+        let b = limit.clone().acquire_owned().await.unwrap();
+
+        // The idle permit is forgotten at once, one more is owed by a running render.
+        limit.set_limit(nz(1));
+        assert_eq!(limit.limit(), 1);
+        assert_eq!(limit.in_flight(), 2);
+        assert!(blocked(&limit).await);
+
+        // The first release repays the debt: still at the new ceiling of 1.
+        drop(a);
+        assert_eq!(limit.in_flight(), 1);
+        assert!(blocked(&limit).await);
+
+        drop(b);
+        assert_eq!(limit.in_flight(), 0);
+        let _only = limit.clone().acquire_owned().await.unwrap();
+        assert!(blocked(&limit).await);
+    }
+
+    #[tokio::test]
+    async fn render_limit_growth_repays_a_pending_shrink_first() {
+        let limit = Arc::new(RenderLimit::new(nz(2)));
+        let a = limit.clone().acquire_owned().await.unwrap();
+        let b = limit.clone().acquire_owned().await.unwrap();
+
+        limit.set_limit(nz(1)); // one permit owed
+        limit.set_limit(nz(2)); // the debt is cancelled, no extra permit
+        assert_eq!(limit.in_flight(), 2);
+        assert!(blocked(&limit).await);
+
+        drop(a);
+        drop(b);
+        let _x = limit.clone().acquire_owned().await.unwrap();
+        let _y = limit.clone().acquire_owned().await.unwrap();
+        assert!(blocked(&limit).await);
+    }
 
     #[test]
     fn page_cache_evicts_lru_entries_to_respect_byte_limit() {

@@ -160,7 +160,8 @@ libraries/             # book storage (mounted volume)
 | File | Purpose |
 |------|---------|
 | `apps/api/src/main.rs` | Router, AppState init, Swagger UI (client + admin) |
-| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, `page_render_limit` semaphore |
+| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, resizable `page_render_limit` |
+| `apps/api/src/settings/limits.rs` | Typed `app_settings.limits` schema (`Limits::parse` / `load`, ADR 0026) |
 | `apps/api/src/error.rs` | `ApiError` + constructors |
 | `apps/api/src/books/pages.rs` | Page rendering + double cache (memory LRU + disk) |
 | `apps/api/src/books/thumbnails.rs` | Thumbnail rebuild/regenerate job endpoints |
