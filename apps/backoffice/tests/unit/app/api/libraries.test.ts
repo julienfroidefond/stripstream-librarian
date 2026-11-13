@@ -9,6 +9,7 @@ vi.mock("@/lib/api", async () => {
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
+import { revalidatePath } from "next/cache";
 import { apiFetch, deleteSeries, fetchSeriesMetadata, updateLibraryMonitoring, updateSeries } from "@/lib/api";
 import { PATCH as patchMetadataProvider } from "@/app/api/libraries/[id]/metadata-provider/route";
 import { PATCH as patchMonitoring } from "@/app/api/libraries/[id]/monitoring/route";
@@ -65,6 +66,8 @@ describe("/api/libraries/[id]", () => {
     mockApi.mockResolvedValue({ ok: true });
     await patchTags(jsonRequest("/api/libraries/l1/tags", { method: "PATCH", body: { tags: [] } }), routeCtx({ id: "l1" }));
     expect(mockApi).toHaveBeenCalledWith("/libraries/l1/tags", expect.objectContaining({ method: "PATCH" }));
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/libraries");
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/libraries/l1");
   });
 });
 

@@ -4,6 +4,7 @@
 
 import { apiFetch } from "./client";
 import type { AnilistSeriesLinkDto } from "./anilist";
+import { cacheTags } from "../cache/tags";
 
 export type MetadataProviderDto = {
   id: string;
@@ -145,19 +146,19 @@ export async function getMetadataLink(seriesId: string) {
   const params = new URLSearchParams();
   params.set("series_id", seriesId);
   return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`, {
-    next: { revalidate: 10, tags: ["metadata", `series:${seriesId}`] },
+    next: { revalidate: 10, tags: [cacheTags.metadata(), cacheTags.seriesById(seriesId)] },
   });
 }
 
 export async function getReadingStatusLink(seriesId: string) {
   return apiFetch<AnilistSeriesLinkDto>(`/series/${seriesId}/anilist`, {
-    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 60, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 
 export async function getMissingBooks(linkId: string) {
   return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`, {
-    next: { revalidate: 10, tags: ["metadata", `link:${linkId}`] },
+    next: { revalidate: 10, tags: [cacheTags.metadata(), cacheTags.metadataLink(linkId)] },
   });
 }
 

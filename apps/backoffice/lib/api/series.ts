@@ -3,6 +3,7 @@
  */
 
 import { apiFetch } from "./client";
+import { cacheTags } from "../cache/tags";
 
 export type SeriesDto = {
   series_id: string;
@@ -128,7 +129,7 @@ export function catalogQueryParams(query: CatalogQuery): URLSearchParams {
 
 export async function fetchAllSeries(query: CatalogQuery = {}): Promise<SeriesPageDto> {
   return apiFetch<SeriesPageDto>(`/series?${catalogQueryParams(query).toString()}`, {
-    next: { revalidate: 15, tags: ["series"] },
+    next: { revalidate: 15, tags: [cacheTags.series()] },
   });
 }
 
@@ -157,13 +158,13 @@ export async function fetchGapSummary(libraryId?: string): Promise<GapSummaryDto
   const qs = params.toString();
 
   return apiFetch<GapSummaryDto>(`/metadata/gaps/summary${qs ? `?${qs}` : ""}`, {
-    next: { revalidate: 15, tags: ["metadata-gaps"] },
+    next: { revalidate: 15, tags: [cacheTags.metadataGaps()] },
   });
 }
 
 export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
   return apiFetch<SeriesDto>(`/series/${seriesId}/details`, {
-    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 15, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 
@@ -180,14 +181,14 @@ export type SeriesVolumesDto = {
  */
 export async function fetchSeriesOwnedVolumes(seriesId: string): Promise<number[] | null> {
   const dto = await apiFetch<SeriesVolumesDto>(`/series/${seriesId}/volumes`, {
-    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 15, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
   return dto.has_unnumbered_integral ? null : dto.owned_volumes;
 }
 
 export async function fetchRelatedSeries(seriesId: string, limit = 10): Promise<RelatedSeriesDto[]> {
   return apiFetch<RelatedSeriesDto[]>(`/series/${seriesId}/related?limit=${limit}`, {
-    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 60, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 
@@ -197,7 +198,7 @@ export async function fetchSeriesRecommendations(limit = 24, sources = 5): Promi
   params.set("sources", sources.toString());
 
   return apiFetch<RecommendedSeriesDto[]>(`/series/recommendations?${params.toString()}`, {
-    next: { revalidate: 60, tags: ["series"] },
+    next: { revalidate: 60, tags: [cacheTags.series()] },
   });
 }
 
@@ -226,7 +227,7 @@ export type SeriesMetadataDto = {
 
 export async function fetchSeriesMetadata(seriesId: string) {
   return apiFetch<SeriesMetadataDto>(`/series/${seriesId}/metadata`, {
-    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 60, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 
@@ -245,7 +246,7 @@ export type SeriesRatingsDto = {
 
 export async function fetchSeriesRatings(seriesId: string): Promise<SeriesRatingsDto> {
   return apiFetch<SeriesRatingsDto>(`/series/${seriesId}/ratings`, {
-    next: { revalidate: 30, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 30, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 
@@ -275,7 +276,7 @@ export type SeriesUserActivityDto = {
 /** Admin view: every reader's progress and rating for one series. */
 export async function fetchSeriesUserActivity(seriesId: string): Promise<SeriesUserActivityDto[]> {
   return apiFetch<SeriesUserActivityDto[]>(`/admin/series/${seriesId}/activity`, {
-    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+    next: { revalidate: 15, tags: [cacheTags.series(), cacheTags.seriesById(seriesId)] },
   });
 }
 

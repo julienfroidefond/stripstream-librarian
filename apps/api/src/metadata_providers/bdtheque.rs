@@ -1,6 +1,7 @@
 use scraper::{Html, Selector};
 use serde::Deserialize;
 
+use super::scoring::{self, Score};
 use super::scraping::{self, absolute, text};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
@@ -97,7 +98,7 @@ fn candidate_from_hit(
     hit: SearchHit,
     base: &str,
     query: &str,
-    max_confidence: f32,
+    cap: f32,
 ) -> Option<SeriesCandidate> {
     let id = hit.id.trim();
     let title = hit.nom.trim();
@@ -125,7 +126,7 @@ fn candidate_from_hit(
         total_volumes: None,
         cover_url,
         external_url: Some(external_url),
-        confidence: scraping::confidence_for(title, query, max_confidence),
+        score: Score::of_titles(title, query, cap),
         metadata_json,
     })
 }
@@ -160,23 +161,19 @@ fn candidates_from_body(
     body: &str,
     base: &str,
     query: &str,
-    max_confidence: f32,
+    cap: f32,
 ) -> Result<Vec<SeriesCandidate>, String> {
     let mut seen = std::collections::HashSet::new();
     let mut results = Vec::new();
     for hit in parse_search_hits(body)? {
-        let Some(candidate) = candidate_from_hit(hit, base, query, max_confidence) else {
+        let Some(candidate) = candidate_from_hit(hit, base, query, cap) else {
             continue;
         };
         if seen.insert(candidate.external_id.clone()) {
             results.push(candidate);
         }
     }
-    results.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scoring::sort_best_first(&mut results);
     results.truncate(20);
     Ok(results)
 }
@@ -198,7 +195,7 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
     for variant in scraping::query_variants(query) {
         let url = search_url(base, &variant.query)?;
         let body = scraping::get_html(&c, &url, "BDTheque").await?;
-        results = candidates_from_body(&body, base, &variant.query, variant.max_confidence)?;
+        results = candidates_from_body(&body, base, &variant.query, variant.cap)?;
         if !results.is_empty() {
             break;
         }
@@ -363,7 +360,7 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
         total_volumes,
         cover_url: cover_url.clone(),
         external_url: Some(url),
-        confidence: 1.0,
+        score: Score::exact(),
         metadata_json: serde_json::json!({
             "description": description,
             "authors": authors,

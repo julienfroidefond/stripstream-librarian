@@ -4,7 +4,6 @@ import type {
   AiReadingListSuggestions,
   ReadingListDetailDto,
   ReadingListDto,
-  ReadingListSeriesDto,
 } from "../reading-lists";
 import { browserFetch, browserFetchVoid, withQuery } from "./transport";
 
@@ -44,8 +43,9 @@ export const readingListsApi = {
     });
   },
 
-  addSeries(listId: string, seriesId: string): Promise<ReadingListSeriesDto | void> {
-    return browserFetch<ReadingListSeriesDto | void>(
+  /** The API answers `204 No Content`: there is no created item to return. */
+  addSeries(listId: string, seriesId: string): Promise<void> {
+    return browserFetchVoid(
       `/api/reading-lists/${encodeURIComponent(listId)}/series`,
       { method: "POST", body: { series_id: seriesId } }
     );

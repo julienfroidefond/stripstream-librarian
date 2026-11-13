@@ -30,7 +30,7 @@ fn print_candidate(name: &str, c: &SeriesCandidate) {
     println!("  total_volumes: {:?}", c.total_volumes);
     println!("  cover_url:     {}", c.cover_url.is_some());
     println!("  external_url:  {}", c.external_url.is_some());
-    println!("  confidence:    {:.2}", c.confidence);
+    println!("  confidence:    {:.2}", c.score.value());
     println!(
         "  metadata_json: {}",
         serde_json::to_string_pretty(&c.metadata_json).unwrap_or_default()
@@ -352,7 +352,7 @@ async fn cross_provider_blacksad() {
                 let b = &candidates[0];
                 println!("[{name}]  title={:?}  authors={}  desc={}  pubs={}  year={:?}  vols={:?}  cover={}  url={}  conf={:.2}",
                     b.title, b.authors.len(), b.description.is_some(), b.publishers.len(),
-                    b.start_year, b.total_volumes, b.cover_url.is_some(), b.external_url.is_some(), b.confidence);
+                    b.start_year, b.total_volumes, b.cover_url.is_some(), b.external_url.is_some(), b.score.value());
             }
             Ok(_) => println!("[{name}]  no results"),
             Err(e) => println!("[{name}]  error: {e}"),

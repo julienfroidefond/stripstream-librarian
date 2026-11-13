@@ -1,5 +1,6 @@
 use scraper::{Html, Selector};
 
+use super::scoring::{self, Score};
 use super::scraping::{self, absolute, text};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
@@ -87,11 +88,7 @@ async fn fetch_search(
 }
 
 /// Parse a search payload into scored, deduplicated candidates.
-fn candidates_from_payload(
-    payload: SearchResponse,
-    query: &str,
-    max_confidence: f32,
-) -> Vec<SeriesCandidate> {
+fn candidates_from_payload(payload: SearchResponse, query: &str, cap: f32) -> Vec<SeriesCandidate> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for hit in payload.bests.into_iter().chain(payload.series) {
@@ -115,15 +112,11 @@ fn candidates_from_payload(
             total_volumes: None,
             cover_url: None,
             external_url: Some(hit.url.clone()),
-            confidence: scraping::confidence_for(&title, query, max_confidence),
+            score: Score::of_titles(&title, query, cap),
             metadata_json: serde_json::json!({"provider": "bdphile"}),
         });
     }
-    out.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scoring::sort_best_first(&mut out);
     out.truncate(20);
     out
 }
@@ -143,7 +136,7 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
     let mut out = Vec::new();
     for variant in scraping::query_variants(query) {
         let payload = fetch_search(&c, base, &variant.query).await?;
-        out = candidates_from_payload(payload, &variant.query, variant.max_confidence);
+        out = candidates_from_payload(payload, &variant.query, variant.cap);
         if !out.is_empty() {
             break;
         }
@@ -383,7 +376,7 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
         total_volumes,
         cover_url: cover_url.clone(),
         external_url: Some(url),
-        confidence: 1.0,
+        score: Score::exact(),
         metadata_json: serde_json::json!({
             "description": description,
             "authors": authors,
