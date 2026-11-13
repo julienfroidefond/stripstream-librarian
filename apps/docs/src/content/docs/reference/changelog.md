@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.144 — 2026-11-13
+
+### Refactoring
+
+- **api** — own the torrent_downloads lifecycle in a ledger module ([#280](https://github.com/julienfroidefond/stripstream-librarian/pull/280))
+
 ## v3.32.143 — 2026-11-13
 
 ### Refactoring
