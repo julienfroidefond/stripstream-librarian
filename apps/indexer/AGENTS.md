@@ -95,10 +95,11 @@ Traitement progressif en background, piloté par `books.analysis_status` (voir c
 - Si `analyze_book` échoue (rendu de la 1re page impossible, timeout…), `extract_page_count`
   retente via `parsers::page_count_only` : le livre conserve son `page_count` (donc reste visible)
   sans vignette, et un événement `pages_extracted` de niveau `warning` est enregistré.
-- Thumbnail en **2 sous-phases** : A) extraction brute vers `{book_id}.raw` ; B) redimensionnement /
-  encodage vers `{book_id}.{ext}`. Downscale rapide (`img.thumbnail()`, pas de Lanczos3), format
-  `webp` (défaut) / `jpeg` / `png` / `original`
-- Config DB lue depuis `app_settings` (clés `'thumbnail'` et `'limits'`)
+- Thumbnail en **2 sous-phases** via `stripstream_thumbnails::ThumbnailStore` : A) `stage_raw` vers
+  `{book_id}.raw` ; B) `publish_raw` (encodage + publication atomique vers `{book_id}.{ext}`).
+  Downscale rapide (`img.thumbnail()`, pas de Lanczos3), format `webp` (défaut) / `jpeg` / `png` /
+  `original`. Régénération et nettoyage des orphelins passent par `purge` / `purge_orphans`.
+- Config : `ThumbnailSettings::load_or_default` (clé `'thumbnail'`) + `app_settings.limits`
 
 #### États d'analyse
 
@@ -121,10 +122,9 @@ séparément (`failed_analysis`).
 
 ## Configuration
 
-- **Env** : `INDEXER_LISTEN_ADDR` (défaut `0.0.0.0:7081`), `INDEXER_SCAN_INTERVAL_SECONDS` (5),
-  `THUMBNAIL_ENABLED` (true), `THUMBNAIL_DIRECTORY` (`/data/thumbnails`), `THUMBNAIL_WIDTH` (300),
-  `THUMBNAIL_HEIGHT` (400), `THUMBNAIL_QUALITY` (80), `THUMBNAIL_FORMAT` (webp)
-- **Overrides DB** (prioritaires sur l'env) : `app_settings` → `thumbnail`,
+- **Env** : `INDEXER_LISTEN_ADDR` (défaut `0.0.0.0:7081`), `INDEXER_SCAN_INTERVAL_SECONDS` (5)
+- **DB** : `app_settings.thumbnail` (seule source des réglages de miniatures, sur les défauts
+  `enabled=true`, `webp`, 300×400, qualité 80, `/data/thumbnails` ; aucune variable `THUMBNAIL_*`),
   `limits.concurrent_renders`, `limits.timeout_seconds`
 - **Logs** : `RUST_LOG` — défaut `indexer=info,axum=info,scan=info,extraction=info,thumbnail=warn,watcher=info`
 

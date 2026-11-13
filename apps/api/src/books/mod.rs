@@ -17,7 +17,6 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -746,78 +745,20 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
+use stripstream_thumbnails::{EncodedThumbnail, ThumbnailExt, ThumbnailSettings, ThumbnailStore};
 
-/// Detect content type from thumbnail file extension.
-fn detect_thumbnail_content_type(path: &str) -> &'static str {
-    if path.ends_with(".jpg") || path.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if path.ends_with(".png") {
-        "image/png"
-    } else {
-        "image/webp"
-    }
-}
-
-fn thumbnail_extension(content_type: &str) -> &'static str {
-    match content_type {
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        _ => "webp",
-    }
-}
-
-async fn write_thumbnail_file(
-    directory_path: &std::path::Path,
-    book_id: Uuid,
-    data: &[u8],
-    content_type: &str,
-) -> Result<std::path::PathBuf, ApiError> {
-    tokio::fs::create_dir_all(directory_path)
-        .await
-        .map_err(|e| ApiError::internal(format!("cannot create thumbnail directory: {e}")))?;
-
-    let extension = thumbnail_extension(content_type);
-    let file_name = format!("{book_id}.{extension}");
-    let temporary_file_name = format!(".{book_id}-{}.tmp", Uuid::new_v4());
-    // Defense in depth: the names are derived from a UUID and can never contain
-    // traversal sequences, but keep the check explicit so future changes to the
-    // naming scheme cannot escape `directory_path`.
-    if file_name.contains("..") {
-        return Err(ApiError::internal("invalid thumbnail file name"));
-    }
-    if temporary_file_name.contains("..") {
-        return Err(ApiError::internal("invalid thumbnail temporary file name"));
-    }
-    let thumbnail_path = directory_path.join(file_name);
-    let temporary_path = directory_path.join(temporary_file_name);
-    tokio::fs::write(&temporary_path, data)
-        .await
-        .map_err(|e| ApiError::internal(format!("cannot write thumbnail: {e}")))?;
-    if let Err(error) = tokio::fs::rename(&temporary_path, &thumbnail_path).await {
-        let _ = tokio::fs::remove_file(&temporary_path).await;
-        return Err(ApiError::internal(format!(
-            "cannot publish thumbnail: {error}"
-        )));
-    }
-
-    Ok(thumbnail_path)
-}
-
+/// Publish an on-the-fly rendered thumbnail in the shared store and record it.
 async fn persist_rendered_thumbnail(
     state: &AppState,
+    store: &ThumbnailStore,
     book_id: Uuid,
-    data: &[u8],
-    content_type: &str,
+    thumbnail: EncodedThumbnail,
 ) -> Result<String, ApiError> {
-    let settings = load_setting::<serde_json::Value>(&state.pool, "thumbnail").await?;
-
-    let directory = settings
-        .as_ref()
-        .and_then(|value| value.get("directory"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("/data/thumbnails");
-    let directory_path = std::path::Path::new(directory);
-    let thumbnail_path = write_thumbnail_file(directory_path, book_id, data, content_type).await?;
+    let store = store.clone();
+    let thumbnail_path = tokio::task::spawn_blocking(move || store.publish(book_id, &thumbnail))
+        .await
+        .map_err(|e| ApiError::internal(format!("thumbnail publish task failed: {e}")))?
+        .map_err(|e| ApiError::internal(format!("cannot publish thumbnail: {e}")))?;
 
     let path = thumbnail_path.to_string_lossy().into_owned();
     sqlx::query(
@@ -839,55 +780,6 @@ async fn persist_rendered_thumbnail(
     .map_err(|e| ApiError::internal(e.to_string()))?;
 
     Ok(path)
-}
-
-#[cfg(test)]
-mod thumbnail_tests {
-    use super::{detect_thumbnail_content_type, thumbnail_extension, write_thumbnail_file};
-    use uuid::Uuid;
-
-    #[test]
-    fn maps_thumbnail_content_types_to_matching_extensions() {
-        assert_eq!(thumbnail_extension("image/jpeg"), "jpg");
-        assert_eq!(thumbnail_extension("image/png"), "png");
-        assert_eq!(thumbnail_extension("image/webp"), "webp");
-    }
-
-    #[test]
-    fn detects_persisted_thumbnail_content_type_from_path() {
-        assert_eq!(
-            detect_thumbnail_content_type("/data/thumbnails/book.jpg"),
-            "image/jpeg"
-        );
-        assert_eq!(
-            detect_thumbnail_content_type("/data/thumbnails/book.png"),
-            "image/png"
-        );
-        assert_eq!(
-            detect_thumbnail_content_type("/data/thumbnails/book.webp"),
-            "image/webp"
-        );
-    }
-
-    #[tokio::test]
-    async fn writes_rendered_thumbnail_atomically() {
-        let directory = tempfile::tempdir().expect("temporary thumbnail directory");
-        let book_id = Uuid::new_v4();
-        let data = b"thumbnail bytes";
-
-        let path = write_thumbnail_file(directory.path(), book_id, data, "image/webp")
-            .await
-            .expect("thumbnail should be persisted");
-
-        assert_eq!(path, directory.path().join(format!("{book_id}.webp")));
-        assert_eq!(tokio::fs::read(path).await.expect("persisted file"), data);
-        assert_eq!(
-            std::fs::read_dir(directory.path())
-                .expect("thumbnail directory")
-                .count(),
-            1
-        );
-    }
 }
 
 /// Get book thumbnail image
@@ -944,27 +836,27 @@ pub async fn get_thumbnail(
         }
     }
 
-    let (data, content_type, rendered) = if let Some(ref path) = thumbnail_path {
-        match tokio::fs::read(path).await {
-            Ok(bytes) => {
-                let ct = detect_thumbnail_content_type(path);
-                (bytes, ct, false)
-            }
-            Err(_) => {
-                // File missing on disk (e.g. different mount in dev) — fall back to live render
-                let (bytes, ct) = pages::render_book_page_1(&state, book_id, 300, 80).await?;
-                (bytes, ct, true)
-            }
-        }
-    } else {
-        // No stored thumbnail yet — render page 1 on the fly
-        let (bytes, ct) = pages::render_book_page_1(&state, book_id, 300, 80).await?;
-        (bytes, ct, true)
+    let stored = match thumbnail_path {
+        Some(ref path) => tokio::fs::read(path)
+            .await
+            .ok()
+            .map(|bytes| (bytes, ThumbnailExt::from_path(path).content_type())),
+        None => None,
     };
-
-    if rendered {
-        persist_rendered_thumbnail(&state, book_id, &data, content_type).await?;
-    }
+    let rendered = stored.is_none();
+    let (data, content_type) = match stored {
+        Some(stored) => stored,
+        None => {
+            // No stored thumbnail, or the file is missing on disk (e.g. different
+            // mount in dev): render page 1 with the shared thumbnail settings.
+            let store = ThumbnailSettings::load(&state.pool).await?.store();
+            let thumbnail = pages::render_book_cover(&state, book_id, &store).await?;
+            let content_type = thumbnail.content_type();
+            let data = thumbnail.bytes.clone();
+            persist_rendered_thumbnail(&state, &store, book_id, thumbnail).await?;
+            (data, content_type)
+        }
+    };
 
     let source = if rendered { "rendered" } else { "stored" };
     let duration_ms = started_at.elapsed().as_millis();

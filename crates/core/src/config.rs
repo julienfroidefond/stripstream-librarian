@@ -31,32 +31,8 @@ pub struct IndexerConfig {
     pub listen_addr: String,
     pub database_url: String,
     pub scan_interval_seconds: u64,
-    pub thumbnail_config: ThumbnailConfig,
     /// Host directory the `/libraries` database prefix is mounted on.
     pub library_root: LibraryRoot,
-}
-
-#[derive(Debug, Clone)]
-pub struct ThumbnailConfig {
-    pub enabled: bool,
-    pub width: u32,
-    pub height: u32,
-    pub quality: u8,
-    pub format: String,
-    pub directory: String,
-}
-
-impl Default for ThumbnailConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            width: 300,
-            height: 400,
-            quality: 80,
-            format: "webp".to_string(),
-            directory: "/data/thumbnails".to_string(),
-        }
-    }
 }
 
 /// Parse an environment variable with a fallback default value.
@@ -73,21 +49,13 @@ pub fn env_string_or(key: &str, default: &str) -> String {
 }
 
 impl IndexerConfig {
+    /// Thumbnail settings are not part of the environment: they live in the
+    /// `thumbnail` row of `app_settings` (see `stripstream-thumbnails`).
     pub fn from_env() -> Result<Self> {
-        let mut thumbnail_config = ThumbnailConfig::default();
-        thumbnail_config.enabled = env_or("THUMBNAIL_ENABLED", thumbnail_config.enabled);
-        thumbnail_config.width = env_or("THUMBNAIL_WIDTH", thumbnail_config.width);
-        thumbnail_config.height = env_or("THUMBNAIL_HEIGHT", thumbnail_config.height);
-        thumbnail_config.quality = env_or("THUMBNAIL_QUALITY", thumbnail_config.quality);
-        thumbnail_config.format = env_string_or("THUMBNAIL_FORMAT", &thumbnail_config.format);
-        thumbnail_config.directory =
-            env_string_or("THUMBNAIL_DIRECTORY", &thumbnail_config.directory);
-
         Ok(Self {
             listen_addr: env_string_or("INDEXER_LISTEN_ADDR", "0.0.0.0:7081"),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             scan_interval_seconds: env_or("INDEXER_SCAN_INTERVAL_SECONDS", 5),
-            thumbnail_config,
             library_root: LibraryRoot::from_env(),
         })
     }

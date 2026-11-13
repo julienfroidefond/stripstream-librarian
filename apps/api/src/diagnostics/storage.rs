@@ -10,7 +10,11 @@ use crate::state::AppState;
 /// Never fails: when the directory walk or the counter query fails the page
 /// still renders, with zeroes for the missing part.
 pub(super) async fn thumbnail_diagnostics(state: &AppState) -> ThumbnailDiagnostics {
-    let directory = crate::settings::thumbnail_directory(&state.pool).await;
+    let directory = stripstream_thumbnails::ThumbnailSettings::load_or_default(&state.pool)
+        .await
+        .directory
+        .to_string_lossy()
+        .into_owned();
     let walk_dir = directory.clone();
     let (total_size_bytes, file_count) = tokio::task::spawn_blocking(move || {
         let path = std::path::Path::new(&walk_dir);

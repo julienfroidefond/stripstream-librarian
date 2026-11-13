@@ -1,0 +1,20 @@
+[package]
+name = "stripstream-thumbnails"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+image.workspace = true
+jpeg-decoder.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+stripstream-core = { path = "../core" }
+tracing.workspace = true
+uuid.workspace = true
+webp.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true

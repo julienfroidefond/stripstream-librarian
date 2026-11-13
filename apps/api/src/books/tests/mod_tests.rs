@@ -3,6 +3,8 @@ use axum::Json;
 use sqlx::Row;
 use uuid::Uuid;
 
+use stripstream_thumbnails::{EncodedThumbnail, ThumbnailExt, ThumbnailSettings};
+
 use super::{list_books, update_book, ListBooksQuery, UpdateBookRequest, GET_BOOK_SQL};
 use crate::state::test_state;
 
@@ -344,8 +346,13 @@ async fn rendered_thumbnail_completes_only_cover_pending_books(pool: sqlx::PgPoo
         .await
         .unwrap();
 
+    let store = ThumbnailSettings::load(&pool).await.unwrap().store();
     for book_id in [cover_pending, analyzing, failed] {
-        super::persist_rendered_thumbnail(&state, book_id, b"cover", "image/webp")
+        let thumbnail = EncodedThumbnail {
+            bytes: b"cover".to_vec(),
+            ext: ThumbnailExt::Webp,
+        };
+        super::persist_rendered_thumbnail(&state, &store, book_id, thumbnail)
             .await
             .unwrap();
     }
@@ -365,5 +372,81 @@ async fn rendered_thumbnail_completes_only_cover_pending_books(pool: sqlx::PgPoo
     assert!(
         statuses.iter().all(|(_, _, path)| path.is_some()),
         "the rendered thumbnail must be stored for every book"
+    );
+}
+
+fn png_page(width: u32, height: u32) -> Vec<u8> {
+    let image = image::RgbImage::from_pixel(width, height, image::Rgb([200, 10, 10]));
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(image)
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
+    out.into_inner()
+}
+
+fn write_cbz(path: &std::path::Path, data: &[u8]) {
+    use std::io::Write;
+    let file = std::fs::File::create(path).unwrap();
+    let mut zip = ::zip::ZipWriter::new(file);
+    let opts = ::zip::write::SimpleFileOptions::default()
+        .compression_method(::zip::CompressionMethod::Stored);
+    zip.start_file("001.png", opts).unwrap();
+    zip.write_all(data).unwrap();
+    zip.finish().unwrap();
+}
+
+/// The on-the-fly fallback encodes with the shared thumbnail settings (format,
+/// size, directory) instead of hard-coded values, and replaces a stale file.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn thumbnail_fallback_uses_shared_store_settings(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let thumbnails = tempfile::tempdir().unwrap();
+    let books = tempfile::tempdir().unwrap();
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('thumbnail', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({
+        "format": "png",
+        "width": 40,
+        "height": 60,
+        "directory": thumbnails.path(),
+    }))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let library = create_test_library(&pool, "thumbnail-fallback").await;
+    let book_id = create_test_book(&pool, library, None, "Cover", "bd").await;
+    let cbz = books.path().join("T01.cbz");
+    write_cbz(&cbz, &png_page(400, 600));
+    create_test_book_file(&pool, book_id, &cbz.to_string_lossy(), "cbz").await;
+    // A stale thumbnail in another format, as left by an earlier configuration.
+    let stale = thumbnails.path().join(format!("{book_id}.webp"));
+    std::fs::write(&stale, b"stale").unwrap();
+
+    let response = super::get_thumbnail(State(state), Path(book_id), axum::http::HeaderMap::new())
+        .await
+        .unwrap();
+
+    assert_eq!(response.headers()["content-type"], "image/png");
+    assert_eq!(response.headers()["x-thumbnail-source"], "rendered");
+    let published = thumbnails.path().join(format!("{book_id}.png"));
+    let decoded = image::load_from_memory(&std::fs::read(&published).unwrap()).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (40, 60));
+    assert!(
+        !stale.exists(),
+        "the thumbnail of the previous format is replaced"
+    );
+
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT thumbnail_path FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        stored.as_deref(),
+        Some(published.to_string_lossy().as_ref())
     );
 }
