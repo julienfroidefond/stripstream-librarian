@@ -107,8 +107,8 @@ cd apps/docs && npm install && npm run dev -- --port 7083
   `utoipa` for OpenAPI; `Option<T>` for nullable fields, public structs documented briefly.
 - **Logging (`RUST_LOG`)**: targets `indexer`, `scan`, `extraction`, `thumbnail`, `watcher`.
   Default: `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`.
-- **Performance**: batch DB writes (100 items recommended); `rayon::par_iter()` for CPU-intensive
-  scans; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
+- **Performance**: batch DB writes (100 items recommended); bound CPU-intensive
+  work with `spawn_blocking` + a concurrency limit; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
   cache); stream large data.
 
 ### Naming Conventions
@@ -160,7 +160,8 @@ libraries/             # book storage (mounted volume)
 | File | Purpose |
 |------|---------|
 | `apps/api/src/main.rs` | Router, AppState init, Swagger UI (client + admin) |
-| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, `page_render_limit` semaphore |
+| `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, resizable `page_render_limit` |
+| `apps/api/src/settings/limits.rs` | Typed `app_settings.limits` schema (`Limits::parse` / `load`, ADR 0026) |
 | `apps/api/src/error.rs` | `ApiError` + constructors |
 | `apps/api/src/books/pages.rs` | Page rendering + double cache (memory LRU + disk) |
 | `apps/api/src/books/thumbnails.rs` | Thumbnail rebuild/regenerate job endpoints |

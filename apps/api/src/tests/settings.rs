@@ -224,6 +224,77 @@ async fn update_setting_limits_refreshes_runtime_settings(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_limits_resizes_the_render_limit(pool: PgPool) {
+    let state = test_state(pool.clone());
+    assert_eq!(state.page_render_limit.limit(), 1);
+
+    let _ = update_setting(
+        State(state.clone()),
+        key_path("limits"),
+        setting_body(json!({ "concurrent_renders": 3 })),
+    )
+    .await
+    .unwrap();
+
+    // `concurrent_renders` used to be read once at startup only.
+    assert_eq!(state.page_render_limit.limit(), 3);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn rejected_limits_are_neither_stored_nor_applied(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    let err = expect_err(
+        update_setting(
+            State(state.clone()),
+            key_path("limits"),
+            setting_body(json!({ "concurrent_renders": 0, "timeout_seconds": 42 })),
+        )
+        .await,
+    );
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        err.message,
+        "limits.concurrent_renders must be greater than 0"
+    );
+    assert_eq!(state.page_render_limit.limit(), 1);
+    assert_ne!(state.settings.read().await.timeout_seconds, 42);
+}
+
+/// `apply_limits` needs no database: a lazy pool is never connected.
+#[tokio::test]
+async fn apply_limits_reaches_every_runtime_consumer() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://unused@localhost/unused")
+        .unwrap();
+    let state = test_state(pool);
+    let limits = crate::settings::limits::Limits::parse(&json!({
+        "concurrent_renders": 4,
+        "rate_limit_per_second": 9,
+        "timeout_seconds": 30,
+        "concurrent_telegram_downloads": 5,
+        "concurrent_ddl_provider_downloads": 3,
+        "download_max_attempts": 7,
+    }))
+    .unwrap();
+
+    apply_limits(&state, &limits).await;
+
+    assert_eq!(state.page_render_limit.limit(), 4);
+    {
+        let settings = state.settings.read().await;
+        assert_eq!(settings.rate_limit_per_second, 9);
+        assert_eq!(settings.timeout_seconds, 30);
+    }
+    assert_eq!(state.telegram_downloads.limit(), 5);
+    assert_eq!(state.ddl_provider_downloads.limit(), 3);
+    let downloads = *state.download_settings.read().await;
+    assert_eq!(downloads.max_attempts, 7);
+    assert_eq!(downloads.telegram_concurrency, 5);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn update_setting_limits_applies_download_settings_without_restart(pool: PgPool) {
     let state = test_state(pool.clone());
 
@@ -662,20 +733,25 @@ fn validate_limits_bounds_telegram_download_connections() {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn download_settings_default_then_clamp_and_validate(pool: PgPool) {
-    use crate::downloads::settings::{
-        DownloadSettings, DEFAULT_TELEGRAM_CONNECTIONS, MAX_DOWNLOAD_CONCURRENCY,
-        MAX_TELEGRAM_CONNECTIONS,
+async fn download_settings_default_then_fallback_and_validate(pool: PgPool) {
+    use crate::downloads::settings::DownloadSettings;
+    use crate::settings::limits::{
+        CONCURRENT_DDL_PROVIDER_DOWNLOADS, TELEGRAM_DOWNLOAD_CONNECTIONS,
     };
 
+    let default_connections = TELEGRAM_DOWNLOAD_CONNECTIONS.default as usize;
     assert_eq!(
         DownloadSettings::load(&pool).await.telegram_connections,
-        DEFAULT_TELEGRAM_CONNECTIONS
+        default_connections
     );
 
-    // The loader clamps out-of-range stored values (a safety net behind the
-    // write-side validation).
-    let cases = [(6u64, 6usize), (0, 1), (99, MAX_TELEGRAM_CONNECTIONS)];
+    // A stored value the schema rejects (legacy row, manual edit) falls back to
+    // the default: the read side applies the same rule as the write side.
+    let cases = [
+        (6u64, 6usize),
+        (0, default_connections),
+        (99, default_connections),
+    ];
     for (stored, expected) in cases {
         sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'limits'")
             .bind(json!({ "telegram_download_connections": stored }))
@@ -695,7 +771,6 @@ async fn download_settings_default_then_clamp_and_validate(pool: PgPool) {
         "concurrent_alldebrid_downloads",
         "ddl_download_connections",
         "download_max_attempts",
-        "download_stall_timeout_seconds",
         "download_timeout_minutes",
         "alldebrid_stall_timeout_minutes",
     ] {
@@ -708,10 +783,14 @@ async fn download_settings_default_then_clamp_and_validate(pool: PgPool) {
             "{field} = 0 must be rejected"
         );
     }
+    // The stall timeout has a floor of 10 s, enforced on write as on read
+    // (the Backoffice form already clamps to it).
+    assert!(validate_setting("limits", &json!({ "download_stall_timeout_seconds": 9 })).is_err());
+    assert!(validate_setting("limits", &json!({ "download_stall_timeout_seconds": 10 })).is_ok());
     assert_eq!(
         expect_err(validate_setting(
             "limits",
-            &json!({ "concurrent_ddl_provider_downloads": MAX_DOWNLOAD_CONCURRENCY + 1 }),
+            &json!({ "concurrent_ddl_provider_downloads": CONCURRENT_DDL_PROVIDER_DOWNLOADS.max + 1 }),
         ))
         .status,
         StatusCode::BAD_REQUEST

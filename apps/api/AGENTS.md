@@ -7,7 +7,8 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | Chemin | Rôle |
 |--------|------|
 | `main.rs` | Routes, initialisation `AppState`, Swagger UI (client + admin) |
-| `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (Semaphore), `load_concurrent_renders` |
+| `state.rs` | `AppState` (pool, caches, métriques), `page_render_limit` (`RenderLimit`, redimensionnable à chaud) |
+| `settings.rs`, `settings/limits.rs` | Endpoints `/settings`, `apply` (unique point de rechargement à chaud) ; schéma typé `Limits` de `app_settings.limits` (ADR 0026) |
 | `coverage.rs` | Adaptateurs DB de `stripstream_core::coverage::SeriesCoverage` : CTE canonique des manquants, chargement par lot/unité, volumes possédés par nom de série |
 | `api_middleware.rs` | Middlewares `require_admin` / `require_read`, rate limiting lecture |
 | `error.rs` | `ApiError` avec constructeurs `bad_request`, `not_found`, `internal`, etc. |
@@ -67,12 +68,17 @@ async fn get_book(...) { }
 ### Cache pages (`books/pages.rs`)
 - **Cache mémoire** : LRU limité en octets (`cache.memory_max_size_mb`, 128 Mo par défaut), redimensionné à chaud
 - **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256
-- Concurrence limitée par `AppState.page_render_limit` (Semaphore, configurable en DB)
+- Concurrence limitée par `AppState.page_render_limit` (`RenderLimit` : sémaphore redimensionné à chaud par `limits.concurrent_renders`)
 - `spawn_blocking` pour le rendu image (CPU-bound)
 
-### Paramètre concurrent_renders
-Stocké en DB : `SELECT value FROM app_settings WHERE key = 'limits'` → JSON `{"concurrent_renders": N}`.
-Chargé au démarrage dans `state.rs::load_concurrent_renders`.
+### Réglage `limits` (ADR 0026)
+`settings/limits.rs` est le seul schéma de `app_settings.limits` : chaque champ y a un `Spec`
+(défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture
+(`POST /settings/limits` → 400 listant chaque champ fautif) ; `Limits::load` / `from_stored` lit
+la ligne (un champ invalide stocké retombe sur son défaut). Ne pas relire le JSON `limits` à la
+main ni re-clamper une valeur : dériver de `Limits` (`DownloadSettings::from(&limits)`,
+`DynamicSettings::apply_limits`). Tout rechargement à chaud passe par `settings::apply(state, key)`,
+y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
 
 ## Gotchas
 

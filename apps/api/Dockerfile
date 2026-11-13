@@ -31,7 +31,7 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Cook deps — this layer is cached by recipe.json (= Cargo.toml + Cargo.lock).
 # Exported to the registry cache so a cold-start CI still hits this layer.
 # crates/ must be present before cooking: cargo-chef needs the Cargo.toml of
-# path dependencies (e.g. core2-shim) to resolve the workspace graph.
+# path dependencies (the workspace crates) to resolve the workspace graph.
 COPY --from=planner /app/recipe.json recipe.json
 COPY crates/ ./crates/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

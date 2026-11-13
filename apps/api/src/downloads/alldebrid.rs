@@ -1618,7 +1618,7 @@ mod tests {
 
     #[test]
     fn stall_detection_needs_zero_bytes_and_time() {
-        let stall_minutes = crate::downloads::settings::DEFAULT_MAGNET_STALL_TIMEOUT_MINUTES as i64;
+        let stall_minutes = crate::settings::limits::ALLDEBRID_STALL_TIMEOUT_MINUTES.default as i64;
         assert!(!is_stalled(0, stall_minutes - 1, stall_minutes));
         assert!(is_stalled(0, stall_minutes, stall_minutes));
         // A magnet that moved at least one byte is never considered stalled.

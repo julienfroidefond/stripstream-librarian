@@ -5,13 +5,13 @@ use crate::state::AppState;
 
 pub(super) fn runtime_diagnostics(state: &AppState) -> RuntimeDiagnostics {
     let rss_bytes = resident_set_bytes();
-    let render_limit = state.page_render_limit_total;
+    let render_limit = state.page_render_limit.limit();
 
     RuntimeDiagnostics {
         rss_bytes,
         rss_pretty: rss_bytes.map(super::format_bytes),
         open_fds: open_file_descriptors(),
-        renders_in_flight: render_limit.saturating_sub(state.page_render_limit.available_permits()),
+        renders_in_flight: state.page_render_limit.in_flight(),
         render_limit,
     }
 }
