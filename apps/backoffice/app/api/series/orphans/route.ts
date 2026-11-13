@@ -1,9 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
-import { revalidatePath } from "next/cache";
 import { apiFetch } from "@/lib/api";
 import { ApiError } from "@/lib/api/errors";
 import type { OrphanDeleteResultDto, OrphanSeriesPageDto } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { invalidateAfter } from "@/lib/cache";
 
 const PAGE_SIZE = 200;
 /** In-flight delete requests. Keeps a large purge from exhausting the DB pool. */
@@ -168,8 +168,7 @@ export const DELETE = withRoute(async (request: NextRequest) => {
   const ids = "all" in selection ? await listAllOrphanIds() : selection.ids;
   const summary = await deleteMany(ids);
 
-  revalidatePath("/settings");
-  revalidatePath("/series");
+  invalidateAfter({ type: "series.orphansDeleted" });
 
   return NextResponse.json(summary);
 }, { fallback: "Failed to delete orphan series" });

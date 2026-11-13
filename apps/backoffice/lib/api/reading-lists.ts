@@ -3,9 +3,7 @@
  */
 
 import { apiFetch } from "./client";
-
-/** Cache tag shared by every fetch that embeds reading-list data. */
-export const READING_LISTS_TAG = "reading-lists";
+import { cacheTags } from "../cache/tags";
 
 export type ReadingListDto = {
   id: string;
@@ -96,13 +94,13 @@ export type AiReadingListSuggestions = {
 
 export async function fetchReadingLists(): Promise<ReadingListDto[]> {
   return apiFetch<ReadingListDto[]>("/reading-lists", {
-    next: { revalidate: 30, tags: [READING_LISTS_TAG] },
+    next: { revalidate: 30, tags: [cacheTags.readingLists()] },
   });
 }
 
 export async function fetchSeriesReadingLists(seriesId: string): Promise<ReadingListDto[]> {
   return apiFetch<ReadingListDto[]>(`/reading-lists?series_id=${seriesId}`, {
-    next: { revalidate: 15, tags: [`series:${seriesId}`, READING_LISTS_TAG] },
+    next: { revalidate: 15, tags: [cacheTags.seriesById(seriesId), cacheTags.readingLists()] },
   });
 }
 
