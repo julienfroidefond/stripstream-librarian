@@ -4,6 +4,12 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.154 — 2026-11-13
+
+### Refactoring
+
+- **jobs** — one launcher for in-process API jobs ([#296](https://github.com/julienfroidefond/stripstream-librarian/pull/296))
+
 ## v3.32.153 — 2026-11-13
 
 ### Refactoring
