@@ -9,10 +9,10 @@ mod library_target;
 pub mod limit;
 mod missing;
 
+pub mod progress;
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod ranged;
-pub mod rate;
 pub mod recovery;
 pub mod rss_poll;
 pub mod settings;

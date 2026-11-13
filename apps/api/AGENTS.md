@@ -96,6 +96,13 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
   `finish_import`, `fail`, `restart`) refusent un statut inattendu. Ne pas écrire
   `UPDATE torrent_downloads` ailleurs ; la progression (`record_progress`, `arm_stall`) est un
   no-op sur une ligne qui n'est plus `downloading`.
+- **Progression de transfert** : `downloads/progress.rs` possède le contrat des colonnes
+  (`bytes`, `progress` 0..=1, `download_speed`, `eta`) et la règle de taille : la colonne
+  `file_size` n'est jamais effacée (`None` comme `0` conservent la valeur stockée, seule une
+  valeur positive la remplace). Chaque flux compose `TransferRate` +
+  `TransferProgress::{from_bytes, from_reported}` avec un `ProgressSink` (`TorrentSink`,
+  `DdlSink`, `TelegramSink`) ; `Reporter` porte le throttle et le calcul d'ETA du moteur ranged.
+  Ne pas réécrire de throttle, de formule d'ETA ni d'`UPDATE` de progression dans un flux.
 - **Compteurs d'import** : `ImportedFile.already_existed`
   (`downloads/torrent_import.rs`) distingue les fichiers réellement copiés de ceux déjà sur
   disque. Les compteurs et les notifications n'incluent que les vrais nouveaux fichiers.

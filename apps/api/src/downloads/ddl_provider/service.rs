@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use sqlx::Row;
 use tokio::io::AsyncWriteExt;
@@ -22,12 +22,12 @@ use stripstream_core::http::build_http_client_with_custom_agent;
 
 use crate::downloads::http_error::describe_http_failure;
 use crate::downloads::http_range::{probe_remote_file, HttpRangeFetcher};
+use crate::downloads::progress::{DdlSink, Reporter};
 use crate::downloads::ranged::{
     download_ranged, FileSink, ProgressReporter, RangeFetcher, RangeSink,
 };
-use crate::downloads::rate::TransferRate;
 use crate::downloads::settings::DownloadSettings;
-use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
+use crate::downloads::target::{finalize_download, prepare_destination};
 use crate::downloads::worker::DDL_DOWNLOAD_QUEUE;
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -483,7 +483,10 @@ async fn download_ranged_to_file(
         .map(|_| Arc::new(HttpRangeFetcher::new(client.clone(), url)) as Arc<dyn RangeFetcher>)
         .collect();
     let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(tmp_path, total_size).await?);
-    let reporter = Arc::new(DdlProgress::new(pool.clone(), download_id, total_size));
+    let reporter: Arc<dyn ProgressReporter> = Arc::new(Reporter::new(
+        Some(total_size),
+        Box::new(DdlSink::new(pool.clone(), download_id)),
+    ));
 
     let result = download_ranged(
         fetchers,
@@ -536,19 +539,17 @@ async fn stream_to_file(
     }
 
     let mut file = tokio::fs::File::create(tmp_path).await?;
-    let mut progress = DownloadProgress::new();
     // The single-stream fallback does not know the file size, so only the rate
-    // is reported; the ETA stays 0.
-    let mut rate = TransferRate::new();
+    // is reported; the ETA stays 0 and the stored size is kept.
+    let reporter = Reporter::new(None, Box::new(DdlSink::new(pool.clone(), download_id)));
+    let mut written = 0;
 
     loop {
         match response.chunk().await {
             Ok(Some(chunk)) => {
                 file.write_all(&chunk).await?;
-                if let Some(written) = progress.advance(chunk.len() as i64) {
-                    rate.sample(written);
-                    store_progress(pool, download_id, written, rate.speed(), 0).await;
-                }
+                written += chunk.len() as i64;
+                reporter.report(written).await;
             }
             Ok(None) => break,
             Err(e) => return Err(anyhow::anyhow!("{}", describe_http_failure(&e))),
@@ -556,80 +557,7 @@ async fn stream_to_file(
     }
 
     file.flush().await?;
-    Ok(progress.written())
-}
-
-/// Persist a transfer's byte count, rate and ETA, best-effort: a progress update
-/// that fails must never fail the download itself.
-async fn store_progress(pool: &sqlx::PgPool, download_id: Uuid, bytes: i64, speed: i64, eta: i64) {
-    let _ = sqlx::query(
-        "UPDATE ddl_provider_downloads \
-         SET bytes_downloaded = $1, download_speed = $2, eta = $3, updated_at = NOW() \
-         WHERE id = $4",
-    )
-    .bind(bytes)
-    .bind(speed)
-    .bind(eta)
-    .bind(download_id)
-    .execute(pool)
-    .await;
-}
-
-/// Throttled progress reporter for the ranged engine: the byte count is only
-/// written to the database every [`PROGRESS_UPDATE_BYTES`] instead of once per
-/// block.
-///
-/// [`PROGRESS_UPDATE_BYTES`]: crate::downloads::target::PROGRESS_UPDATE_BYTES
-struct DdlProgress {
-    pool: sqlx::PgPool,
-    download_id: Uuid,
-    total_size: i64,
-    state: Mutex<DdlProgressState>,
-}
-
-struct DdlProgressState {
-    bytes: DownloadProgress,
-    rate: TransferRate,
-}
-
-impl DdlProgress {
-    fn new(pool: sqlx::PgPool, download_id: Uuid, total_size: i64) -> Self {
-        Self {
-            pool,
-            download_id,
-            total_size,
-            state: Mutex::new(DdlProgressState {
-                bytes: DownloadProgress::new(),
-                rate: TransferRate::new(),
-            }),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl ProgressReporter for DdlProgress {
-    async fn report(&self, bytes_written: i64) {
-        // Scope the guard so it is released before the `await`: a `MutexGuard`
-        // held across an await point would make this future non-`Send` and break
-        // the engine's `JoinSet`.
-        let update = {
-            let Ok(mut state) = self.state.lock() else {
-                return;
-            };
-            state.rate.sample(bytes_written);
-            let delta = bytes_written - state.bytes.written();
-            state.bytes.advance(delta).map(|bytes| {
-                (
-                    bytes,
-                    state.rate.speed(),
-                    state.rate.eta(Some(self.total_size)),
-                )
-            })
-        };
-        if let Some((bytes, speed, eta)) = update {
-            store_progress(&self.pool, self.download_id, bytes, speed, eta).await;
-        }
-    }
+    Ok(written)
 }
 
 // ---------------------------------------------------------------------------
@@ -726,6 +654,7 @@ pub async fn probe(state: &AppState, provider_id: &str, query: &str) -> Result<u
 mod tests {
     use super::super::{fourtoutici::normalize_for_match, save_config, DdlProvidersConfig};
     use super::*;
+    use crate::downloads::progress::{ProgressSink, TransferProgress};
     use crate::downloads::worker::DownloadQueue;
 
     /// Build a DDL provider file the way `fourtoutici::parse_files` does, i.e. with
@@ -975,7 +904,16 @@ mod tests {
             .unwrap()
             .expect("the file is queued");
 
-        store_progress(&pool, download_id, 4 * 1024 * 1024, 2_000_000, 12).await;
+        DdlSink::new(pool.clone(), download_id)
+            .report(&TransferProgress {
+                bytes: 4 * 1024 * 1024,
+                total: Some(8 * 1024 * 1024),
+                progress: 0.5,
+                speed: 2_000_000,
+                eta: 12,
+            })
+            .await
+            .unwrap();
 
         let (bytes, speed, eta): (i64, i64, i64) = sqlx::query_as(
             "SELECT bytes_downloaded, download_speed, eta \

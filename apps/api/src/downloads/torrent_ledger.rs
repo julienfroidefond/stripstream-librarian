@@ -230,8 +230,9 @@ pub(super) struct ProgressUpdate<'a> {
     pub eta: i64,
     /// Total size in bytes.
     ///
-    /// `None` keeps the stored size; `Some(0)` clears it (the backend no longer
-    /// knows it); any other value replaces it.
+    /// The size is never erased: `None` (unknown) and `Some(0)` (the backend
+    /// does not know it) both keep the stored value, and only a positive value
+    /// replaces it.
     pub file_size: Option<i64>,
     /// Debrid peers seeding the torrent; `None` keeps the stored value.
     pub seeders: Option<i32>,
@@ -406,7 +407,7 @@ pub(super) async fn record_progress(
     sqlx::query(
         "UPDATE torrent_downloads SET progress = $2, download_speed = $3, eta = $4, \
          seeders = COALESCE($5, seeders), \
-         file_size = CASE WHEN $6::bigint IS NULL THEN file_size ELSE NULLIF($6, 0) END, \
+         file_size = CASE WHEN $6::bigint IS NULL OR $6 = 0 THEN file_size ELSE $6 END, \
          name = COALESCE($7, name), \
          stall_started_at = CASE WHEN $8 > 0 THEN NULL ELSE stall_started_at END, \
          updated_at = NOW() \
@@ -441,7 +442,7 @@ pub(super) async fn arm_stall(
     let stalled = sqlx::query_scalar::<_, DateTime<Utc>>(
         "UPDATE torrent_downloads SET progress = $2, download_speed = $3, eta = $4, \
          seeders = COALESCE($5, seeders), \
-         file_size = CASE WHEN $6::bigint IS NULL THEN file_size ELSE NULLIF($6, 0) END, \
+         file_size = CASE WHEN $6::bigint IS NULL OR $6 = 0 THEN file_size ELSE $6 END, \
          name = COALESCE($7, name), \
          stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
          WHERE id = $1 AND status = 'downloading' \
