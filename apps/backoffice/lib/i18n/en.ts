@@ -916,6 +916,8 @@ const en: Record<TranslationKey, string> = {
   "settings.telegramDownloadConnections": "Telegram connections per download",
   "settings.telegramDownloadConnectionsHelp": "Connections requested per download, taken from a budget of 8 shared by every running download. Applies to the next download.",
   "settings.timeoutSeconds": "Timeout (seconds)",
+  "settings.analysisTimeoutSeconds": "Book analysis timeout (seconds)",
+  "settings.analysisTimeoutSecondsHelp": "Time the indexer allows to open one book (page count and cover). Large PDFs can need more than the page render timeout.",
   "settings.rateLimit": "Rate limit (req/s)",
   "settings.limitsNote": "Download settings (concurrent downloads, connections, attempts, timeouts) apply immediately, without a restart. The \"Concurrent renders\" setting only takes effect after a server restart and controls both page rendering and thumbnail generation parallelism.",
 

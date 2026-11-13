@@ -37,13 +37,34 @@ fn test_library_root() -> stripstream_core::paths::LibraryRoot {
 }
 
 /// Local wrappers keep the many validation tests focused on their input.
+/// Same dispatch as `super::validate_setting`, with a fixed thumbnail directory.
 fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
-    super::validate_setting(
-        key,
-        value,
-        &test_library_root(),
-        std::path::Path::new("/srv/thumbs"),
+    match key {
+        "limits" => super::validate_limits(value),
+        "cache" => super::validate_cache(
+            value,
+            &test_library_root(),
+            std::path::Path::new("/srv/thumbs"),
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// Makes every read of the `thumbnail` row fail (a NULL `value` cannot be
+/// decoded), to prove which handlers depend on it.
+async fn break_thumbnail_setting(pool: &PgPool) {
+    sqlx::query("ALTER TABLE app_settings ALTER COLUMN value DROP NOT NULL")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('thumbnail', NULL) \
+         ON CONFLICT (key) DO UPDATE SET value = NULL",
     )
+    .execute(pool)
+    .await
+    .unwrap();
+    assert!(ThumbnailSettings::load(pool).await.is_err());
 }
 
 fn is_safe_cache_directory(path: &str) -> bool {
@@ -426,9 +447,51 @@ async fn update_setting_unrelated_key_leaves_runtime_settings_untouched(pool: Pg
     );
 }
 
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_does_not_depend_on_thumbnail_settings_except_for_cache(pool: PgPool) {
+    let state = test_state(pool.clone());
+    break_thumbnail_setting(&pool).await;
+
+    for (key, value) in [
+        ("limits", json!({ "concurrent_renders": 3 })),
+        ("image_processing", json!({ "quality": 70 })),
+        ("custom_noop", json!({ "x": 1 })),
+    ] {
+        let saved = update_setting(State(state.clone()), key_path(key), setting_body(value)).await;
+        assert!(saved.is_ok(), "{key} must save without the thumbnail row");
+    }
+    assert_eq!(state.page_render_limit.limit(), 3);
+
+    // `cache` alone needs the thumbnail directory, and fails closed.
+    let dir = TempDir::new().unwrap();
+    let err = expect_err(
+        update_setting(
+            State(state),
+            key_path("cache"),
+            setting_body(json!({ "directory": dir.path().to_string_lossy() })),
+        )
+        .await,
+    );
+    assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
 // ---------------------------------------------------------------------------
 // clear_cache
 // ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn clear_cache_survives_an_unreadable_thumbnail_setting(pool: PgPool) {
+    let state = test_state(pool.clone());
+    break_thumbnail_setting(&pool).await;
+    let dir = TempDir::new().unwrap();
+    write_file(dir.path(), "a.bin", 16);
+    state.settings.write().await.cache_directory = dir.path().to_string_lossy().to_string();
+
+    let Json(resp) = clear_cache(State(state)).await.unwrap();
+
+    assert!(resp.success);
+    assert!(!dir.path().exists());
+}
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn clear_cache_missing_directory_reports_nothing_to_clear(pool: PgPool) {
@@ -745,13 +808,10 @@ async fn download_settings_default_then_fallback_and_validate(pool: PgPool) {
         default_connections
     );
 
-    // A stored value the schema rejects (legacy row, manual edit) falls back to
-    // the default: the read side applies the same rule as the write side.
-    let cases = [
-        (6u64, 6usize),
-        (0, default_connections),
-        (99, default_connections),
-    ];
+    // A stored value out of range (legacy row, manual edit) is clamped to the
+    // nearest bound on read; only the write side rejects it.
+    let max_connections = TELEGRAM_DOWNLOAD_CONNECTIONS.max as usize;
+    let cases = [(6u64, 6usize), (0, 1), (99, max_connections)];
     for (stored, expected) in cases {
         sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'limits'")
             .bind(json!({ "telegram_download_connections": stored }))

@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use stripstream_core::analysis::{self, AnalysisMode};
-use stripstream_core::settings::load_setting;
+use stripstream_core::limits::Limits;
 use stripstream_jobs::is_job_cancelled;
 use stripstream_thumbnails::{ThumbnailSettings, ThumbnailStore};
 
@@ -62,34 +62,22 @@ struct AnalysisSettings {
     concurrency: usize,
 }
 
+impl AnalysisSettings {
+    /// Takes the analysis knobs from the typed `limits` schema (ADR 0026):
+    /// `analysis_timeout_seconds` (not the API's page render timeout) and the
+    /// bounded `concurrent_renders`, so no value is re-read or re-clamped here.
+    fn new(store: ThumbnailStore, limits: &Limits) -> Self {
+        Self {
+            store,
+            timeout_secs: limits.analysis_timeout_seconds.get(),
+            concurrency: limits.concurrent_renders.get(),
+        }
+    }
+}
+
 async fn load_analysis_settings(pool: &sqlx::PgPool) -> AnalysisSettings {
     let store = ThumbnailSettings::load_or_default(pool).await.store();
-    let limits = load_setting::<serde_json::Value>(pool, "limits")
-        .await
-        .ok()
-        .flatten();
-
-    let timeout_secs = limits
-        .as_ref()
-        .and_then(|v| v.get("timeout_seconds"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(120);
-
-    // Default: half the logical CPUs, clamped between 1 and 2.
-    // Archive extraction is I/O bound but benefits from moderate parallelism.
-    let default_concurrency = (num_cpus::get() / 2).clamp(1, 2);
-    let concurrency = limits
-        .as_ref()
-        .and_then(|v| v.get("concurrent_renders"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(default_concurrency);
-
-    AnalysisSettings {
-        store,
-        timeout_secs,
-        concurrency,
-    }
+    AnalysisSettings::new(store, &Limits::load(pool).await)
 }
 
 /// Best-effort page count extraction without touching the first page.
@@ -975,6 +963,28 @@ mod tests {
         cursor.into_inner()
     }
 
+    #[test]
+    fn analysis_settings_use_the_typed_limits() {
+        let store = ThumbnailSettings::default().store();
+        // Seed-like row: the 12 s page render timeout is not the analysis one.
+        let limits = Limits::from_stored(Some(&serde_json::json!({
+            "concurrent_renders": 4,
+            "timeout_seconds": 12,
+        })));
+        let settings = AnalysisSettings::new(store, &limits);
+        assert_eq!(settings.timeout_secs, 120);
+        assert_eq!(settings.concurrency, 4);
+
+        let store = ThumbnailSettings::default().store();
+        let limits = Limits::from_stored(Some(&serde_json::json!({
+            "concurrent_renders": 0,
+            "analysis_timeout_seconds": 300,
+        })));
+        let settings = AnalysisSettings::new(store, &limits);
+        assert_eq!(settings.timeout_secs, 300);
+        assert_eq!(settings.concurrency, 1, "0 would stall buffer_unordered");
+    }
+
     // ─── Integration tests (require PostgreSQL) ─────────────────────────
 
     fn write_test_cbz(path: &Path, images: usize) -> std::io::Result<()> {
@@ -1084,7 +1094,7 @@ mod tests {
             "INSERT INTO app_settings (key, value) VALUES ('limits', $1) \
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
         )
-        .bind(serde_json::json!({ "concurrent_renders": 1, "timeout_seconds": 120 }))
+        .bind(serde_json::json!({ "concurrent_renders": 1, "analysis_timeout_seconds": 120 }))
         .execute(pool)
         .await
         .unwrap();

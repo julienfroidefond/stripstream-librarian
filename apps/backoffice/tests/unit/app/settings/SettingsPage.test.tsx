@@ -71,6 +71,21 @@ describe("SettingsPage", () => {
     expect(String(settingsWrites()[0][0])).toBe("/api/settings/limits");
   });
 
+  it("edits the book analysis timeout in the limits section", async () => {
+    render(<SettingsPage model={model()} initialTab="general" />);
+
+    const input = screen.getAllByRole("spinbutton")[2];
+    // Absent from the stored row: the default (120 s) is shown.
+    expect(input).toHaveValue(120);
+    fireEvent.change(input, { target: { value: "600" } });
+    fireEvent.blur(input);
+    await flush();
+
+    expect(settingsWrites()).toHaveLength(1);
+    const body = JSON.parse(String(settingsWrites()[0][1]?.body));
+    expect(body.value).toMatchObject({ analysis_timeout_seconds: 600, timeout_seconds: 12 });
+  });
+
   it("is read-only when the settings section is degraded: banner, and no save is possible", async () => {
     render(
       <SettingsPage model={model({ settings: null, degraded: ["settings"] })} initialTab="general" />,

@@ -213,6 +213,17 @@ function SettingsPageContent({ model, initialTab, tokensContent }: SettingsPageP
             className="w-32"
           />
         </SettingsRow>
+        <SettingsRow label={t("settings.analysisTimeoutSeconds")} description={t("settings.analysisTimeoutSecondsHelp")}>
+          <FormInput
+            type="number"
+            min={10}
+            max={3600}
+            value={limits.value.analysis_timeout_seconds}
+            onChange={(e) => limits.patch({ analysis_timeout_seconds: parseInt(e.target.value) || 120 })}
+            onBlur={() => void limits.save()}
+            className="w-32"
+          />
+        </SettingsRow>
         <SettingsRow label={t("settings.rateLimit")}>
           <FormInput
             type="number"
