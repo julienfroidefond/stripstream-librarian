@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.150 — 2026-11-13
+
+### Refactoring
+
+- **backoffice** — one cache invalidation seam for the Next data cache ([#290](https://github.com/julienfroidefond/stripstream-librarian/pull/290))
+
 ## v3.32.149 — 2026-11-13
 
 ### Corrections
