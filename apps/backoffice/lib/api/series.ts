@@ -206,6 +206,11 @@ export async function fetchSeriesStatuses(): Promise<string[]> {
   return apiFetch<string[]>("/series/statuses", { next: { revalidate: 300 } });
 }
 
+/** Raw statuses reported by metadata providers (status-mapping sources). */
+export async function fetchProviderStatuses(): Promise<string[]> {
+  return apiFetch<string[]>("/series/provider-statuses", { cache: "no-store" });
+}
+
 export type SeriesMetadataDto = {
   series_name: string;
   authors: string[];

@@ -4,12 +4,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
-import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto, LibraryDto } from "@/lib/api";
+import type { CacheStats, ClearCacheResponse } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
+import type { SettingsPageModel } from "@/lib/settings/page";
 import type { CacheSettings, DownloadsEnabledSettings, ImageProcessingSettings, LimitsSettings, ThumbnailSettings } from "@/lib/settingsSections";
-import { SettingsDraftProvider, useSettingsSection, useSettingsSaving } from "./SettingsDraftProvider";
+import { SettingsDraftProvider, useSettingsReadOnly, useSettingsSection, useSettingsSaving } from "./SettingsDraftProvider";
 import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
 import { StatusMappingsCard } from "./components/StatusMappingsCard";
 import { ProwlarrCard } from "./components/ProwlarrCard";
@@ -28,16 +29,9 @@ import { AiTaggingCard } from "./components/AiTaggingCard";
 import { DownloadClientCard } from "./components/DownloadClientCard";
 
 interface SettingsPageProps {
-  initialSettings: Settings;
-  initialCacheStats: CacheStats;
-  initialThumbnailStats: ThumbnailStats;
-  users: UserDto[];
+  /** Everything loaded by `loadSettingsPage`, with its degraded sections. */
+  model: SettingsPageModel;
   initialTab?: string;
-  initialStatusMappings: Record<string, unknown>[];
-  initialSeriesStatuses: string[];
-  initialProviderStatuses: string[];
-  initialLibraries: LibraryDto[];
-  versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
@@ -46,26 +40,18 @@ interface SettingsPageProps {
  * is a set of views over slices. Keeping the provider above the content means
  * a card that is not mounted (inactive tab) still keeps its unsaved edits.
  */
-export default function SettingsPage({ initialSettings, ...contentProps }: SettingsPageProps) {
+export default function SettingsPage(props: SettingsPageProps) {
+  // `settings === null`: the stored values were not read, so the provider
+  // seeds defaults for display only and refuses every save.
   return (
-    <SettingsDraftProvider initial={initialSettings as unknown as Record<string, unknown>}>
-      <SettingsPageContent {...contentProps} />
+    <SettingsDraftProvider initial={props.model.settings}>
+      <SettingsPageContent {...props} />
     </SettingsDraftProvider>
   );
 }
 
-function SettingsPageContent({
-  initialCacheStats,
-  initialThumbnailStats,
-  users,
-  initialTab,
-  initialStatusMappings,
-  initialSeriesStatuses,
-  initialProviderStatuses,
-  initialLibraries,
-  versions,
-  tokensContent,
-}: Omit<SettingsPageProps, "initialSettings">) {
+function SettingsPageContent({ model, initialTab, tokensContent }: SettingsPageProps) {
+  const { users, versions } = model;
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,9 +62,11 @@ function SettingsPageContent({
   const thumbnail = useSettingsSection<ThumbnailSettings>("thumbnail");
   const downloadsEnabled = useSettingsSection<DownloadsEnabledSettings>("downloads_enabled");
   const isSaving = useSettingsSaving();
+  const readOnly = useSettingsReadOnly();
 
-  const [cacheStats, setCacheStats] = useState<CacheStats>(initialCacheStats);
-  const thumbnailStats = initialThumbnailStats;
+  // `null` = the API did not answer: render "unavailable", never a made-up path.
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(model.cacheStats);
+  const thumbnailStats = model.thumbnailStats;
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
 
@@ -174,6 +162,19 @@ function SettingsPageContent({
         }
       />
 
+      {readOnly && (
+        <div
+          role="alert"
+          className="mb-6 flex items-start gap-2.5 rounded-xl bg-warning/10 p-3.5 text-sm leading-relaxed text-warning"
+        >
+          <Icon name="warning" size="sm" mono className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">{t("settings.readOnlyTitle")}</p>
+            <p>{t("settings.readOnlyDesc")}</p>
+          </div>
+        </div>
+      )}
+
       {activeTab === "general" && (<SettingsSections>
       {/* Language Selector */}
       <SettingsCard icon="globe" title={t("settings.language")} description={t("settings.languageDesc")}>
@@ -242,15 +243,15 @@ function SettingsPageContent({
         <dl className="settings-well grid grid-cols-1 gap-x-6 gap-y-4 rounded-xl p-4 sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted-foreground">API</dt>
-            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.api ?? "?"}</dd>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions.api ?? "?"}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Indexer</dt>
-            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.indexer ?? "?"}</dd>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions.indexer ?? "?"}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Backoffice</dt>
-            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.backoffice ?? "?"}</dd>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions.backoffice}</dd>
           </div>
         </dl>
 
@@ -322,6 +323,7 @@ function SettingsPageContent({
 
       {/* Cache Settings */}
       <SettingsCard icon="cache" title={t("settings.cache")} description={t("settings.cacheDesc")}>
+        {cacheStats ? (
         <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4">
           <div>
             <p className="text-xs text-muted-foreground">{t("settings.diskCacheSize")}</p>
@@ -344,6 +346,9 @@ function SettingsPageContent({
             <p className="mt-0.5 truncate font-mono text-sm" title={cacheStats.directory}>{cacheStats.directory}</p>
           </div>
         </div>
+        ) : (
+          <p className="settings-well rounded-xl p-4 text-sm text-muted-foreground">{t("settings.statsUnavailable")}</p>
+        )}
 
         {clearResult && (
           <div className={`rounded-xl p-3 text-sm ${clearResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
@@ -475,6 +480,7 @@ function SettingsPageContent({
           />
         </SettingsRow>
 
+        {thumbnailStats ? (
         <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">{t("settings.totalSize")}</p>
@@ -489,6 +495,9 @@ function SettingsPageContent({
             <p className="mt-0.5 truncate font-mono text-sm" title={thumbnailStats.directory}>{thumbnailStats.directory}</p>
           </div>
         </div>
+        ) : (
+          <p className="settings-well rounded-xl p-4 text-sm text-muted-foreground">{t("settings.statsUnavailable")}</p>
+        )}
 
         <p className="settings-well flex items-start gap-2.5 rounded-xl p-3.5 text-sm leading-relaxed text-muted-foreground">
           <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
@@ -503,7 +512,7 @@ function SettingsPageContent({
 
 
       {/* Status Mappings */}
-      <StatusMappingsCard initialStatusMappings={initialStatusMappings} initialSeriesStatuses={initialSeriesStatuses} initialProviderStatuses={initialProviderStatuses} />
+      <StatusMappingsCard initialStatusMappings={model.statusMappings} initialSeriesStatuses={model.seriesStatuses} initialProviderStatuses={model.providerStatuses} />
       </SettingsSections>)}
 
       {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard /></SettingsSections>)}
@@ -553,7 +562,7 @@ function SettingsPageContent({
 
           {/* Telegram link monitoring */}
           <SettingsSection title={t("settings.sectionTelegram")}>
-            <TelegramMonitorCard initialLibraries={initialLibraries} />
+            <TelegramMonitorCard initialLibraries={model.libraries} />
           </SettingsSection>
         </div>
       )}

@@ -14,6 +14,7 @@ import {
   deleteStatusMapping,
   deleteToken,
   deleteUser,
+  fetchProviderStatuses,
   fetchSeriesRecommendations,
   fetchSeriesStatuses,
   fetchStatsBreakdown,
@@ -153,6 +154,12 @@ describe("series recommendations and statuses", () => {
     await fetchSeriesStatuses();
     expect(lastCall()).toMatchObject({ url: "http://api:7080/series/statuses" });
   });
+
+  it("fetches provider statuses without caching", async () => {
+    await fetchProviderStatuses();
+    expect(lastCall().url).toBe("http://api:7080/series/provider-statuses");
+    expect(lastCall().init.cache).toBe("no-store");
+  });
 });
 
 describe("settings and cache", () => {
@@ -190,6 +197,7 @@ describe("status mappings", () => {
   it("lists mappings", async () => {
     await fetchStatusMappings();
     expect(lastCall().url).toBe("http://api:7080/settings/status-mappings");
+    expect(lastCall().init.cache).toBe("no-store");
   });
 
   it("upserts a mapping", async () => {

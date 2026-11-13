@@ -8,8 +8,11 @@ import {
 } from "@/app/(app)/settings/SettingsDraftProvider";
 
 export interface RenderWithSettingsOptions extends Omit<RenderOptions, "wrapper"> {
-  /** Stored `app_settings` values; the provider seeds every known default. */
-  initial?: Record<string, unknown>;
+  /**
+   * Stored `app_settings` values; the provider seeds every known default.
+   * `null` renders the read-only draft of a page whose settings failed to load.
+   */
+  initial?: Record<string, unknown> | null;
   /** Replace the proxy write. Defaults to acknowledging the submitted value. */
   writer?: SettingsSectionWriter;
 }

@@ -98,6 +98,17 @@ pas dans `degraded`. `SeriesActionsToolbar` reçoit un unique prop `model` (`Ser
 dérivé du modèle de page) : toutes ses données viennent de là, jamais d'un fetch ou d'un calcul
 dans la page.
 
+## Page de paramètres (Settings page)
+
+`app/(app)/settings/page.tsx` ne fait que de la composition : il appelle `loadSettingsPage`
+(`lib/settings/page.ts`, serveur, sans React) et passe le `SettingsPageModel` à `SettingsPage`
+via un unique prop `model`. Aucune section n'est fatale : une section en échec vaut `null`
+(réglages, statistiques de cache/miniatures, versions) ou une liste vide (utilisateurs, mappings,
+statuts, bibliothèques) et son nom est ajouté à `model.degraded` — jamais de valeur inventée ni de
+`catch` local. `model.settings === null` passe le brouillon en lecture seule (voir ci-dessous) et
+affiche un bandeau. Les versions viennent de `lib/api/versions.ts` ; l'indexer est joint via
+`INDEXER_BASE_URL` (défaut `http://indexer:7081`).
+
 ## Jobs (descripteurs et flux live)
 
 `lib/jobs/descriptors.ts` est le registre unique des types de jobs connus du backoffice.
@@ -129,6 +140,8 @@ La page `/settings` édite plusieurs sections `app_settings` en parallèle. Le m
   valeur, sans réordonnancement ;
 - il applique les éditions de façon optimiste et restaure la valeur acquittée en cas d'échec, sauf
   si une édition plus récente est arrivée entre-temps.
+- en lecture seule (`readOnly`, quand les réglages stockés n'ont pas pu être lus), il ignore les
+  éditions et `save` rend `readonly` sans écrire : des défauts n'écrasent jamais une config non lue.
 
 `lib/settingsSections.ts` possède les valeurs par défaut et la validation de chaque section. Les
 défauts sont fusionnés avec les valeurs stockées (les champs `null`/`undefined` retombent sur le
@@ -136,8 +149,8 @@ défaut), ce qui permet à une première sauvegarde d'envoyer une section compl�
 sauvegarde sans modification d'être ignorée.
 
 `app/(app)/settings/SettingsDraftProvider.tsx` expose le moteur via `useSettingsDraft`,
-`useSettingsSection<T>(key)` (tranche `useSyncExternalStore` limitée à la clé) et
-`useSettingsSaving`. Les écritures navigateur passent par `browserApi.settings.saveSection`, car
+`useSettingsSection<T>(key)` (tranche `useSyncExternalStore` limitée à la clé),
+`useSettingsSaving` et `useSettingsReadOnly` (`initial={null}` ⇒ lecture seule). Les écritures navigateur passent par `browserApi.settings.saveSection`, car
 `apiFetch` est réservé au serveur ; les toasts de succès/erreur sont centralisés dans le provider.
 
 Les cartes de formulaire lisent et écrivent leur section via `useSettingsSection`, jamais par un
