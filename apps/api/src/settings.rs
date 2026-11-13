@@ -200,16 +200,17 @@ async fn preserve_secrets(
 ///
 /// Only the runtime keys whose values directly control resource allocation,
 /// filesystem access or request admission are validated; unknown keys are left
-/// untouched so the Backoffice can store arbitrary configuration.
-fn validate_setting(
-    key: &str,
-    value: &Value,
-    library_root: &stripstream_core::paths::LibraryRoot,
-    thumbnail_directory: &FsPath,
-) -> Result<(), ApiError> {
+/// untouched so the Backoffice can store arbitrary configuration. Only `cache`
+/// needs the thumbnail settings, so no other key depends on reading them.
+async fn validate_setting(state: &AppState, key: &str, value: &Value) -> Result<(), ApiError> {
     match key {
         LIMITS_KEY => validate_limits(value),
-        "cache" => validate_cache(value, library_root, thumbnail_directory),
+        "cache" => {
+            // Fail closed: without the configured thumbnail directory, a cache
+            // directory covering it could not be refused.
+            let thumbnail_directory = ThumbnailSettings::load(&state.pool).await?.directory;
+            validate_cache(value, &state.library_root, &thumbnail_directory)
+        }
         _ => Ok(()),
     }
 }
@@ -311,8 +312,7 @@ pub async fn update_setting(
     let mut value = body.value;
     // Empty/redacted secrets keep the stored value (the form never receives it).
     preserve_secrets(&state.pool, &key, &mut value).await?;
-    let thumbnail_directory = ThumbnailSettings::load(&state.pool).await?.directory;
-    validate_setting(&key, &value, &state.library_root, &thumbnail_directory)?;
+    validate_setting(&state, &key, &value).await?;
 
     let row = sqlx::query(
         r#"
@@ -393,7 +393,12 @@ pub async fn clear_cache(
     state.page_cache.lock().await.clear();
     let cache_dir = state.settings.read().await.cache_directory.clone();
 
-    let thumbnail_directory = ThumbnailSettings::load(&state.pool).await?.directory;
+    // The cache directory was checked against the configured thumbnail
+    // directory when it was saved; an unreadable thumbnail row must not make
+    // clearing the cache fail (the default directory stays protected).
+    let thumbnail_directory = ThumbnailSettings::load_or_default(&state.pool)
+        .await
+        .directory;
     if !is_safe_cache_directory(&cache_dir, &state.library_root, &thumbnail_directory) {
         return Err(ApiError::bad_request(format!(
             "refusing to clear unsafe cache directory '{cache_dir}'"
