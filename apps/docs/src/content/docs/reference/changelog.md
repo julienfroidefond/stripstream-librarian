@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.157 — 2026-11-13
+
+### Refactoring
+
+- architecture review wave 2 (chantiers 15, 18–25) ([#298](https://github.com/julienfroidefond/stripstream-librarian/pull/298))
+
 ## v3.32.156 — 2026-11-13
 
 ### Refactoring
