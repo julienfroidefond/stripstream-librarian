@@ -74,23 +74,9 @@ pub async fn merge_series(
         .await?;
     let books_moved = books_result.rows_affected();
 
-    // 2. Move metadata links that target doesn't already have (by provider)
-    let metadata_result = sqlx::query(
-        "UPDATE external_metadata_links SET series_id = $1 \
-         WHERE series_id = $2 \
-         AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
-    )
-    .bind(target_id)
-    .bind(source_id)
-    .execute(&mut *tx)
-    .await?;
-    let metadata_moved = metadata_result.rows_affected();
-
-    // Delete remaining source metadata links (duplicates of target's providers)
-    sqlx::query("DELETE FROM external_metadata_links WHERE series_id = $1")
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
+    // 2. Move metadata links that target doesn't already have (by provider),
+    //    keeping a single primary on the target.
+    let metadata_moved = crate::metadata::links::reassign(&mut tx, source_id, target_id).await?;
 
     // 3. Move the source's available download only if the target has none.
     //    `available_downloads` is unique per series, so a blind move would trip

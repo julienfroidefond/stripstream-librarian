@@ -271,3 +271,86 @@ async fn merge_series_keeps_target_download_when_both_have_one(pool: sqlx::PgPoo
         "the target's own download must be preserved"
     );
 }
+
+/// Seed an approved link, primary or not, for the one-primary invariant tests.
+async fn seed_approved_link(
+    pool: &sqlx::PgPool,
+    lib: Uuid,
+    series_id: Uuid,
+    provider: &str,
+    is_primary: bool,
+) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO external_metadata_links \
+             (library_id, series_id, provider, external_id, status, is_primary, approved_at) \
+         VALUES ($1, $2, $3, 'ext', 'approved', $4, NOW()) RETURNING id",
+    )
+    .bind(lib)
+    .bind(series_id)
+    .bind(provider)
+    .bind(is_primary)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Regression: both series own an approved primary on different providers.
+/// Moving the source primary used to violate
+/// `external_metadata_links_one_primary_per_series` and abort the whole merge.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn merge_series_with_two_primaries_keeps_the_target_primary(pool: sqlx::PgPool) {
+    let lib = create_test_library(&pool, "merge_two_primaries").await;
+    let target = create_series(&pool, lib, "Target").await;
+    let source = create_series(&pool, lib, "Source").await;
+
+    let target_primary = seed_approved_link(&pool, lib, target, "google_books", true).await;
+    let source_primary = seed_approved_link(&pool, lib, source, "bdtheque", true).await;
+
+    let (_books, metadata_moved, _downloads) = merge(&pool, target, source).await.unwrap();
+    assert_eq!(metadata_moved, 1, "bdtheque is new to the target");
+
+    let primaries: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM external_metadata_links WHERE series_id = $1 AND is_primary",
+    )
+    .bind(target)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        primaries,
+        vec![target_primary],
+        "the target keeps its primary"
+    );
+
+    let moved_series: Uuid =
+        sqlx::query_scalar("SELECT series_id FROM external_metadata_links WHERE id = $1")
+            .bind(source_primary)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        moved_series, target,
+        "the source primary moved as a secondary"
+    );
+}
+
+/// A target without any approved primary inherits one from the moved links.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn merge_series_promotes_a_primary_when_the_target_has_none(pool: sqlx::PgPool) {
+    let lib = create_test_library(&pool, "merge_no_target_primary").await;
+    let target = create_series(&pool, lib, "Target").await;
+    let source = create_series(&pool, lib, "Source").await;
+
+    let source_primary = seed_approved_link(&pool, lib, source, "bdtheque", true).await;
+
+    merge(&pool, target, source).await.unwrap();
+
+    let primary: Uuid = sqlx::query_scalar(
+        "SELECT id FROM external_metadata_links WHERE series_id = $1 AND is_primary",
+    )
+    .bind(target)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(primary, source_primary);
+}
