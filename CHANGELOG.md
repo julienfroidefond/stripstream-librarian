@@ -4,6 +4,16 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.152 — 2026-11-13
+
+### Corrections
+
+- **reading-lists** — route series moves to a dedicated move proxy ([#289](https://github.com/julienfroidefond/stripstream-librarian/pull/289))
+
+### Refactoring
+
+- **settings** — one loader for the settings page ([#291](https://github.com/julienfroidefond/stripstream-librarian/pull/291))
+
 ## v3.32.151 — 2026-11-13
 
 ### Refactoring
