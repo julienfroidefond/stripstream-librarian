@@ -107,8 +107,8 @@ cd apps/docs && npm install && npm run dev -- --port 7083
   `utoipa` for OpenAPI; `Option<T>` for nullable fields, public structs documented briefly.
 - **Logging (`RUST_LOG`)**: targets `indexer`, `scan`, `extraction`, `thumbnail`, `watcher`.
   Default: `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`.
-- **Performance**: batch DB writes (100 items recommended); `rayon::par_iter()` for CPU-intensive
-  scans; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
+- **Performance**: batch DB writes (100 items recommended); bound CPU-intensive
+  work with `spawn_blocking` + a concurrency limit; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
   cache); stream large data.
 
 ### Naming Conventions
