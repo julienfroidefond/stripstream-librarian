@@ -34,17 +34,17 @@ use stripstream_core::settings::load_setting;
 
 use super::http_error::describe_http_failure;
 use super::import_pipeline::remap_downloads_path;
+use super::progress::{
+    DownloadProgress, ProgressSink, TorrentSink, TransferProgress, TransferRate,
+};
 use super::qbittorrent::{
     extract_magnet_hash, infer_managed_context, resolve_torrent_url, QBittorrentAddRequest,
     QBittorrentAddResponse, QBittorrentTestResponse, ResolvedTorrent,
 };
-use super::rate::TransferRate;
 use super::settings::DownloadSettings;
-use super::target::{sanitize_filename, DownloadProgress};
+use super::target::sanitize_filename;
 use super::torrent_import::process_torrent_import;
-use super::torrent_ledger::{
-    self, ProgressUpdate, RestartScope, TorrentStatus, TorrentTransitionError,
-};
+use super::torrent_ledger::{self, RestartScope, TorrentStatus, TorrentTransitionError};
 use crate::error::ApiError;
 use crate::responses::OkResponse;
 use crate::state::AppState;
@@ -1167,9 +1167,7 @@ async fn handle_row(
 struct InflightProgress<'a> {
     downloaded: i64,
     file_size: i64,
-    progress: f32,
     speed: i64,
-    eta: i64,
     /// AllDebrid omits the seeder count on some statuses; keep it optional so a
     /// stall message does not claim "0 seeders" when the value is unknown.
     seeders: Option<i64>,
@@ -1186,19 +1184,17 @@ async fn record_inflight_progress(
     tid: Uuid,
     live: &InflightProgress<'_>,
 ) -> Option<DateTime<Utc>> {
-    let update = ProgressUpdate {
-        progress: live.progress,
-        speed: live.speed,
-        eta: live.eta,
-        // AllDebrid keeps the last known size when it reports zero bytes total.
-        file_size: Some(live.file_size).filter(|size| *size > 0),
-        seeders: live.seeders.map(|s| s as i32),
-        name: live.name,
-        downloaded: live.downloaded,
-    };
+    // AllDebrid reports bytes and a rate, not a fraction: let the shared
+    // snapshot derive the fraction and the ETA the same way every other flow
+    // does.
+    let snapshot =
+        TransferProgress::from_reported(live.downloaded, Some(live.file_size), 0.0, live.speed, 0);
+    let sink = TorrentSink::new(pool.clone(), tid)
+        .with_seeders(live.seeders.map(|s| s as i32))
+        .with_name(live.name);
 
     if live.downloaded > 0 {
-        if let Err(e) = torrent_ledger::record_progress(pool, tid, &update).await {
+        if let Err(e) = sink.report(&snapshot).await {
             warn!("[ALLDEBRID] Failed to store progress for torrent {tid}: {e}");
         }
         return None;
@@ -1206,7 +1202,7 @@ async fn record_inflight_progress(
 
     // `None` (no row matched, e.g. the row changed status since the query) is
     // normal; only a real query failure is worth logging.
-    match torrent_ledger::arm_stall(pool, tid, &update).await {
+    match torrent_ledger::arm_stall(pool, tid, &sink.update(&snapshot)).await {
         Ok(stall) => stall,
         Err(e) => {
             warn!("[ALLDEBRID] Failed to arm the stall marker for torrent {tid}: {e}");
@@ -1237,17 +1233,7 @@ async fn handle_magnet_status(
     if status_code < 4 {
         let size = entry.size.unwrap_or(0);
         let downloaded = entry.downloaded.unwrap_or(0);
-        let progress = if size > 0 {
-            (downloaded as f64 / size as f64).clamp(0.0, 1.0) as f32
-        } else {
-            0.0
-        };
         let speed = entry.download_speed.unwrap_or(0).max(0);
-        let eta = if speed > 0 && size > downloaded {
-            (size - downloaded) / speed
-        } else {
-            0
-        };
         let seeders = entry.seeders;
         let name = entry.filename.as_deref().filter(|n| !n.is_empty());
 
@@ -1258,9 +1244,7 @@ async fn handle_magnet_status(
         let live = InflightProgress {
             downloaded,
             file_size: size,
-            progress,
             speed,
-            eta,
             seeders,
             name,
         };
@@ -1357,7 +1341,8 @@ async fn download_files_to(
     let mut rate = TransferRate::new();
     let mut last_sample = std::time::Instant::now();
     let mut used_names: HashSet<String> = HashSet::new();
-    report_progress(pool, tid, 0, total, &rate).await;
+    let sink = TorrentSink::new(pool.clone(), tid);
+    report_progress(&sink, tid, 0, total, &rate).await;
 
     for (index, file) in files.iter().enumerate() {
         let link = resolve_unlocked_link(client, &file.link).await?;
@@ -1393,7 +1378,7 @@ async fn download_files_to(
                     rate.sample(written);
                     last_sample = std::time::Instant::now();
                 }
-                report_progress(pool, tid, written, total, &rate).await;
+                report_progress(&sink, tid, written, total, &rate).await;
             }
         }
         out.flush()
@@ -1406,7 +1391,7 @@ async fn download_files_to(
             rate.sample(progress.written());
             last_sample = std::time::Instant::now();
         }
-        report_progress(pool, tid, progress.written(), total, &rate).await;
+        report_progress(&sink, tid, progress.written(), total, &rate).await;
     }
 
     Ok(())
@@ -1466,28 +1451,15 @@ fn unique_name(original: &str, index: usize, used: &mut HashSet<String>) -> Stri
     fallback
 }
 
-async fn report_progress(pool: &PgPool, tid: Uuid, written: i64, total: i64, rate: &TransferRate) {
-    let fraction = if total > 0 {
-        (written as f64 / total as f64).clamp(0.0, 1.0) as f32
-    } else {
-        0.0
-    };
-    let speed = rate.speed();
-    let eta = if total > written && speed > 0 {
-        ((total - written) as f64 / speed as f64).ceil() as i64
-    } else {
-        0
-    };
-    let update = ProgressUpdate {
-        progress: fraction,
-        speed,
-        eta,
-        file_size: Some(total),
-        seeders: None,
-        name: None,
-        downloaded: written,
-    };
-    if let Err(e) = torrent_ledger::record_progress(pool, tid, &update).await {
+async fn report_progress(
+    sink: &TorrentSink,
+    tid: Uuid,
+    written: i64,
+    total: i64,
+    rate: &TransferRate,
+) {
+    let snapshot = TransferProgress::from_bytes(written, Some(total), rate);
+    if let Err(e) = sink.report(&snapshot).await {
         warn!("[ALLDEBRID] Failed to report progress for torrent {tid}: {e}");
     }
 }
@@ -1830,9 +1802,7 @@ mod tests {
         let stalled = InflightProgress {
             downloaded: 0,
             file_size: 10,
-            progress: 0.0,
             speed: 0,
-            eta: 0,
             seeders: Some(0),
             name: Some("Aposimz.cbz"),
         };
@@ -1863,9 +1833,7 @@ mod tests {
         let moving = InflightProgress {
             downloaded: 5,
             file_size: 10,
-            progress: 0.5,
             speed: 100,
-            eta: 1,
             seeders: Some(12),
             name: None,
         };
@@ -2068,9 +2036,10 @@ mod tests {
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn local_transfer_reports_size_speed_and_eta(pool: PgPool) {
         let id = seed_downloading_row(&pool).await;
+        let sink = TorrentSink::new(pool.clone(), id);
         let mut rate = TransferRate::new();
         rate.sample_after(400, Duration::from_secs(2));
-        report_progress(&pool, id, 500, 1000, &rate).await;
+        report_progress(&sink, id, 500, 1000, &rate).await;
 
         let (progress, size, speed, eta): (f32, Option<i64>, i64, i64) = sqlx::query_as(
             "SELECT progress, file_size, download_speed, eta FROM torrent_downloads WHERE id = $1",
@@ -2081,14 +2050,15 @@ mod tests {
         .unwrap();
         assert_eq!((progress, size, speed, eta), (0.5, Some(1000), 200, 3));
 
-        report_progress(&pool, id, 500, 0, &rate).await;
+        // A transfer that stops knowing its size keeps the stored one.
+        report_progress(&sink, id, 500, 0, &rate).await;
         let (size, eta): (Option<i64>, i64) =
             sqlx::query_as("SELECT file_size, eta FROM torrent_downloads WHERE id = $1")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!((size, eta), (None, 0));
+        assert_eq!((size, eta), (Some(1000), 0));
     }
 
     /// Mount `/v4/link/unlock` so it hands out a link to `file_path` on the

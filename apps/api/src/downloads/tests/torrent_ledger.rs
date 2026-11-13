@@ -268,7 +268,8 @@ async fn progress_keeps_known_values_and_clears_the_stall_marker(pool: PgPool) {
     assert_eq!(seeders, Some(4));
     assert!(stall.is_none(), "transferred bytes clear the stall marker");
 
-    // A backend that reports a zero total clears the size instead.
+    // A backend that reports a zero total does not know the size: the stored
+    // value survives, exactly like a `None`.
     record_progress(
         &pool,
         id,
@@ -285,7 +286,7 @@ async fn progress_keeps_known_values_and_clears_the_stall_marker(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(file_size, None);
+    assert_eq!(file_size, Some(500));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

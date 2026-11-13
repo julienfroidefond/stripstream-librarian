@@ -9,6 +9,7 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use crate::downloads::missing;
+use crate::downloads::progress::{Reporter, TelegramSink};
 use crate::downloads::ranged::{download_ranged, FileSink, RangeFetcher, RangeSink, RangedConfig};
 use crate::downloads::settings::DownloadSettings;
 use crate::downloads::target::{finalize_download, prepare_destination};
@@ -18,7 +19,7 @@ use crate::{error::ApiError, state::AppState};
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::insert_document_message;
 use super::flood;
-use super::transfer::{open_clients, LinkProgress, TelegramFetcher};
+use super::transfer::{open_clients, TelegramFetcher};
 use super::types::*;
 
 pub async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
@@ -552,7 +553,10 @@ pub async fn do_download(
         .collect();
 
     let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(&tmp_path, total_size).await?);
-    let reporter = Arc::new(LinkProgress::new(pool.clone(), link_id, total_size));
+    let reporter = Arc::new(Reporter::new(
+        Some(total_size),
+        Box::new(TelegramSink::new(pool.clone(), link_id)),
+    ));
 
     let result = download_ranged(
         fetchers,

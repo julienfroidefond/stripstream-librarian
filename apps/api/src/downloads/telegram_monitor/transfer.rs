@@ -4,18 +4,15 @@
 //! progress reporting.
 
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use grammers_client::grammers_tl_types as tl;
 use grammers_client::{Client, Config, InvocationError};
 use grammers_session::Session;
-use uuid::Uuid;
 
 use crate::downloads::limit::DynamicLimitPermit;
-use crate::downloads::ranged::{FetchError, ProgressReporter, RangeFetcher};
-use crate::downloads::rate::TransferRate;
+use crate::downloads::ranged::{FetchError, RangeFetcher};
 
 use super::flood;
 
@@ -260,62 +257,15 @@ fn classify_rpc(code: i32, name: &str, value: Option<u32>) -> (FetchError, Optio
     (FetchError::fatal(format!("rpc error {code}: {name}")), None)
 }
 
-/// Persists download progress to `telegram_book_links`: byte count, smoothed
-/// transfer rate and remaining time.
-pub struct LinkProgress {
-    pool: sqlx::PgPool,
-    link_id: Uuid,
-    total_size: i64,
-    rate: Mutex<TransferRate>,
-}
-
-impl LinkProgress {
-    pub fn new(pool: sqlx::PgPool, link_id: Uuid, total_size: i64) -> Self {
-        Self {
-            pool,
-            link_id,
-            total_size,
-            rate: Mutex::new(TransferRate::new()),
-        }
-    }
-}
-
-#[async_trait]
-impl ProgressReporter for LinkProgress {
-    async fn report(&self, bytes_written: i64) {
-        // Scope the guard so it is released before the `await`: a `MutexGuard`
-        // held across an await point would make this future non-`Send`.
-        let (speed, eta) = {
-            let Ok(mut rate) = self.rate.lock() else {
-                return;
-            };
-            rate.sample(bytes_written);
-            (rate.speed(), rate.eta(Some(self.total_size)))
-        };
-
-        if let Err(err) = sqlx::query(
-            "UPDATE telegram_book_links \
-             SET bytes_downloaded = $1, download_speed = $2, eta = $3, updated_at = NOW() \
-             WHERE id = $4",
-        )
-        .bind(bytes_written)
-        .bind(speed)
-        .bind(eta)
-        .bind(self.link_id)
-        .execute(&self.pool)
-        .await
-        {
-            tracing::debug!("[TG] progress update failed for {}: {err}", self.link_id);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
+    use uuid::Uuid;
+
     use super::*;
-    use crate::downloads::ranged::FetchErrorKind;
+    use crate::downloads::progress::{Reporter, TelegramSink};
+    use crate::downloads::ranged::{FetchErrorKind, ProgressReporter};
 
     #[test]
     fn request_limits_are_rounded_up_to_the_telegram_block_size() {
@@ -391,7 +341,10 @@ mod tests {
         .await
         .unwrap();
 
-        let reporter = LinkProgress::new(pool.clone(), link_id, 10 * 1024 * 1024);
+        let reporter = Reporter::new(
+            Some(10 * 1024 * 1024),
+            Box::new(TelegramSink::new(pool.clone(), link_id)),
+        );
         reporter.report(1024 * 1024).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
         reporter.report(2 * 1024 * 1024).await;

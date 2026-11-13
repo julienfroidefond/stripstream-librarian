@@ -80,39 +80,6 @@ pub async fn build_target_filename(
     ))
 }
 
-/// Progress is written to the DB at most every megabyte.
-pub const PROGRESS_UPDATE_BYTES: i64 = 1_048_576;
-
-/// Byte counter that reports only every [`PROGRESS_UPDATE_BYTES`].
-#[derive(Debug, Default)]
-pub struct DownloadProgress {
-    written: i64,
-    reported: i64,
-}
-
-impl DownloadProgress {
-    pub const fn new() -> Self {
-        Self {
-            written: 0,
-            reported: 0,
-        }
-    }
-
-    pub const fn written(&self) -> i64 {
-        self.written
-    }
-
-    /// Adds `len` bytes and returns the new total when a DB update is due.
-    pub fn advance(&mut self, len: i64) -> Option<i64> {
-        self.written += len;
-        if self.written - self.reported >= PROGRESS_UPDATE_BYTES {
-            self.reported = self.written;
-            return Some(self.written);
-        }
-        None
-    }
-}
-
 /// Where a downloaded file lands: the final path plus its in-progress `.tmp`
 /// sibling.
 pub struct DownloadDestination {
@@ -297,18 +264,5 @@ mod tests {
         );
 
         let _ = tokio::fs::remove_dir_all(&root).await;
-    }
-
-    #[test]
-    fn progress_reports_at_most_every_megabyte() {
-        let mut progress = DownloadProgress::new();
-        assert_eq!(progress.advance(PROGRESS_UPDATE_BYTES - 1), None);
-        assert_eq!(progress.advance(1), Some(PROGRESS_UPDATE_BYTES));
-        assert_eq!(progress.advance(10), None);
-        assert_eq!(progress.written(), PROGRESS_UPDATE_BYTES + 10);
-        assert_eq!(
-            progress.advance(PROGRESS_UPDATE_BYTES),
-            Some(2 * PROGRESS_UPDATE_BYTES + 10)
-        );
     }
 }

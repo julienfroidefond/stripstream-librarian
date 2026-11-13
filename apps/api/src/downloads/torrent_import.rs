@@ -16,9 +16,10 @@ use stripstream_core::paths::normalize_lexically;
 use stripstream_core::series_identity;
 
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
+use super::progress::{ProgressSink, TorrentSink, TransferProgress};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
 use super::torrent_ledger::{
-    self, ImportOutcome, ProgressUpdate, RestartScope, TorrentStatus, TorrentTransitionError,
+    self, ImportOutcome, RestartScope, TorrentStatus, TorrentTransitionError,
 };
 use crate::{error::ApiError, metadata, state::AppState};
 
@@ -569,21 +570,16 @@ async fn poll_qbittorrent_downloads(
         });
         if let Some(row) = row {
             let tid: Uuid = row.get("id");
-            let global_progress = info.progress as f32;
-            let _ = torrent_ledger::record_progress(
-                pool,
-                tid,
-                &ProgressUpdate {
-                    progress: global_progress,
-                    speed: info.dlspeed,
-                    eta: info.eta,
-                    file_size: Some(info.total_size),
-                    seeders: None,
-                    name: None,
-                    downloaded: 0,
-                },
-            )
-            .await;
+            // qBittorrent reports its own fraction and ETA; the row stays at
+            // zero transferred bytes so this poll never clears the stall marker.
+            let snapshot = TransferProgress::from_reported(
+                0,
+                Some(info.total_size),
+                info.progress as f32,
+                info.dlspeed,
+                info.eta,
+            );
+            let _ = TorrentSink::new(pool.clone(), tid).report(&snapshot).await;
         }
 
         if QB_FAILED_STATES.contains(&info.state.as_str()) {
