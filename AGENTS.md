@@ -146,7 +146,7 @@ apps/indexer/    # background indexing — 7081: worker, scanner, analyzer, batc
                  # scheduler, watcher, converter, utils
 apps/backoffice/ # Next.js 16 admin UI — 7082
 apps/docs/       # Astro/Starlight docs site — 7084
-crates/core/     # config, paths, fingerprint, schedule, heartbeat, disk
+crates/core/     # config, paths, fingerprint, schedule, heartbeat, disk, limits
 crates/parsers/  # CBZ/CBR/PDF/EPUB parsing + matching
 crates/notifications/  # Telegram notifications
 crates/thumbnails/     # shared thumbnail store (settings, encode, atomic publish, purge)
@@ -161,7 +161,7 @@ libraries/             # book storage (mounted volume)
 |------|---------|
 | `apps/api/src/main.rs` | Router, AppState init, Swagger UI (client + admin) |
 | `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, resizable `page_render_limit` |
-| `apps/api/src/settings/limits.rs` | Typed `app_settings.limits` schema (`Limits::parse` / `load`, ADR 0026) |
+| `crates/core/src/limits.rs` | Typed `app_settings.limits` schema shared by API and indexer (`Limits::parse` / `load`, ADR 0026) |
 | `apps/api/src/error.rs` | `ApiError` + constructors |
 | `apps/api/src/books/renderer.rs` | `PageRenderer`: the one page-rendering pipeline + double cache (memory LRU + disk), ADR 0023 |
 | `apps/api/src/books/files.rs` | `current_book_file` / `current_book_file_join!`: the current file of a book |

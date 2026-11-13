@@ -16,6 +16,7 @@ use crate::batch::{
 };
 use crate::utils;
 
+use super::discovery::push_capped_item;
 use super::reconcile::{FileStat, Reconciliation};
 use super::{JobStats, BATCH_SIZE};
 
@@ -66,7 +67,7 @@ impl ScanWriter {
                     c.volume,
                     c.volume_type.as_str()
                 );
-                let series_id = self.series_id(c.series.as_deref()).await?;
+                let series_id = self.series_id(c.series.as_deref(), stats).await?;
                 let message = format!(
                     "Title/volume updated: ('{}', {:?}) → ('{}', {:?})",
                     c.previous_title, c.previous_volume, c.title, c.volume
@@ -82,7 +83,7 @@ impl ScanWriter {
             }
             Reconciliation::Reindex(r) => {
                 debug!(target: "scan", "[SCAN] Updating: {} (fingerprint changed)", file_name);
-                let series_id = self.series_id(r.series.as_deref()).await?;
+                let series_id = self.series_id(r.series.as_deref(), stats).await?;
                 let format = r.file.format;
                 self.batch.books_update.push(BookUpdate {
                     book_id: r.book_id,
@@ -126,7 +127,7 @@ impl ScanWriter {
         stats: &mut JobStats,
     ) -> Result<()> {
         let book_id = Uuid::new_v4();
-        let series_id = self.series_id(parsed.series.as_deref()).await?;
+        let series_id = self.series_id(parsed.series.as_deref(), stats).await?;
         self.batch.books_insert.push(BookInsert {
             book_id,
             library_id: self.library_id,
@@ -173,16 +174,28 @@ impl ScanWriter {
         Ok(())
     }
 
-    async fn series_id(&mut self, name: Option<&str>) -> Result<Option<Uuid>> {
+    /// Resolve a raw series name. A series counts as new in `stats` only when
+    /// `series_identity` actually inserted it, never because the raw spelling is unseen.
+    async fn series_id(
+        &mut self,
+        name: Option<&str>,
+        stats: &mut JobStats,
+    ) -> Result<Option<Uuid>> {
         let Some(name) = name else {
             return Ok(None);
         };
         if let Some(&id) = self.series_cache.get(name) {
             return Ok(Some(id));
         }
-        let identity = series_identity::find_or_create(&self.pool, self.library_id, name).await?;
-        self.series_cache.insert(name.to_string(), identity.id);
-        Ok(Some(identity.id))
+        let resolved =
+            series_identity::find_or_create_tracked(&self.pool, self.library_id, name).await?;
+        if resolved.created {
+            stats.new_series += 1;
+            push_capped_item(&mut stats.new_series_names, resolved.identity.name.clone());
+        }
+        self.series_cache
+            .insert(name.to_string(), resolved.identity.id);
+        Ok(Some(resolved.identity.id))
     }
 
     fn event(&mut self, event_type: &str, book_id: Uuid, abs_path: &str, message: String) {
@@ -416,16 +429,18 @@ mod tests {
     async fn series_names_resolve_through_series_identity(pool: PgPool) {
         let f = fixture(&pool).await;
         let mut writer = ScanWriter::new(pool.clone(), f.job_id, f.library_id, HashMap::new());
+        let mut stats = stats();
 
         // Other spellings of the existing series reuse it instead of creating one.
         for name in ["Series", "series", "SÉRIES"] {
             assert_eq!(
-                writer.series_id(Some(name)).await.unwrap(),
+                writer.series_id(Some(name), &mut stats).await.unwrap(),
                 Some(f.series_id),
                 "{name} must resolve to the existing series"
             );
         }
-        assert_eq!(writer.series_id(None).await.unwrap(), None);
+        assert_eq!(writer.series_id(None, &mut stats).await.unwrap(), None);
+        assert_eq!(stats.new_series, 0, "no series was created");
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM series WHERE library_id = $1")
             .bind(f.library_id)
             .fetch_one(&pool)

@@ -10,5 +10,5 @@
 
 - Le prefetch d'un fichier dont l'extension ne correspond pas au format indexé rend avec le bon format.
 - Un `If-None-Match` correspondant est traité avant la lecture des caches : la réponse 304 porte toujours `ETag` et `Cache-Control`, et ne compte plus de hit mémoire.
-- Les clés de cache disque sont inchangées : le cache existant reste valide.
+- Les clés de cache disque des rendus non redimensionnés sont inchangées. Depuis la correction de la revue du 2026-11-13, le filtre de redimensionnement entre dans la clé (et l'ETag) des rendus redimensionnés : les anciennes entrées redimensionnées deviennent orphelines et restent sur disque jusqu'à « Vider le cache ».
 - Les deux sommes `DISTINCT ON (book_id)` des statistiques, sans alias `b`, restent écrites à la main.

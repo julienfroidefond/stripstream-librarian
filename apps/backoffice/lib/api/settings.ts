@@ -44,6 +44,7 @@ export type Settings = {
   limits: {
     concurrent_renders: number;
     timeout_seconds: number;
+    analysis_timeout_seconds: number;
     rate_limit_per_second: number;
     concurrent_telegram_downloads: number;
     telegram_download_connections: number;

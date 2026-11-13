@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use stripstream_core::analysis::{self, AnalysisMode};
-use stripstream_core::settings::load_setting;
+use stripstream_core::limits::Limits;
 use stripstream_jobs::is_job_cancelled;
 use stripstream_thumbnails::{ThumbnailSettings, ThumbnailStore};
 
@@ -62,34 +62,22 @@ struct AnalysisSettings {
     concurrency: usize,
 }
 
+impl AnalysisSettings {
+    /// Takes the analysis knobs from the typed `limits` schema (ADR 0026):
+    /// `analysis_timeout_seconds` (not the API's page render timeout) and the
+    /// bounded `concurrent_renders`, so no value is re-read or re-clamped here.
+    fn new(store: ThumbnailStore, limits: &Limits) -> Self {
+        Self {
+            store,
+            timeout_secs: limits.analysis_timeout_seconds.get(),
+            concurrency: limits.concurrent_renders.get(),
+        }
+    }
+}
+
 async fn load_analysis_settings(pool: &sqlx::PgPool) -> AnalysisSettings {
     let store = ThumbnailSettings::load_or_default(pool).await.store();
-    let limits = load_setting::<serde_json::Value>(pool, "limits")
-        .await
-        .ok()
-        .flatten();
-
-    let timeout_secs = limits
-        .as_ref()
-        .and_then(|v| v.get("timeout_seconds"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(120);
-
-    // Default: half the logical CPUs, clamped between 1 and 2.
-    // Archive extraction is I/O bound but benefits from moderate parallelism.
-    let default_concurrency = (num_cpus::get() / 2).clamp(1, 2);
-    let concurrency = limits
-        .as_ref()
-        .and_then(|v| v.get("concurrent_renders"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(default_concurrency);
-
-    AnalysisSettings {
-        store,
-        timeout_secs,
-        concurrency,
-    }
+    AnalysisSettings::new(store, &Limits::load(pool).await)
 }
 
 /// Best-effort page count extraction without touching the first page.
@@ -701,7 +689,7 @@ pub async fn analyze_library_books(
             break;
         }
 
-        let results: Vec<(Uuid, i32, String)> = stream::iter(chunk)
+        let results: Vec<PublishOutcome> = stream::iter(chunk)
             .map(|(book_id, raw_path, page_count)| {
                 let store = store.clone();
                 let cancelled = cancelled_flag.clone();
@@ -711,25 +699,45 @@ pub async fn analyze_library_books(
                         return None;
                     }
 
+                    let staged = raw_path.clone();
                     let thumb_result = tokio::task::spawn_blocking(move || {
-                        store.publish_raw(book_id, Path::new(&raw_path))
+                        store.publish_raw(book_id, Path::new(&staged))
                     })
                     .await;
 
-                    match thumb_result {
-                        Ok(Ok(p)) => Some((book_id, page_count, p.to_string_lossy().into_owned())),
+                    let error = match thumb_result {
+                        Ok(Ok(p)) => {
+                            return Some(PublishOutcome::Published {
+                                book_id,
+                                page_count,
+                                thumb_path: p.to_string_lossy().into_owned(),
+                            })
+                        }
                         Ok(Err(e)) => {
                             warn!("[ANALYZER] publish_raw failed for book {}: {}", book_id, e);
-                            None
+                            format!("failed to encode thumbnail: {e}")
                         }
                         Err(e) => {
                             warn!(
                                 "[ANALYZER] spawn_blocking resize error for book {}: {}",
                                 book_id, e
                             );
-                            None
+                            format!("failed to encode thumbnail: {e}")
+                        }
+                    };
+                    // The page count from sub-phase A is still valid: keep it (the book
+                    // becomes cover_pending) and drop the staged page instead of leaving
+                    // the book `analyzing` with an orphan `.raw`.
+                    if let Err(e) = tokio::fs::remove_file(&raw_path).await {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            warn!("[ANALYZER] Failed to remove raw page {}: {}", raw_path, e);
                         }
                     }
+                    Some(PublishOutcome::PageCountOnly {
+                        book_id,
+                        page_count,
+                        error,
+                    })
                 }
             })
             .buffer_unordered(concurrency)
@@ -738,30 +746,66 @@ pub async fn analyze_library_books(
             .await;
 
         let mut thumb_updates: Vec<(Uuid, i32, String)> = Vec::new();
+        let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
         let mut events: Vec<EventInsert> = Vec::new();
 
-        for (book_id, page_count, thumb_path) in results {
-            events.push(EventInsert {
-                job_id,
-                event_type: "thumbnail_generated".to_string(),
-                level: "info".to_string(),
-                entity_type: Some("book".to_string()),
-                entity_id: Some(book_id),
-                entity_name: None,
-                message: Some(format!("Thumbnail generated: {}", thumb_path)),
-                detail: None,
-            });
-            thumb_updates.push((book_id, page_count, thumb_path));
+        for outcome in results {
+            match outcome {
+                PublishOutcome::Published {
+                    book_id,
+                    page_count,
+                    thumb_path,
+                } => {
+                    events.push(EventInsert {
+                        job_id,
+                        event_type: "thumbnail_generated".to_string(),
+                        level: "info".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: None,
+                        message: Some(format!("Thumbnail generated: {}", thumb_path)),
+                        detail: None,
+                    });
+                    thumb_updates.push((book_id, page_count, thumb_path));
+                }
+                PublishOutcome::PageCountOnly {
+                    book_id,
+                    page_count,
+                    error,
+                } => {
+                    events.push(EventInsert {
+                        job_id,
+                        event_type: "pages_extracted".to_string(),
+                        level: "warning".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: None,
+                        message: Some(format!(
+                            "Recovered {} pages, thumbnail skipped — {}",
+                            page_count, error
+                        )),
+                        detail: Some(serde_json::json!({
+                            "page_count": page_count,
+                            "recovered": true,
+                            "error": error,
+                        })),
+                    });
+                    page_count_updates.push((book_id, page_count));
+                }
+            }
         }
 
         if let Err(e) = analysis::record_covers(&state.pool, &thumb_updates).await {
             warn!("[ANALYZER] Failed to record thumbnails: {e}");
         }
+        if let Err(e) = analysis::record_page_counts(&state.pool, &page_count_updates).await {
+            warn!("[ANALYZER] Failed to record page counts: {e}");
+        }
         if let Err(e) = flush_events(&state.pool, &mut events).await {
             warn!("[ANALYZER] Failed to flush events: {e}");
         }
 
-        let thumb_updates_len = thumb_updates.len() as i32;
+        let thumb_updates_len = (thumb_updates.len() + page_count_updates.len()) as i32;
         let processed =
             resize_count.fetch_add(thumb_updates_len, Ordering::Relaxed) + thumb_updates_len;
         let percent = 50 + (processed as f64 / extracted_total as f64 * 50.0) as i32;
@@ -865,6 +909,21 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
     Ok(())
 }
 
+/// Result of publishing one staged cover (sub-phase B).
+enum PublishOutcome {
+    Published {
+        book_id: Uuid,
+        page_count: i32,
+        thumb_path: String,
+    },
+    /// Encoding or publication failed: only the page count from sub-phase A is kept.
+    PageCountOnly {
+        book_id: Uuid,
+        page_count: i32,
+        error: String,
+    },
+}
+
 /// Spawn a background task that polls for job cancellation every 2 seconds.
 /// Returns the shared cancellation flag and the task handle.
 fn spawn_cancellation_poller(
@@ -902,6 +961,28 @@ mod tests {
         let mut cursor = std::io::Cursor::new(Vec::new());
         img.write_to(&mut cursor, image::ImageFormat::Png).unwrap();
         cursor.into_inner()
+    }
+
+    #[test]
+    fn analysis_settings_use_the_typed_limits() {
+        let store = ThumbnailSettings::default().store();
+        // Seed-like row: the 12 s page render timeout is not the analysis one.
+        let limits = Limits::from_stored(Some(&serde_json::json!({
+            "concurrent_renders": 4,
+            "timeout_seconds": 12,
+        })));
+        let settings = AnalysisSettings::new(store, &limits);
+        assert_eq!(settings.timeout_secs, 120);
+        assert_eq!(settings.concurrency, 4);
+
+        let store = ThumbnailSettings::default().store();
+        let limits = Limits::from_stored(Some(&serde_json::json!({
+            "concurrent_renders": 0,
+            "analysis_timeout_seconds": 300,
+        })));
+        let settings = AnalysisSettings::new(store, &limits);
+        assert_eq!(settings.timeout_secs, 300);
+        assert_eq!(settings.concurrency, 1, "0 would stall buffer_unordered");
     }
 
     // ─── Integration tests (require PostgreSQL) ─────────────────────────
@@ -1013,7 +1094,7 @@ mod tests {
             "INSERT INTO app_settings (key, value) VALUES ('limits', $1) \
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
         )
-        .bind(serde_json::json!({ "concurrent_renders": 1, "timeout_seconds": 120 }))
+        .bind(serde_json::json!({ "concurrent_renders": 1, "analysis_timeout_seconds": 120 }))
         .execute(pool)
         .await
         .unwrap();
@@ -1206,6 +1287,73 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(error_events, 1);
+    }
+
+    /// Sub-phase A reads the page count and stages the first page, but the page is not a
+    /// decodable image so sub-phase B cannot encode it: the page count must still be recorded
+    /// (book `cover_pending`, not stuck `analyzing`) and the staged `.raw` removed.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn analyze_library_books_keeps_page_count_when_cover_encoding_fails(pool: sqlx::PgPool) {
+        use std::io::Write;
+
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T05.cbz");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&cbz).unwrap());
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for name in ["001.png", "002.png"] {
+                zip.start_file(name, opts).unwrap();
+                zip.write_all(b"definitely not an image").unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        let state = crate::test_state(pool.clone());
+        analyze_library_books(&state, job, Some(lib), false)
+            .await
+            .expect("analysis must succeed");
+
+        let (page_count, thumbnail_path, analysis_status): (Option<i32>, Option<String>, String) =
+            sqlx::query_as(
+                "SELECT page_count, thumbnail_path, analysis_status FROM books WHERE id = $1",
+            )
+            .bind(book)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            page_count,
+            Some(2),
+            "the page count from sub-phase A is kept"
+        );
+        assert_eq!(thumbnail_path, None);
+        assert_eq!(analysis_status, "cover_pending");
+
+        let leftovers: Vec<_> = std::fs::read_dir(thumb_dir.path())
+            .map(|entries| entries.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default();
+        assert!(
+            leftovers.is_empty(),
+            "staged page not cleaned: {leftovers:?}"
+        );
+
+        let warnings: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM index_job_events \
+             WHERE job_id = $1 AND event_type = 'pages_extracted' AND level = 'warning'",
+        )
+        .bind(job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(warnings, 1);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

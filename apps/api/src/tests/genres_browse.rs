@@ -130,6 +130,26 @@ fn rejects_invalid_values() {
     assert!(GenreBrowseQuery::from_pairs(pairs(&[("page", "x")])).is_err());
 }
 
+#[test]
+fn huge_page_is_rejected_instead_of_overflowing_the_offset() {
+    let max =
+        GenreBrowseQuery::from_pairs(pairs(&[("page", &MAX_PAGE.to_string()), ("limit", "500")]))
+            .unwrap();
+    assert_eq!(max.offset(), (MAX_PAGE - 1) * 500);
+
+    for page in [&(MAX_PAGE + 1).to_string(), "9223372036854775807"] {
+        assert!(GenreBrowseQuery::from_pairs(pairs(&[("page", page)])).is_err());
+    }
+
+    // `offset` never wraps even if a query is built by hand.
+    let forged = GenreBrowseQuery {
+        page: i64::MAX,
+        limit: MAX_LIMIT,
+        ..Default::default()
+    };
+    assert_eq!(forged.offset(), i64::MAX);
+}
+
 // ---------------------------------------------------------------------------
 // SQL
 // ---------------------------------------------------------------------------

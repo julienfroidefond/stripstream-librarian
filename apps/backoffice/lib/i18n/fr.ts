@@ -914,8 +914,10 @@ const fr = {
   "settings.telegramDownloadConnections": "Connexions Telegram par téléchargement",
   "settings.telegramDownloadConnectionsHelp": "Connexions demandées par téléchargement, prises dans un budget de 8 partagé par tous les téléchargements en cours. S'applique au prochain téléchargement.",
   "settings.timeoutSeconds": "Délai d'expiration (secondes)",
+  "settings.analysisTimeoutSeconds": "Délai d'analyse d'un livre (secondes)",
+  "settings.analysisTimeoutSecondsHelp": "Temps accordé à l'indexer pour ouvrir un livre (nombre de pages et couverture). Les gros PDF peuvent dépasser le délai de rendu des pages.",
   "settings.rateLimit": "Limite de débit (req/s)",
-  "settings.limitsNote": "Les réglages de téléchargement (téléchargements simultanés, connexions, tentatives, timeouts) s'appliquent immédiatement, sans redémarrage. Le paramètre « Rendus simultanés » ne prend effet qu'au redémarrage du serveur et contrôle à la fois le rendu des pages et le parallélisme de génération des miniatures.",
+  "settings.limitsNote": "Les réglages de téléchargement (téléchargements simultanés, connexions, tentatives, timeouts) s'appliquent immédiatement, sans redémarrage. Le paramètre « Rendus simultanés » s'applique aussi sans redémarrage : immédiatement pour le rendu des pages, et au prochain job d'analyse pour le parallélisme de génération des miniatures.",
 
   // Settings - Thumbnails
   "settings.thumbnails": "Miniatures",
