@@ -293,6 +293,7 @@ pub struct ClientApiDoc;
         crate::genres::delete_genre,
         crate::genres::assign_genre,
         crate::genres::untagged_series,
+        crate::genres::browse::browse_genres,
         // Reading lists
         crate::reading_lists::list_reading_lists,
         crate::reading_lists::get_reading_list,
@@ -311,6 +312,10 @@ pub struct ClientApiDoc;
             crate::genres::GenreDto,
             crate::genres::RenameGenreRequest,
             crate::genres::AssignGenreRequest,
+            crate::genres::browse::GenreBrowsePage,
+            crate::genres::browse::GenreFacets,
+            crate::genres::browse::GenreFacet,
+            crate::genres::browse::GenreCover,
             // Reading lists
             crate::reading_lists::ReadingListDto,
             crate::reading_lists::ReadingListDetailDto,
