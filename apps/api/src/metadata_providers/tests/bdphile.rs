@@ -154,7 +154,7 @@ async fn search_retries_with_the_article_moved_to_the_front() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].external_id, "bd/1-les-cites-obscures");
     assert_eq!(results[0].title, "Les Cités obscures");
-    assert_eq!(results[0].confidence, 1.0);
+    assert!(results[0].score.is_auto_match());
 }
 
 #[test]

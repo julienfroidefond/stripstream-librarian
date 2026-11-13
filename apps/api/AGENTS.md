@@ -15,7 +15,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
 | `books/` | `mod.rs` (CRUD livres), `pages.rs` (rendu + double cache), `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
-| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
+| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
 | `downloads/` | `prowlarr`, `qbittorrent`, `torrent_import`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
 | `jobs/` | `index_jobs.rs` (suivi + SSE), `launcher.rs` (lancement des jobs in-process), `poller.rs`, `helpers.rs` |
@@ -123,5 +123,11 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
   (`norm_text`, casse + accents) et les lookups par nom brut (unitaire, batch, multi-bibliothèques).
   Pour rattacher un nom de torrent/détection/discovery à une série, passer par ce module ; ne pas
   écrire de nouveau `LOWER(name)` ni de nouveau join `norm_text` à la main.
+- **Liens de métadonnées** : `metadata/links.rs` est le seul écrivain de
+  `external_metadata_links` (ADR 0017) : `propose`, `approve`, `approve_existing`,
+  `set_primary`, `remove(Removal::…)`, `reassign`, `record_provider_snapshot`, `mark_synced`.
+  Il garde l'invariant « un seul primaire approuvé par série » et applique une politique unique
+  après retrait d'un lien approuvé (promotion, puis refusion des champs de série ou effacement).
+  Ne pas écrire `INSERT`/`UPDATE`/`DELETE external_metadata_links` ailleurs.
 - **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
   `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

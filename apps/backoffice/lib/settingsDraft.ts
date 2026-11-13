@@ -10,14 +10,17 @@
  * - explicit validation before any request,
  * - one in-flight write per key, with queued saves coalesced onto the latest
  *   edit (a burst of toggle clicks cannot reorder itself),
- * - optimistic edits and a rollback that never overwrites a newer edit.
+ * - optimistic edits and a rollback that never overwrites a newer edit,
+ * - a read-only mode for a draft seeded without the stored values: edits are
+ *   ignored and no write is ever sent.
  *
  * The module is framework-free: React reads it through
  * `SettingsDraftProvider`/`useSetting`, tests drive it directly.
  */
 
 export interface SettingsDraftSaveResult {
-  status: "saved" | "unchanged" | "invalid" | "error";
+  /** `readonly`: the draft refuses writes (stored values were not loaded). */
+  status: "saved" | "unchanged" | "invalid" | "error" | "readonly";
   /** Validation message (usually a translation key) or upstream error text. */
   message?: string;
 }
@@ -58,11 +61,19 @@ export interface SettingsDraftOptions {
    * an edit to an integration that was already enabled.
    */
   validate?: (key: string, value: unknown, acknowledged: unknown) => string | null;
-  /** Called after every attempt except a no-op save. */
+  /** Called after every attempt except a no-op or read-only save. */
   onResult?: (key: string, result: SettingsDraftSaveResult) => void;
+  /**
+   * Refuse every edit and write. Used when the stored settings could not be
+   * read: `initial` then only holds defaults, and saving one would overwrite
+   * the real configuration with them.
+   */
+  readOnly?: boolean;
 }
 
 export interface SettingsDraft {
+  /** True when edits and writes are refused (see `SettingsDraftOptions.readOnly`). */
+  readonly readOnly: boolean;
   subscribe(listener: () => void): () => void;
   getSnapshot(): SettingsDraftSnapshot;
   /** Cached per-section slice, stable until that section changes. */
@@ -120,6 +131,7 @@ function errorMessage(error: unknown): string {
 
 export function createSettingsDraft(options: SettingsDraftOptions): SettingsDraft {
   const { write, validate, onResult } = options;
+  const readOnly = options.readOnly === true;
   let values: Record<string, unknown> = clone(options.initial);
   let acknowledged: Record<string, unknown> = clone(options.initial);
   const errors = new Map<string, string>();
@@ -227,6 +239,8 @@ export function createSettingsDraft(options: SettingsDraftOptions): SettingsDraf
   }
 
   return {
+    readOnly,
+
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -267,7 +281,7 @@ export function createSettingsDraft(options: SettingsDraftOptions): SettingsDraf
     },
 
     patch(key, patch) {
-      if (Object.keys(patch).length === 0) return;
+      if (readOnly || Object.keys(patch).length === 0) return;
       const current = values[key];
       const base = isPlainObject(current) ? current : {};
       const next = { ...base, ...clone(patch) };
@@ -278,7 +292,7 @@ export function createSettingsDraft(options: SettingsDraftOptions): SettingsDraf
     },
 
     set(key, value) {
-      if (deepEqual(values[key], value)) return;
+      if (readOnly || deepEqual(values[key], value)) return;
       values = { ...values, [key]: clone(value) };
       clearError(key);
       notify();
@@ -300,6 +314,7 @@ export function createSettingsDraft(options: SettingsDraftOptions): SettingsDraf
     },
 
     save(key) {
+      if (readOnly) return Promise.resolve({ status: "readonly" });
       // Serialize writes per key. Each queued call reads the draft when it
       // starts, so a burst collapses to the latest value instead of replaying
       // stale snapshots in order.

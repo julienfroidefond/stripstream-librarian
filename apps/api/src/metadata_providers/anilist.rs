@@ -1,6 +1,9 @@
 use stripstream_core::http::build_http_client;
 
-use super::{compute_confidence, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use super::{
+    scoring::{self, Score},
+    BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
+};
 
 pub struct AniListProvider;
 
@@ -138,8 +141,6 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
         None => return Ok(vec![]),
     };
 
-    let query_lower = query.to_lowercase();
-
     let mut candidates: Vec<SeriesCandidate> = media
         .iter()
         .filter_map(|m| {
@@ -191,7 +192,7 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
             // Use averageScore, fall back to meanScore
             let rating = average_score.or(mean_score);
 
-            let confidence = compute_confidence(&title, &query_lower);
+            let score = Score::of_titles(&title, query, scoring::UNCAPPED);
 
             let (total_volumes, volume_source) = match volumes {
                 Some(v) => (Some(v), "volumes"),
@@ -208,7 +209,7 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
                 total_volumes,
                 cover_url,
                 external_url: site_url,
-                confidence,
+                score,
                 metadata_json: serde_json::json!({
                     "status": status,
                     "chapters": chapters,
@@ -224,11 +225,7 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
         })
         .collect();
 
-    candidates.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scoring::sort_best_first(&mut candidates);
     candidates.truncate(10);
     Ok(candidates)
 }
@@ -251,7 +248,7 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
         .and_then(|data| data.get("Media"))
         .ok_or_else(|| format!("AniList media {external_id} not found"))?;
 
-    parse_media_to_candidate(media, 1.0)
+    parse_media_to_candidate(media, Score::exact())
         .ok_or_else(|| format!("AniList media {external_id} has invalid data"))
 }
 
@@ -414,17 +411,14 @@ async fn fetch_trending_url(limit: i32, url: &str) -> Result<Vec<SeriesCandidate
 
     let candidates: Vec<SeriesCandidate> = media
         .iter()
-        .filter_map(|m| parse_media_to_candidate(m, 0.5))
+        .filter_map(|m| parse_media_to_candidate(m, Score::new(0.5)))
         .collect();
 
     Ok(candidates)
 }
 
 /// Parse a single AniList media JSON object into a SeriesCandidate.
-fn parse_media_to_candidate(
-    m: &serde_json::Value,
-    default_confidence: f32,
-) -> Option<SeriesCandidate> {
+fn parse_media_to_candidate(m: &serde_json::Value, score: Score) -> Option<SeriesCandidate> {
     let id = m.get("id").and_then(|id| id.as_i64())?;
     let title_obj = m.get("title")?;
     let title = title_obj
@@ -484,7 +478,7 @@ fn parse_media_to_candidate(
         total_volumes,
         cover_url,
         external_url: site_url,
-        confidence: default_confidence,
+        score,
         metadata_json: serde_json::json!({
             "status": status,
             "chapters": chapters,
