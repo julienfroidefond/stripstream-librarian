@@ -14,20 +14,25 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("@/app/(app)/reading-lists/AiReadingListsModal", () => ({
-  AiReadingListsModal: ({
-    isOpen,
-    onApplied,
-  }: {
-    isOpen: boolean;
-    onApplied: () => Promise<void> | void;
-  }) =>
-    isOpen ? (
-      <button type="button" onClick={() => void onApplied()}>
+// Stand-in for the AI modal: it writes through the page's shared store, like
+// the real one does with its approved proposals.
+vi.mock("@/app/(app)/reading-lists/AiReadingListsModal", async () => {
+  const { useReadingLists } = await import("@/app/components/ReadingListsProvider");
+  function AiReadingListsModal({ isOpen }: { isOpen: boolean }) {
+    const readingLists = useReadingLists();
+    return isOpen ? (
+      <button
+        type="button"
+        onClick={() =>
+          void readingLists.runAll([{ type: "add", listId: "list-1", seriesId: "series-1" }])
+        }
+      >
         apply-ai
       </button>
-    ) : null,
-}));
+    ) : null;
+  }
+  return { AiReadingListsModal };
+});
 
 import { ReadingListsClient } from "@/app/(app)/reading-lists/ReadingListsClient";
 
@@ -57,13 +62,16 @@ afterEach(() => {
 });
 
 describe("ReadingListsClient", () => {
-  it("reloads the lists and refreshes the router cache after AI proposals are applied", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => [createdList],
-    } as Response);
+  it("reconciles the overview from the server after AI proposals are applied", async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: init?.method === "POST" ? 204 : 200,
+        json: async () => [{ ...createdList, name: "Favourites (2)", series_count: 2 }],
+      } as Response)
+    );
 
-    render(<ReadingListsClient initialLists={[]} hasActiveUser={false} />);
+    render(<ReadingListsClient initialLists={[createdList]} hasActiveUser={false} />);
 
     await userEvent.click(
       screen.getByRole("button", { name: "readingLists.aiSuggest" })
@@ -75,7 +83,32 @@ describe("ReadingListsClient", () => {
       "/api/reading-lists",
       expect.objectContaining({ method: "GET" })
     );
-    expect(await screen.findByText("Favourites")).toBeInTheDocument();
+    expect(await screen.findByText("Favourites (2)")).toBeInTheDocument();
+  });
+
+  it("keeps a list whose deletion fails, reports it and does not refresh", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "cannot delete" }),
+    } as Response);
+
+    render(
+      <ReadingListsClient initialLists={[createdList]} hasActiveUser={false} />
+    );
+    await userEvent.click(screen.getByTitle("common.delete"));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/reading-lists/list-1",
+        expect.objectContaining({ method: "DELETE" })
+      )
+    );
+    await waitFor(() => expect(screen.getByTitle("common.delete")).not.toBeDisabled());
+    expect(screen.getByText("Favourites")).toBeInTheDocument();
+    expect(refresh).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 
   it("refreshes the router cache after creating a list", async () => {
