@@ -13,7 +13,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `error.rs` | `ApiError` avec constructeurs `bad_request`, `not_found`, `internal`, etc. |
 | `handlers.rs` | `/health`, `/ready`, `/version`, `/metrics` |
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
-| `books/` | `mod.rs` (CRUD livres), `pages.rs` (rendu + double cache), `thumbnails.rs` (jobs), `rename.rs` |
+| `books/` | `mod.rs` (CRUD livres), `pages.rs` (handlers page + miniature à la volée), `renderer.rs` (`PageRenderer` : double cache, verrou, permis, timeout), `files.rs` (fichier courant d'un livre), `download.rs`, `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
 | `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
@@ -64,11 +64,16 @@ async fn get_book(...) { }
 ```
 - Client : `/openapi.json` + UI `/swagger-ui` — Admin : `/admin/openapi.json` + UI `/admin/swagger-ui`
 
-### Cache pages (`books/pages.rs`)
+### Rendu et cache des pages (`books/renderer.rs`, ADR 0023)
+- `PageRenderer::get(&PageSpec, Urgency)` est le seul chemin de rendu : cache mémoire → cache disque → verrou par clé → permis → timeout → `spawn_blocking`. `Urgency::Prefetch` ne rend jamais une page déjà en cache ou en cours de rendu. `PageRenderer::run` (permis + timeout + `spawn_blocking`) sert au travail non caché (miniature à la volée).
+- Archives derrière le trait `PageSource` (`ArchivePages` en prod, `FakePages` en test) : ne pas appeler `parsers::extract_page` depuis un handler.
 - **Cache mémoire** : LRU limité en octets (`cache.memory_max_size_mb`, 128 Mo par défaut), redimensionné à chaud
-- **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256
+- **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256 (chemin, mtime, page, options)
 - Concurrence limitée par `AppState.page_render_limit` (Semaphore, configurable en DB)
-- `spawn_blocking` pour le rendu image (CPU-bound)
+
+### Fichier courant d'un livre (`books/files.rs`)
+- `current_book_file(pool, &library_root, book_id)` → `BookFile { db_path, local_path, format: BookFormat }` (404 sans fichier). Le format vient toujours de la base, jamais de l'extension.
+- Requêtes ensemblistes : `concat!(…, current_book_file_join!("size_bytes"), …)` (alias `b` pour `books`, `bf` pour le fichier). Ne pas réécrire `ORDER BY updated_at DESC LIMIT 1` sur `book_files`.
 
 ### Paramètre concurrent_renders
 Stocké en DB : `SELECT value FROM app_settings WHERE key = 'limits'` → JSON `{"concurrent_renders": N}`.

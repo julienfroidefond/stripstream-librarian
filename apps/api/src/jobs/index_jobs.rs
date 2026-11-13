@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use stripstream_jobs::cancel_job as cancel_job_in_flight;
 
+use crate::books::files::current_book_file_join;
 use crate::{error::ApiError, state::AppState};
 
 /// Column list + join shared by every job list response (see [`map_row`]).
@@ -551,17 +552,17 @@ pub async fn get_indexed_books(
         _ => return Ok(Json(vec![])),
     };
 
-    let rows = sqlx::query(
+    let rows = sqlx::query(concat!(
         "SELECT b.id, b.title, b.volume, s.name AS series_name, b.kind, \
                 bf.abs_path, bf.format \
          FROM books b \
-         LEFT JOIN series s ON s.id = b.series_id \
-         LEFT JOIN LATERAL (SELECT abs_path, format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1) bf ON TRUE \
-         WHERE ($1::uuid IS NULL OR b.library_id = $1) \
+         LEFT JOIN series s ON s.id = b.series_id ",
+        current_book_file_join!("abs_path, format"),
+        " WHERE ($1::uuid IS NULL OR b.library_id = $1) \
            AND b.updated_at >= $2 AND b.updated_at <= $3 \
          ORDER BY s.name, b.volume, b.title \
-         LIMIT 500",
-    )
+         LIMIT 500"
+    ))
     .bind(library_id)
     .bind(started_at)
     .bind(finished_at)

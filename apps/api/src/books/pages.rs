@@ -1,9 +1,4 @@
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
+use std::sync::Arc;
 
 use axum::{
     body::Body,
@@ -11,19 +6,23 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use image::{
-    codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, ColorType, ImageEncoder, ImageFormat,
-};
+use image::ImageFormat;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use sqlx::Row;
-use tracing::{error, info, instrument, warn};
+use tracing::instrument;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use stripstream_thumbnails::{fast_jpeg_decode, EncodedThumbnail, ThumbnailStore};
+use stripstream_thumbnails::{EncodedThumbnail, ThumbnailStore};
 
+use super::files::current_book_file;
+use super::renderer::{
+    ArchivePages, Origin, OutputFormat, PageRenderer, PageSpec, RenderOptions, Urgency,
+};
 use crate::{error::ApiError, state::AppState};
+
+/// Pages rendered in the background after a freshly rendered page.
+const PREFETCH_AHEAD: u32 = 2;
 
 fn parse_filter(s: &str) -> image::imageops::FilterType {
     match s {
@@ -31,73 +30,6 @@ fn parse_filter(s: &str) -> image::imageops::FilterType {
         "nearest" => image::imageops::FilterType::Nearest,
         _ => image::imageops::FilterType::Triangle, // Triangle (bilinear) is fast and good enough for comics
     }
-}
-
-fn get_cache_key(
-    abs_path: &str,
-    mtime_ns: i128,
-    page: u32,
-    format: &str,
-    quality: u8,
-    width: u32,
-) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(abs_path.as_bytes());
-    hasher.update(mtime_ns.to_le_bytes());
-    hasher.update(page.to_le_bytes());
-    hasher.update(format.as_bytes());
-    hasher.update(quality.to_le_bytes());
-    hasher.update(width.to_le_bytes());
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-/// Read the file mtime as nanoseconds since UNIX epoch. Returns 0 if unavailable
-/// — that is OK because callers feed it as part of the cache key, not for correctness.
-fn file_mtime_ns(path: &str) -> i128 {
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos() as i128)
-        .unwrap_or(0)
-}
-
-fn get_cache_path(cache_key: &str, format: &OutputFormat, cache_dir: &Path) -> PathBuf {
-    let prefix = &cache_key[..2];
-    let ext = format.extension();
-    cache_dir
-        .join(prefix)
-        .join(format!("{}.{}", cache_key, ext))
-}
-
-async fn read_from_disk_cache(cache_path: PathBuf) -> Option<Vec<u8>> {
-    tokio::task::spawn_blocking(move || std::fs::read(cache_path).ok())
-        .await
-        .ok()
-        .flatten()
-}
-
-async fn write_to_disk_cache(cache_path: PathBuf, data: Arc<[u8]>) -> Result<(), std::io::Error> {
-    tokio::task::spawn_blocking(move || write_to_disk_cache_blocking(&cache_path, &data))
-        .await
-        .map_err(std::io::Error::other)?
-}
-
-fn write_to_disk_cache_blocking(cache_path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let filename = cache_path.file_name().unwrap_or_default().to_string_lossy();
-    let temporary_path = cache_path.with_file_name(format!(".{filename}-{}.tmp", Uuid::new_v4()));
-    let mut file = std::fs::File::create(&temporary_path)?;
-    file.write_all(data)?;
-    // No sync_data() — this is a cache, durability is not critical
-    drop(file);
-    std::fs::rename(temporary_path, cache_path)
 }
 
 #[derive(Deserialize, ToSchema, Debug)]
@@ -108,48 +40,6 @@ pub struct PageQuery {
     pub quality: Option<u8>,
     #[schema(value_type = Option<u32>, example = 1200)]
     pub width: Option<u32>,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum OutputFormat {
-    /// Serve raw bytes from the archive — no decode, no re-encode.
-    Original,
-    Jpeg,
-    Png,
-    Webp,
-}
-
-impl OutputFormat {
-    fn parse(value: Option<&str>) -> Result<Self, ApiError> {
-        match value {
-            None => Ok(Self::Original),
-            Some("original") => Ok(Self::Original),
-            Some("jpeg") | Some("jpg") => Ok(Self::Jpeg),
-            Some("png") => Ok(Self::Png),
-            Some("webp") => Ok(Self::Webp),
-            _ => Err(ApiError::bad_request(
-                "format must be original|webp|jpeg|png",
-            )),
-        }
-    }
-
-    fn content_type(&self) -> &'static str {
-        match self {
-            Self::Original => "application/octet-stream", // will be overridden by detected type
-            Self::Jpeg => "image/jpeg",
-            Self::Png => "image/png",
-            Self::Webp => "image/webp",
-        }
-    }
-
-    fn extension(&self) -> &'static str {
-        match self {
-            Self::Original => "orig",
-            Self::Jpeg => "jpg",
-            Self::Png => "png",
-            Self::Webp => "webp",
-        }
-    }
 }
 
 /// Detect content type from raw image bytes.
@@ -190,22 +80,32 @@ pub async fn get_page(
     Query(query): Query<PageQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let renderer = PageRenderer::for_state(&state, Arc::new(ArchivePages)).await;
+    serve_page(&state, &renderer, book_id, n, &query, &headers).await
+}
+
+/// `get_page` over an explicit renderer, so tests can inject a fake page source.
+async fn serve_page(
+    state: &AppState,
+    renderer: &PageRenderer,
+    book_id: Uuid,
+    n: u32,
+    query: &PageQuery,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
     if n == 0 {
         return Err(ApiError::bad_request("page index starts at 1"));
     }
 
-    let (default_quality, max_width, filter_str, timeout_secs, cache_dir) = {
+    let (default_quality, max_width, filter) = {
         let s = state.settings.read().await;
         (
             s.image_quality,
             s.image_max_width,
-            s.image_filter.clone(),
-            s.timeout_seconds,
-            s.cache_directory.clone(),
+            parse_filter(&s.image_filter),
         )
     };
-
-    let format = OutputFormat::parse(query.format.as_deref())?;
+    let output = OutputFormat::parse(query.format.as_deref())?;
     let quality = query.quality.unwrap_or(default_quality).clamp(1, 100);
     let width = query.width.unwrap_or(0);
     if width > max_width {
@@ -214,307 +114,59 @@ pub async fn get_page(
             max_width
         )));
     }
-    let filter = parse_filter(&filter_str);
-    let cache_dir_path = std::path::PathBuf::from(&cache_dir);
 
-    // Fetch abs_path first — it's needed for the cache key so file changes invalidate the cache.
-    let row = sqlx::query(
-        r#"
-        SELECT abs_path, format
-        FROM book_files
-        WHERE book_id = $1
-        ORDER BY updated_at DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(book_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        error!(
-            "Database error fetching book file for book_id {}: {}",
-            book_id, e
-        );
-        e
-    })?;
-
-    let row = match row {
-        Some(r) => r,
-        None => {
-            return Err(ApiError::not_found("book file not found"));
-        }
-    };
-
-    let abs_path: String = row.get("abs_path");
-    let abs_path = state
-        .library_root
-        .resolve(&abs_path)?
-        .to_local()
-        .to_string();
-    let input_format: String = row.get("format");
-
-    if !std::path::Path::new(&abs_path).exists() {
+    let file = current_book_file(&state.pool, &state.library_root, book_id).await?;
+    if !file.local_path.exists() {
         return Err(ApiError::not_found("source file not accessible"));
     }
+    let options = RenderOptions {
+        output,
+        quality,
+        width,
+        filter,
+    };
+    let spec = PageSpec::new(file.local_path, file.format, n, options);
 
-    let mtime_ns = file_mtime_ns(&abs_path);
-    let disk_cache_key = get_cache_key(&abs_path, mtime_ns, n, format.extension(), quality, width);
-    let cache_path = get_cache_path(&disk_cache_key, &format, &cache_dir_path);
-    // Align memory cache key with disk cache key so it includes abs_path — file change → fresh render.
-    let memory_cache_key = disk_cache_key.clone();
-
-    if let Some(cached) = state
-        .page_cache
-        .lock()
-        .await
-        .get(&memory_cache_key)
-        .cloned()
-    {
-        state
-            .metrics
-            .page_cache_hits
-            .fetch_add(1, Ordering::Relaxed);
-        return Ok(image_response(
-            cached,
-            format,
-            Some(&disk_cache_key),
-            &headers,
-        ));
+    // The cache key is the ETag: a client holding this version needs no bytes at all.
+    let etag = format!("\"{}\"", spec.key());
+    if is_not_modified(headers, &etag) {
+        return Ok(not_modified(&etag));
     }
-    state
-        .metrics
-        .page_cache_misses
-        .fetch_add(1, Ordering::Relaxed);
 
-    // If-None-Match: return 304 if the client already has this version
-    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
-        let expected_etag = format!("\"{}\"", disk_cache_key);
-        if if_none_match.as_bytes() == expected_etag.as_bytes() {
-            return Ok(StatusCode::NOT_MODIFIED.into_response());
+    let rendered = renderer
+        .get(&spec, Urgency::Foreground)
+        .await?
+        .ok_or_else(|| ApiError::internal("page rendering skipped"))?;
+    if rendered.origin == Origin::Rendered {
+        for next_page in (1..=PREFETCH_AHEAD).filter_map(|ahead| n.checked_add(ahead)) {
+            renderer.prefetch(spec.at_page(next_page));
         }
     }
 
-    if let Some(cached_bytes) = read_from_disk_cache(cache_path.clone()).await {
-        let bytes: Arc<[u8]> = Arc::from(cached_bytes);
-        state
-            .page_cache
-            .lock()
-            .await
-            .put(memory_cache_key, bytes.clone());
-        return Ok(image_response(
-            bytes,
-            format,
-            Some(&disk_cache_key),
-            &headers,
-        ));
-    }
-
-    // Coalesce concurrent misses. Recheck both cache levels after waiting because the
-    // request that held this key may have completed the render in the meantime.
-    let _render_lock = state.page_render_locks.acquire(&disk_cache_key).await;
-    if let Some(cached) = state
-        .page_cache
-        .lock()
-        .await
-        .get(&memory_cache_key)
-        .cloned()
-    {
-        state
-            .metrics
-            .page_cache_hits
-            .fetch_add(1, Ordering::Relaxed);
-        return Ok(image_response(
-            cached,
-            format,
-            Some(&disk_cache_key),
-            &headers,
-        ));
-    }
-    if let Some(cached_bytes) = read_from_disk_cache(cache_path.clone()).await {
-        let bytes: Arc<[u8]> = Arc::from(cached_bytes);
-        state
-            .page_cache
-            .lock()
-            .await
-            .put(memory_cache_key.clone(), bytes.clone());
-        return Ok(image_response(
-            bytes,
-            format,
-            Some(&disk_cache_key),
-            &headers,
-        ));
-    }
-
-    let _permit = state
-        .page_render_limit
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|e| {
-            error!("Failed to acquire render permit: {}", e);
-            ApiError::internal("render limiter unavailable")
-        })?;
-
-    let abs_path_clone = abs_path.clone();
-    let format_clone = format;
-    let start_time = std::time::Instant::now();
-
-    let bytes = tokio::time::timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            render_page(
-                &abs_path_clone,
-                &input_format,
-                n,
-                &format_clone,
-                quality,
-                width,
-                filter,
-            )
-        }),
-    )
-    .await
-    .map_err(|_| {
-        error!("Page rendering timeout for {} page {}", abs_path, n);
-        ApiError::internal("page rendering timeout")
-    })?
-    .map_err(|e| {
-        error!("Render task panicked for {} page {}: {}", abs_path, n, e);
-        ApiError::internal(format!("render task failed: {e}"))
-    })?;
-
-    let duration = start_time.elapsed();
-
-    match bytes {
-        Ok(data) => {
-            info!("Rendered page {} in {:?}", n, duration);
-
-            let bytes: Arc<[u8]> = Arc::from(data);
-            if let Err(e) = write_to_disk_cache(cache_path.clone(), bytes.clone()).await {
-                warn!("Failed to write to disk cache: {}", e);
-            }
-
-            state
-                .page_cache
-                .lock()
-                .await
-                .put(memory_cache_key.clone(), bytes.clone());
-
-            // Prefetch next 2 pages in background (fire-and-forget)
-            for next_page in [n + 1, n + 2] {
-                let state2 = state.clone();
-                let abs_path2 = abs_path.clone();
-                let cache_dir2 = cache_dir_path.clone();
-                let format2 = format;
-                tokio::spawn(async move {
-                    prefetch_page(
-                        state2,
-                        &PrefetchParams {
-                            abs_path: &abs_path2,
-                            page: next_page,
-                            format: format2,
-                            quality,
-                            width,
-                            filter,
-                            timeout_secs,
-                            cache_dir: &cache_dir2,
-                        },
-                    )
-                    .await;
-                });
-            }
-
-            Ok(image_response(
-                bytes,
-                format,
-                Some(&disk_cache_key),
-                &headers,
-            ))
-        }
-        Err(e) => {
-            error!("Failed to render page {} from {}: {:?}", n, abs_path, e);
-            Err(e)
-        }
-    }
+    Ok(image_response(
+        rendered.bytes,
+        output,
+        Some(&rendered.key),
+        headers,
+    ))
 }
 
-struct PrefetchParams<'a> {
-    abs_path: &'a str,
-    page: u32,
-    format: OutputFormat,
-    quality: u8,
-    width: u32,
-    filter: image::imageops::FilterType,
-    timeout_secs: u64,
-    cache_dir: &'a Path,
+fn is_not_modified(req_headers: &HeaderMap, etag: &str) -> bool {
+    req_headers
+        .get(header::IF_NONE_MATCH)
+        .is_some_and(|value| value.as_bytes() == etag.as_bytes())
 }
 
-/// Prefetch a single page into disk+memory cache (best-effort, ignores errors).
-async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
-    let page = params.page;
-    let format = params.format;
-    let quality = params.quality;
-    let width = params.width;
-    let filter = params.filter;
-    let timeout_secs = params.timeout_secs;
-    let abs_path = params.abs_path;
-    let cache_dir = params.cache_dir;
-
-    // Use disk cache key for memory too — keys must match get_page so file changes invalidate.
-    let mtime_ns = file_mtime_ns(abs_path);
-    let disk_key = get_cache_key(abs_path, mtime_ns, page, format.extension(), quality, width);
-    let mem_key = disk_key.clone();
-    if state.page_cache.lock().await.contains(&mem_key) {
-        return;
+fn not_modified(etag: &str) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    if let Ok(v) = HeaderValue::from_str(etag) {
+        headers.insert(header::ETAG, v);
     }
-    let cache_path = get_cache_path(&disk_key, &format, cache_dir);
-    if cache_path.exists() {
-        return;
-    }
-    let _render_lock = state.page_render_locks.acquire(&disk_key).await;
-    if state.page_cache.lock().await.contains(&mem_key) || cache_path.exists() {
-        return;
-    }
-    // Acquire render permit (don't block too long — if busy, skip)
-    let permit = tokio::time::timeout(
-        Duration::from_millis(100),
-        state.page_render_limit.clone().acquire_owned(),
-    )
-    .await;
-    let _permit = match permit {
-        Ok(Ok(p)) => p,
-        _ => return,
-    };
-
-    // Fetch the book format from the path extension as a shortcut
-    let Some(input_format) = parsers::BookFormat::from_extension(Path::new(abs_path)) else {
-        return;
-    };
-    let input_format = input_format.as_str().to_string();
-
-    let abs_clone = abs_path.to_string();
-    let fmt = format;
-    let result = tokio::time::timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            render_page(
-                &abs_clone,
-                &input_format,
-                page,
-                &fmt,
-                quality,
-                width,
-                filter,
-            )
-        }),
-    )
-    .await;
-
-    if let Ok(Ok(Ok(data))) = result {
-        let bytes: Arc<[u8]> = Arc::from(data);
-        let _ = write_to_disk_cache(cache_path, bytes.clone()).await;
-        state.page_cache.lock().await.put(mem_key, bytes);
-    }
+    (StatusCode::NOT_MODIFIED, headers).into_response()
 }
 
 fn image_response(
@@ -542,19 +194,8 @@ fn image_response(
         )
     };
 
-    // Check If-None-Match for 304
-    if let Some(if_none_match) = req_headers.get(header::IF_NONE_MATCH) {
-        if if_none_match.as_bytes() == etag.as_bytes() {
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=31536000, immutable"),
-            );
-            if let Ok(v) = HeaderValue::from_str(&etag) {
-                headers.insert(header::ETAG, v);
-            }
-            return (StatusCode::NOT_MODIFIED, headers).into_response();
-        }
+    if is_not_modified(req_headers, &etag) {
+        return not_modified(&etag);
     }
 
     let mut headers = HeaderMap::new();
@@ -583,288 +224,35 @@ pub async fn render_book_cover(
     book_id: Uuid,
     store: &ThumbnailStore,
 ) -> Result<EncodedThumbnail, ApiError> {
-    let row = sqlx::query(
-        r#"SELECT abs_path, format FROM book_files WHERE book_id = $1 ORDER BY updated_at DESC LIMIT 1"#,
-    )
-    .bind(book_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
-
-    let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
-    let abs_path: String = row.get("abs_path");
-    let abs_path = state
-        .library_root
-        .resolve(&abs_path)?
-        .to_local()
-        .to_string();
-    let format = parse_book_format(&row.get::<String, _>("format"))?;
-
-    if !std::path::Path::new(&abs_path).exists() {
+    let file = current_book_file(&state.pool, &state.library_root, book_id).await?;
+    if !file.local_path.exists() {
         return Err(ApiError::not_found("source file not accessible"));
     }
 
-    let _permit = state
-        .page_render_limit
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| ApiError::internal("render limiter unavailable"))?;
-
-    let timeout_secs = state.settings.read().await.timeout_seconds;
     let store = store.clone();
     let pdf_scale = store.settings().width.max(store.settings().height);
-
-    tokio::time::timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            let page = parsers::extract_page(Path::new(&abs_path), format, 1, pdf_scale)
+    PageRenderer::for_state(state, Arc::new(ArchivePages))
+        .await
+        .run(move |source| {
+            let page = source
+                .extract(&file.local_path, file.format, 1, pdf_scale)
                 .map_err(|e| ApiError::internal(format!("page extraction failed: {e}")))?;
             store
                 .encode(&page)
                 .map_err(|e| ApiError::internal(format!("thumbnail encode failed: {e}")))
-        }),
-    )
-    .await
-    .map_err(|_| ApiError::internal("page rendering timeout"))?
-    .map_err(|e| ApiError::internal(format!("render task failed: {e}")))?
-}
-
-fn parse_book_format(input_format: &str) -> Result<parsers::BookFormat, ApiError> {
-    input_format
-        .parse()
-        .map_err(|_| ApiError::bad_request("unsupported source format"))
-}
-
-fn render_page(
-    abs_path: &str,
-    input_format: &str,
-    page_number: u32,
-    out_format: &OutputFormat,
-    quality: u8,
-    width: u32,
-    filter: image::imageops::FilterType,
-) -> Result<Vec<u8>, ApiError> {
-    let format = parse_book_format(input_format)?;
-
-    let pdf_render_width = if width > 0 { width } else { 1200 };
-    let page_bytes = parsers::extract_page(
-        std::path::Path::new(abs_path),
-        format,
-        page_number,
-        pdf_render_width,
-    )
-    .map_err(|e| {
-        error!(
-            "Failed to extract page {} from {}: {}",
-            page_number, abs_path, e
-        );
-        ApiError::internal(format!("page extraction failed: {e}"))
-    })?;
-
-    // Original mode or source matches output with no resize → return raw bytes (zero transcoding)
-    if matches!(out_format, OutputFormat::Original) && width == 0 {
-        return Ok(page_bytes);
-    }
-    if width == 0 {
-        if let Ok(source_fmt) = image::guess_format(&page_bytes) {
-            if format_matches(&source_fmt, out_format) {
-                return Ok(page_bytes);
-            }
-        }
-    }
-
-    transcode_image(&page_bytes, out_format, quality, width, filter)
-}
-
-fn transcode_image(
-    input: &[u8],
-    out_format: &OutputFormat,
-    quality: u8,
-    width: u32,
-    filter: image::imageops::FilterType,
-) -> Result<Vec<u8>, ApiError> {
-    let source_format = image::guess_format(input).ok();
-
-    // Resolve "Original" to the actual source format for encoding
-    let effective_format = match out_format {
-        OutputFormat::Original => match source_format {
-            Some(ImageFormat::Png) => OutputFormat::Png,
-            Some(ImageFormat::WebP) => OutputFormat::Webp,
-            _ => OutputFormat::Jpeg, // default to JPEG for original resize
-        },
-        other => *other,
-    };
-
-    let needs_transcode = source_format
-        .map(|f| !format_matches(&f, &effective_format))
-        .unwrap_or(true);
-
-    if width == 0 && !needs_transcode {
-        return Ok(input.to_vec());
-    }
-
-    // For JPEG with resize: use DCT scaling to decode at ~target size (much faster)
-    let mut image = if width > 0 {
-        fast_jpeg_decode(input, width, u32::MAX)
-            .map(|decoded| decoded.image)
-            .unwrap_or_else(|| image::load_from_memory(input).unwrap_or_default())
-    } else {
-        image::load_from_memory(input)
-            .map_err(|e| ApiError::internal(format!("invalid source image: {e}")))?
-    };
-
-    if width > 0 {
-        image = image.resize(width, u32::MAX, filter);
-    }
-
-    let rgba = image.to_rgba8();
-    let (w, h) = rgba.dimensions();
-
-    let mut out = Vec::new();
-    match effective_format {
-        OutputFormat::Jpeg | OutputFormat::Original => {
-            // JPEG doesn't support alpha — convert RGBA to RGB
-            let rgb = image::DynamicImage::ImageRgba8(rgba.clone()).to_rgb8();
-            let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
-            encoder
-                .encode(&rgb, w, h, ColorType::Rgb8.into())
-                .map_err(|e| ApiError::internal(format!("jpeg encode failed: {e}")))?;
-        }
-        OutputFormat::Png => {
-            let encoder = PngEncoder::new(&mut out);
-            encoder
-                .write_image(&rgba, w, h, ColorType::Rgba8.into())
-                .map_err(|e| ApiError::internal(format!("png encode failed: {e}")))?;
-        }
-        OutputFormat::Webp => {
-            let rgb_data: Vec<u8> = rgba.pixels().flat_map(|p| [p[0], p[1], p[2]]).collect();
-            let webp_data =
-                webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality as f32);
-            out.extend_from_slice(&webp_data);
-        }
-    }
-    Ok(out)
-}
-
-fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
-    matches!(
-        (source, target),
-        (ImageFormat::Jpeg, OutputFormat::Jpeg)
-            | (ImageFormat::Png, OutputFormat::Png)
-            | (ImageFormat::WebP, OutputFormat::Webp)
-    )
+        })
+        .await
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{path::Path, sync::atomic::Ordering, time::Duration};
+
+    use parsers::BookFormat;
+
     use super::*;
+    use crate::books::renderer::{solid_png, FakePages};
     use crate::state::test_state;
-
-    #[test]
-    fn cache_key_changes_when_mtime_changes() {
-        // Same file, same render params, different mtime → different cache key.
-        // This ensures an in-place file replacement invalidates the disk cache.
-        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        let b = get_cache_key("/libraries/x.cbz", 2000, 1, "webp", 80, 600);
-        assert_ne!(a, b, "cache key must include mtime");
-    }
-
-    #[test]
-    fn cache_key_stable_when_inputs_unchanged() {
-        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        let b = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn cache_key_changes_with_path_and_render_params() {
-        let base = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/y.cbz", 1000, 1, "webp", 80, 600)
-        );
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/x.cbz", 1000, 2, "webp", 80, 600)
-        );
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "jpeg", 80, 600)
-        );
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 90, 600)
-        );
-        assert_ne!(
-            base,
-            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800)
-        );
-    }
-
-    #[tokio::test]
-    async fn disk_cache_round_trip_uses_the_published_file() {
-        let directory = tempfile::tempdir().expect("temporary cache directory");
-        let cache_path = directory.path().join("ab/page.webp");
-        let expected: Arc<[u8]> = Arc::from(&b"image bytes"[..]);
-
-        write_to_disk_cache(cache_path.clone(), expected.clone())
-            .await
-            .expect("write cache entry");
-
-        assert_eq!(
-            read_from_disk_cache(cache_path).await.as_deref(),
-            Some(expected.as_ref())
-        );
-    }
-
-    #[test]
-    fn output_format_parse_accepts_aliases_and_rejects_unknown() {
-        assert!(matches!(
-            OutputFormat::parse(None).unwrap(),
-            OutputFormat::Original
-        ));
-        assert!(matches!(
-            OutputFormat::parse(Some("original")).unwrap(),
-            OutputFormat::Original
-        ));
-        assert!(matches!(
-            OutputFormat::parse(Some("jpeg")).unwrap(),
-            OutputFormat::Jpeg
-        ));
-        assert!(matches!(
-            OutputFormat::parse(Some("jpg")).unwrap(),
-            OutputFormat::Jpeg
-        ));
-        assert!(matches!(
-            OutputFormat::parse(Some("png")).unwrap(),
-            OutputFormat::Png
-        ));
-        assert!(matches!(
-            OutputFormat::parse(Some("webp")).unwrap(),
-            OutputFormat::Webp
-        ));
-        assert!(OutputFormat::parse(Some("bmp")).is_err());
-    }
-
-    #[test]
-    fn output_format_exposes_content_type_and_extension() {
-        assert_eq!(OutputFormat::Jpeg.content_type(), "image/jpeg");
-        assert_eq!(OutputFormat::Png.content_type(), "image/png");
-        assert_eq!(OutputFormat::Webp.content_type(), "image/webp");
-        assert_eq!(OutputFormat::Original.extension(), "orig");
-        assert_eq!(OutputFormat::Jpeg.extension(), "jpg");
-        assert_eq!(OutputFormat::Png.extension(), "png");
-        assert_eq!(OutputFormat::Webp.extension(), "webp");
-    }
-
-    #[test]
-    fn get_cache_path_shards_by_prefix_and_appends_extension() {
-        let cache_key = "ab12cd34ef56";
-        let path = get_cache_path(cache_key, &OutputFormat::Png, Path::new("/cache"));
-
-        assert_eq!(path, PathBuf::from(format!("/cache/ab/{cache_key}.png")));
-    }
 
     #[test]
     fn detect_content_type_recognises_common_formats() {
@@ -906,84 +294,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn format_matches_only_the_same_image_family() {
-        assert!(format_matches(&ImageFormat::Jpeg, &OutputFormat::Jpeg));
-        assert!(format_matches(&ImageFormat::Png, &OutputFormat::Png));
-        assert!(format_matches(&ImageFormat::WebP, &OutputFormat::Webp));
-        assert!(!format_matches(&ImageFormat::Png, &OutputFormat::Jpeg));
-        assert!(!format_matches(&ImageFormat::Jpeg, &OutputFormat::Webp));
-        assert!(!format_matches(&ImageFormat::Avif, &OutputFormat::Png));
-    }
-
-    #[test]
-    fn transcode_image_returns_the_input_when_no_work_is_needed() {
-        let png = solid_png(4, 4, [10, 20, 30, 255]);
-
-        // Same format, no resize → strict passthrough (no re-encode).
-        let out = transcode_image(
-            &png,
-            &OutputFormat::Png,
-            100,
-            0,
-            image::imageops::FilterType::Triangle,
-        )
-        .unwrap();
-
-        assert_eq!(out, png);
-    }
-
-    #[test]
-    fn transcode_image_resizes_and_re_encodes() {
-        let png = solid_png(4, 4, [10, 20, 30, 255]);
-
-        // Width 2 → aspect-preserving resize to 2×2, still PNG.
-        let resized = transcode_image(
-            &png,
-            &OutputFormat::Png,
-            100,
-            2,
-            image::imageops::FilterType::Triangle,
-        )
-        .unwrap();
-        let decoded = image::load_from_memory(&resized).unwrap();
-        assert_eq!(decoded.width(), 2);
-        assert_eq!(decoded.height(), 2);
-
-        // Forced JPEG output even though the source is PNG.
-        let jpeg = transcode_image(
-            &png,
-            &OutputFormat::Jpeg,
-            90,
-            0,
-            image::imageops::FilterType::Triangle,
-        )
-        .unwrap();
-        assert_eq!(image::guess_format(&jpeg).unwrap(), ImageFormat::Jpeg);
-
-        // WebP output keeps the RIFF/WEBP container magic.
-        let webp = transcode_image(
-            &png,
-            &OutputFormat::Webp,
-            80,
-            0,
-            image::imageops::FilterType::Triangle,
-        )
-        .unwrap();
-        assert_eq!(&webp[0..4], b"RIFF");
-        assert_eq!(&webp[8..12], b"WEBP");
-    }
-
-    #[test]
-    fn file_mtime_ns_is_zero_for_a_missing_file_and_positive_otherwise() {
-        assert_eq!(file_mtime_ns("/definitely/not/here.cbz"), 0);
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("x.cbz");
-        std::fs::write(&path, b"x").unwrap();
-        assert!(file_mtime_ns(&path.to_string_lossy()) > 0);
-    }
-
     #[tokio::test]
     async fn image_response_returns_304_for_a_matching_etag() {
         let bytes: Arc<[u8]> = Arc::from(&solid_png(2, 2, [0, 0, 0, 255])[..]);
@@ -1002,15 +312,6 @@ mod tests {
         let second = image_response(bytes, OutputFormat::Png, None, &request_headers);
 
         assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
-    }
-
-    fn solid_png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
-        let image = image::RgbaImage::from_pixel(width, height, image::Rgba(rgba));
-        let mut out = std::io::Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(&mut out, ImageFormat::Png)
-            .unwrap();
-        out.into_inner()
     }
 
     fn solid_jpeg(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
@@ -1056,27 +357,14 @@ mod tests {
         count
     }
 
-    /// End-to-end exercise of the double cache: the memory cache serves the
-    /// second request, and a real in-place file change (different mtime and
-    /// content) must invalidate both levels — the rendered page must reflect the
-    /// new bytes instead of the stale ones.
-    #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn get_page_serves_memory_cache_then_invalidates_on_file_change(pool: sqlx::PgPool) {
-        let cache_dir = tempfile::tempdir().unwrap();
-        let library_dir = tempfile::tempdir().unwrap();
-        let book_path = library_dir.path().join("T01.cbz");
-        write_cbz(&book_path, "001.png", &solid_png(8, 8, [255, 0, 0, 255]));
-
-        let state = test_state(pool.clone());
-        state.settings.write().await.cache_directory =
-            cache_dir.path().to_string_lossy().to_string();
-
+    /// Insert a library, a book and one `book_files` row; returns the book id.
+    async fn seed_book_file(pool: &sqlx::PgPool, path: &Path, format: &str) -> Uuid {
         let library_id = Uuid::new_v4();
         sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
             .bind(library_id)
             .bind("pages-e2e")
             .bind("/libraries/pages-e2e")
-            .execute(&pool)
+            .execute(pool)
             .await
             .unwrap();
 
@@ -1086,20 +374,172 @@ mod tests {
         )
         .bind(book_id)
         .bind(library_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
 
-        let book_file_id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status) VALUES ($1, $2, 'cbz', $3, 1024, NOW(), 'fp', 'ok')",
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status) VALUES ($1, $2, $3, $4, 1024, NOW(), 'fp', 'ok')",
         )
-        .bind(book_file_id)
+        .bind(Uuid::new_v4())
         .bind(book_id)
-        .bind(book_path.to_string_lossy().to_string())
-        .execute(&pool)
+        .bind(format)
+        .bind(path.to_string_lossy().to_string())
+        .execute(pool)
         .await
         .unwrap();
+        book_id
+    }
+
+    fn png_request() -> PageQuery {
+        PageQuery {
+            format: Some("png".to_string()),
+            quality: Some(100),
+            width: None,
+        }
+    }
+
+    /// `get_page` through the renderer with a fake page source: the input format comes
+    /// from the database (never the extension) for the page and its prefetches, a
+    /// matching `If-None-Match` is answered without rendering, and a second read is a
+    /// memory hit.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn serve_page_renders_with_the_database_format_and_prefetches(pool: sqlx::PgPool) {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        // The extension lies: the database says CBR.
+        let book_path = library_dir.path().join("T01.cbz");
+        std::fs::write(&book_path, b"archive").unwrap();
+        let book_id = seed_book_file(&pool, &book_path, "cbr").await;
+
+        let state = test_state(pool);
+        state.settings.write().await.cache_directory =
+            cache_dir.path().to_string_lossy().to_string();
+        let source = Arc::new(FakePages::new(solid_png(4, 4, [0, 255, 0, 255])));
+        let renderer = PageRenderer::for_state(&state, source.clone()).await;
+
+        let first = serve_page(
+            &state,
+            &renderer,
+            book_id,
+            1,
+            &png_request(),
+            &HeaderMap::new(),
+        )
+        .await
+        .expect("first render");
+        assert_eq!(first.status(), StatusCode::OK);
+        let etag = first.headers()[header::ETAG].to_str().unwrap().to_string();
+        let body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_pixel(&body), [0, 255, 0, 255]);
+
+        // Pages 2 and 3 are prefetched in the background.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while source.calls().len() < 3 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("prefetches ran");
+        let calls = source.calls();
+        let mut pages: Vec<u32> = calls.iter().map(|(_, _, page)| *page).collect();
+        pages.sort_unstable();
+        assert_eq!(pages, vec![1, 2, 3]);
+        assert!(calls
+            .iter()
+            .all(|(path, format, _)| path == &book_path && *format == BookFormat::Cbr));
+
+        let mut conditional = HeaderMap::new();
+        conditional.insert(header::IF_NONE_MATCH, HeaderValue::from_str(&etag).unwrap());
+        let not_modified = serve_page(&state, &renderer, book_id, 1, &png_request(), &conditional)
+            .await
+            .unwrap();
+        assert_eq!(not_modified.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(not_modified.headers()[header::ETAG], etag.as_str());
+
+        let hits_before = state.metrics.page_cache_hits.load(Ordering::Relaxed);
+        let second = serve_page(
+            &state,
+            &renderer,
+            book_id,
+            2,
+            &png_request(),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(
+            state.metrics.page_cache_hits.load(Ordering::Relaxed),
+            hits_before + 1,
+            "the prefetched page is a memory hit"
+        );
+        assert_eq!(source.calls().len(), 3, "nothing was rendered twice");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn serve_page_rejects_page_zero_and_missing_files(pool: sqlx::PgPool) {
+        let book_id =
+            seed_book_file(&pool, Path::new("/libraries/pages-e2e/gone.cbz"), "cbz").await;
+        let state = test_state(pool);
+        let source = Arc::new(FakePages::new(solid_png(1, 1, [0, 0, 0, 255])));
+        let renderer = PageRenderer::for_state(&state, source.clone()).await;
+
+        let zero = serve_page(
+            &state,
+            &renderer,
+            book_id,
+            0,
+            &png_request(),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(zero.status, StatusCode::BAD_REQUEST);
+
+        let missing = serve_page(
+            &state,
+            &renderer,
+            book_id,
+            1,
+            &png_request(),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+        let no_book = serve_page(
+            &state,
+            &renderer,
+            Uuid::new_v4(),
+            1,
+            &png_request(),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(no_book.status, StatusCode::NOT_FOUND);
+        assert!(source.calls().is_empty());
+    }
+
+    /// End-to-end exercise of the double cache with the real archive reader: the
+    /// memory cache serves the second request, and a real in-place file change
+    /// (different mtime and content) must invalidate both levels — the rendered page
+    /// must reflect the new bytes instead of the stale ones.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_page_serves_memory_cache_then_invalidates_on_file_change(pool: sqlx::PgPool) {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let book_path = library_dir.path().join("T01.cbz");
+        write_cbz(&book_path, "001.png", &solid_png(8, 8, [255, 0, 0, 255]));
+        let book_id = seed_book_file(&pool, &book_path, "cbz").await;
+
+        let state = test_state(pool.clone());
+        state.settings.write().await.cache_directory =
+            cache_dir.path().to_string_lossy().to_string();
 
         let request = || {
             Query(PageQuery {
