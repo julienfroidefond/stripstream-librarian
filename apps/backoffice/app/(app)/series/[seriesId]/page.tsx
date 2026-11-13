@@ -1,10 +1,9 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchSeriesOwnedVolumes, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchSeriesReadingLists, fetchSeriesRatings, fetchSeriesUserActivity, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, SeriesRatingsDto, SeriesUserActivityDto } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { getBookCoverUrl } from "@/lib/api";
+import { loadSeriesDetail } from "@/lib/series/detail";
 import { cookies } from "next/headers";
 import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
-import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { SeriesRatingControl } from "@/app/components/SeriesRatingControl";
@@ -17,8 +16,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
-import { ratedActivity, readingActivity } from "@/lib/userActivity";
 import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
@@ -32,90 +29,48 @@ export default async function SeriesDetailPage({
 }) {
   const { seriesId } = await params;
   const { t } = await getServerTranslations();
-  const { userId, hasActiveUser } = await getActiveUser();
-  const activeUserId = userId ?? "admin";
   const cookieStore = await cookies();
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
 
-  // Resolve library_id from the series
-  const seriesDto = await fetchSeriesById(seriesId).catch(() => null);
-  if (!seriesDto) {
+  const result = await loadSeriesDetail(seriesId, { page, limit, viewMode });
+  if (result.status === "not-found") {
     notFound();
   }
-  const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, readiness] = await Promise.all([
-    fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
-    fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
-    getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
-    getReadingStatusLink(seriesId).catch(() => null as AnilistSeriesLinkDto | null),
-    apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers", { next: { revalidate: 3600 } }).catch(() => null),
-    apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600 } }).catch(() => null),
-    apiFetch<string>("/settings/rename_format_hs", { next: { revalidate: 3600 } }).catch(() => null),
-    apiFetch<string>("/settings/rename_format_int", { next: { revalidate: 3600 } }).catch(() => null),
-    apiFetch<string>("/settings/rename_format_oneshot", { next: { revalidate: 3600 } }).catch(() => null),
-    loadAcquisitionReadiness(),
-  ]);
+  const {
+    library,
+    series,
+    seriesName,
+    books,
+    booksTotal,
+    totalPages,
+    booksReadCount,
+    hasActiveUser,
+    activeUserId,
+    metadata,
+    existingLink,
+    missingData,
+    readingStatusLink,
+    relatedSeries,
+    readingLists,
+    ratings,
+    ratedEntries,
+    readingEntries,
+    actions,
+  } = result.model;
 
-  // Get series name from metadata for display
-  const seriesName = seriesMeta?.series_name ?? "";
-
-  // Fetch books, related series and ratings in parallel. In admin mode (no
-  // reader selected) the per-series activity replaces the single-user view.
-  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings, seriesUserActivity, ownedVolumes] = await Promise.all([
-    fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
-      items: [] as BookDto[],
-      total: 0,
-      page: 1,
-      limit,
-    })),
-    fetchRelatedSeries(seriesId, 12).catch(() => []),
-    fetchSeriesReadingLists(seriesId).catch(() => [] as ReadingListDto[]),
-    fetchSeriesRatings(seriesId).catch(() => null as SeriesRatingsDto | null),
-    hasActiveUser
-      ? Promise.resolve([] as SeriesUserActivityDto[])
-      : fetchSeriesUserActivity(seriesId).catch(() => [] as SeriesUserActivityDto[]),
-    fetchSeriesOwnedVolumes(seriesId).catch(() => undefined),
-  ]);
-
-  const ratingEntries = ratedActivity(seriesUserActivity);
-  const readingEntries = readingActivity(seriesUserActivity);
+  const libraryId = library.id;
   const hasUserReading = readingEntries.length > 0;
-
-  const hiddenProviders: string[] = [];
-  if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
-
-  const existingLink =
-    metadataLinks.find((l) => l.status === "approved" && l.is_primary) ??
-    metadataLinks.find((l) => l.status === "approved") ??
-    metadataLinks[0] ??
-    null;
-  let missingData: MissingBooksDto | null = null;
-  if (existingLink && existingLink.status === "approved") {
-    missingData = await getMissingBooks(existingLink.id).catch(() => null);
-  }
-
-  if (!library) {
-    notFound();
-  }
-
-  const books = booksPage.items.map((book) => ({
-    ...book,
-    coverUrl: getBookCoverUrl(book.id, book.updated_at),
-  }));
-
-  const totalPages = Math.ceil(booksPage.total / limit);
-  const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
   const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
   // Use first_book_id from series DTO (already prioritizes regular volumes over HS),
   // fallback to provider cover_url
-  const coverBookId = seriesDto.first_book_id;
-  const coverBookUpdatedAt = seriesDto.first_book_updated_at;
-  const seriesCoverUrl = seriesDto.cover_url;
+  const coverBookId = series.first_book_id;
+  const coverBookUpdatedAt = series.first_book_updated_at;
+  const seriesCoverUrl = series.cover_url;
 
   return (
     <div className="space-y-6">
@@ -174,18 +129,18 @@ export default async function SeriesDetailPage({
           </h1>
 
           <div className="flex flex-wrap items-center gap-3">
-            {seriesMeta && seriesMeta.authors.length > 0 && (
-              <p className="text-base text-muted-foreground">{seriesMeta.authors.join(", ")}</p>
+            {metadata && metadata.authors.length > 0 && (
+              <p className="text-base text-muted-foreground">{metadata.authors.join(", ")}</p>
             )}
-            {seriesMeta?.status && (
+            {metadata?.status && (
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                seriesMeta.status === "ongoing" ? "bg-info/15 text-info" :
-                seriesMeta.status === "ended" ? "bg-success/15 text-success" :
-                seriesMeta.status === "hiatus" ? "bg-warning/15 text-warning" :
-                seriesMeta.status === "cancelled" ? "bg-error/15 text-error" :
+                metadata.status === "ongoing" ? "bg-info/15 text-info" :
+                metadata.status === "ended" ? "bg-success/15 text-success" :
+                metadata.status === "hiatus" ? "bg-warning/15 text-warning" :
+                metadata.status === "cancelled" ? "bg-error/15 text-error" :
                 "bg-muted text-muted-foreground"
               }`}>
-                {t(`seriesStatus.${seriesMeta.status}` as any) || seriesMeta.status}
+                {t(`seriesStatus.${metadata.status}` as any) || metadata.status}
               </span>
             )}
             {existingLink?.status === "approved" && (
@@ -229,19 +184,19 @@ export default async function SeriesDetailPage({
               <SeriesRatingControl
                 key={activeUserId}
                 seriesId={seriesId}
-                initialRating={seriesRatings?.user_rating ?? null}
+                initialRating={ratings?.user_rating ?? null}
                 hasAniListLink={!!readingStatusLink}
               />
             ) : (
-              <SeriesUserRatings items={ratingEntries} />
+              <SeriesUserRatings items={ratedEntries} />
             )}
 
             {/* Provider score badges */}
-            {seriesRatings && seriesRatings.provider_ratings.length > 0 && (
+            {ratings && ratings.provider_ratings.length > 0 && (
               <>
                 <span className="w-px h-5 bg-border shrink-0" />
                 <div className="flex flex-wrap items-center gap-2">
-                  {seriesRatings.provider_ratings.map((pr) => (
+                  {ratings.provider_ratings.map((pr) => (
                     <div
                       key={pr.provider}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/60 border border-border/60 text-xs"
@@ -259,9 +214,9 @@ export default async function SeriesDetailPage({
             )}
           </div>
 
-          {seriesMeta && seriesMeta.genres.length > 0 && (
+          {metadata && metadata.genres.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {seriesMeta.genres.map((g) => (
+              {metadata.genres.map((g) => (
                 <span key={g} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
                   {g}
                 </span>
@@ -269,9 +224,9 @@ export default async function SeriesDetailPage({
             </div>
           )}
 
-          {seriesReadingLists.length > 0 && (
+          {readingLists.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {seriesReadingLists.map((list) => (
+              {readingLists.map((list) => (
                 <Link
                   key={list.id}
                   href={`/reading-lists/${list.id}`}
@@ -284,28 +239,28 @@ export default async function SeriesDetailPage({
             </div>
           )}
 
-          {seriesMeta?.description && (
-            <SafeHtml html={seriesMeta.description} className="text-sm text-muted-foreground leading-relaxed" />
+          {metadata?.description && (
+            <SafeHtml html={metadata.description} className="text-sm text-muted-foreground leading-relaxed" />
           )}
 
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            {seriesMeta && seriesMeta.publishers.length > 0 && (
+            {metadata && metadata.publishers.length > 0 && (
               <span className="text-muted-foreground">
-                <span className="font-semibold text-foreground">{seriesMeta.publishers.join(", ")}</span>
+                <span className="font-semibold text-foreground">{metadata.publishers.join(", ")}</span>
               </span>
             )}
-            {seriesMeta?.start_year && (
-              <span className="text-muted-foreground">{seriesMeta.start_year}</span>
+            {metadata?.start_year && (
+              <span className="text-muted-foreground">{metadata.start_year}</span>
             )}
-            {((seriesMeta && seriesMeta.publishers.length > 0) || seriesMeta?.start_year) && <span className="w-px h-4 bg-border" />}
+            {((metadata && metadata.publishers.length > 0) || metadata?.start_year) && <span className="w-px h-4 bg-border" />}
             <span className="text-muted-foreground">
-              <span className="font-semibold text-foreground">{booksPage.total}</span> {t("dashboard.books").toLowerCase()}
+              <span className="font-semibold text-foreground">{booksTotal}</span> {t("dashboard.books").toLowerCase()}
             </span>
             {hasActiveUser ? (
               <>
                 <span className="w-px h-4 bg-border" />
                 <span className="text-muted-foreground">
-                  {progressLabel({ book_count: booksPage.total, books_read_count: booksReadCount }, true, t)}
+                  {progressLabel({ book_count: booksTotal, books_read_count: booksReadCount }, true, t)}
                 </span>
 
                 {/* Reading progress bar */}
@@ -313,7 +268,7 @@ export default async function SeriesDetailPage({
                   <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className="h-full bg-success rounded-full transition-all"
-                      style={{ width: `${booksPage.total > 0 ? (booksReadCount / booksPage.total) * 100 : 0}%` }}
+                      style={{ width: `${booksTotal > 0 ? (booksReadCount / booksTotal) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -342,37 +297,7 @@ export default async function SeriesDetailPage({
             )}
           </div>
 
-          <SeriesActionsToolbar
-            libraryId={libraryId}
-            seriesId={seriesId}
-            seriesName={seriesName}
-            bookCount={booksPage.total}
-            booksReadCount={booksReadCount}
-            hasActiveUser={hasActiveUser}
-            initialIsShelved={Boolean(seriesDto.shelved_at)}
-            editAuthors={seriesMeta?.authors ?? []}
-            editGenres={seriesMeta?.genres ?? []}
-            editPublishers={seriesMeta?.publishers ?? []}
-            editBookAuthor={seriesMeta?.book_author ?? booksPage.items[0]?.author ?? null}
-            editBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}
-            editDescription={seriesMeta?.description ?? null}
-            editStartYear={seriesMeta?.start_year ?? null}
-            editTotalVolumes={seriesMeta?.total_volumes ?? null}
-            editStatus={seriesMeta?.status ?? null}
-            editLockedFields={seriesMeta?.locked_fields ?? {}}
-            existingLink={existingLink}
-            metadataLinks={metadataLinks}
-            missingData={missingData}
-            hiddenProviders={hiddenProviders}
-            readingStatusProvider={library.reading_status_provider ?? null}
-            readingStatusLink={readingStatusLink}
-            readiness={readiness}
-            ownedVolumes={ownedVolumes ?? undefined}
-            renameFormat={typeof renameFormat === "string" ? renameFormat : null}
-            renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
-            renameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
-            renameFormatOneshot={typeof renameFormatOneshot === "string" ? renameFormatOneshot : null}
-          />
+          <SeriesActionsToolbar model={actions} />
         </div>
       </div>
 
@@ -439,7 +364,7 @@ export default async function SeriesDetailPage({
               currentPage={page}
               totalPages={totalPages}
               pageSize={limit}
-              totalItems={booksPage.total}
+              totalItems={booksTotal}
             />
           </>
         ) : (
