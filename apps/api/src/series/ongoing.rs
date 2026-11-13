@@ -7,6 +7,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use super::{helpers, OngoingQuery, SeriesItem, SeriesMetadata};
+use crate::books::files::current_book_file_join;
 use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
 // ─── Ongoing series / books ──────────────────────────────────────────────────
@@ -211,13 +212,7 @@ pub async fn ongoing_books(
             FROM books b
             JOIN ongoing_series os ON b.series_id = os.series_id
             JOIN series s ON s.id = b.series_id
-            LEFT JOIN LATERAL (
-                SELECT size_bytes
-                FROM book_files
-                WHERE book_id = b.id
-                ORDER BY updated_at DESC
-                LIMIT 1
-            ) bf ON TRUE
+            {current_file}
             LEFT JOIN user_progress up ON up.book_id = b.id
             WHERE COALESCE(up.status, 'unread') != 'read'
               -- Specials never become the next tome, unless the series has nothing else.
@@ -245,6 +240,7 @@ pub async fn ongoing_books(
         ORDER BY series_last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
+        current_file = current_book_file_join!("size_bytes"),
     );
 
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))

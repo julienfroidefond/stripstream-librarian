@@ -6,6 +6,7 @@ use axum::{
 };
 use sqlx::Row;
 
+use crate::books::files::current_book_file_join;
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 use super::types::*;
@@ -66,17 +67,11 @@ pub async fn get_stats_overview(
             "#,
         )
         .fetch_one(pool),
-        sqlx::query(
-            r#"
-            SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count
-            FROM books b
-            LEFT JOIN LATERAL (
-                SELECT format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
-            ) bf ON TRUE
-            GROUP BY fmt
-            ORDER BY count DESC
-            "#,
-        )
+        sqlx::query(concat!(
+            "SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count FROM books b ",
+            current_book_file_join!("format"),
+            " GROUP BY fmt ORDER BY count DESC"
+        ))
         .fetch_all(pool),
         sqlx::query(
             r#"

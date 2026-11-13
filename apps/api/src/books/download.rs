@@ -7,20 +7,21 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use sqlx::Row;
 use tokio_util::io::ReaderStream;
 use tracing::instrument;
 use uuid::Uuid;
 
+use parsers::BookFormat;
+
+use super::files::current_book_file;
 use crate::{error::ApiError, state::AppState};
 
-fn file_content_type(format: &str) -> &'static str {
+fn file_content_type(format: BookFormat) -> &'static str {
     match format {
-        "cbz" => "application/vnd.comicbook+zip",
-        "cbr" => "application/vnd.comicbook-rar",
-        "pdf" => "application/pdf",
-        "epub" => "application/epub+zip",
-        _ => "application/octet-stream",
+        BookFormat::Cbz => "application/vnd.comicbook+zip",
+        BookFormat::Cbr => "application/vnd.comicbook-rar",
+        BookFormat::Pdf => "application/pdf",
+        BookFormat::Epub => "application/epub+zip",
     }
 }
 
@@ -87,29 +88,9 @@ pub async fn get_book_file(
     State(state): State<AppState>,
     AxumPath(book_id): AxumPath<Uuid>,
 ) -> Result<Response, ApiError> {
-    let row = sqlx::query(
-        r#"
-        SELECT abs_path, format
-        FROM book_files
-        WHERE book_id = $1
-        ORDER BY updated_at DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(book_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let book_file = current_book_file(&state.pool, &state.library_root, book_id).await?;
 
-    let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
-    let abs_path: String = row.get("abs_path");
-    let format: String = row.get("format");
-    let local_path = state
-        .library_root
-        .resolve(&abs_path)?
-        .to_local()
-        .to_string();
-
-    let file = tokio::fs::File::open(&local_path)
+    let file = tokio::fs::File::open(&book_file.local_path)
         .await
         .map_err(|_| ApiError::not_found("source file not accessible"))?;
     let size = file
@@ -117,7 +98,7 @@ pub async fn get_book_file(
         .await
         .map_err(|_| ApiError::not_found("source file not accessible"))?
         .len();
-    let filename = Path::new(&abs_path)
+    let filename = Path::new(&book_file.db_path)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("book");
@@ -130,7 +111,7 @@ pub async fn get_book_file(
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_static(file_content_type(&format)),
+        HeaderValue::from_static(file_content_type(book_file.format)),
     );
     headers.insert(header::CONTENT_LENGTH, content_length);
     headers.insert(header::CONTENT_DISPOSITION, disposition);
@@ -196,11 +177,16 @@ mod tests {
 
     #[test]
     fn file_content_type_maps_known_formats() {
-        assert_eq!(file_content_type("cbz"), "application/vnd.comicbook+zip");
-        assert_eq!(file_content_type("cbr"), "application/vnd.comicbook-rar");
-        assert_eq!(file_content_type("pdf"), "application/pdf");
-        assert_eq!(file_content_type("epub"), "application/epub+zip");
-        assert_eq!(file_content_type("mobi"), "application/octet-stream");
+        assert_eq!(
+            file_content_type(BookFormat::Cbz),
+            "application/vnd.comicbook+zip"
+        );
+        assert_eq!(
+            file_content_type(BookFormat::Cbr),
+            "application/vnd.comicbook-rar"
+        );
+        assert_eq!(file_content_type(BookFormat::Pdf), "application/pdf");
+        assert_eq!(file_content_type(BookFormat::Epub), "application/epub+zip");
     }
 
     #[test]

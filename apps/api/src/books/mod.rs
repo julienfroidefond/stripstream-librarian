@@ -1,6 +1,8 @@
 pub mod download;
+pub(crate) mod files;
 pub mod pages;
 pub mod rename;
+pub(crate) mod renderer;
 pub mod thumbnails;
 
 pub use download::*;
@@ -21,6 +23,7 @@ use stripstream_core::series_identity;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::books::files::current_book_file_join;
 use crate::series::update::prune_series_if_empty;
 use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
@@ -274,13 +277,7 @@ pub async fn list_books(
                COUNT(*) OVER() AS total_count
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
-        LEFT JOIN LATERAL (
-          SELECT size_bytes
-          FROM book_files
-          WHERE book_id = b.id
-          ORDER BY updated_at DESC
-          LIMIT 1
-        ) bf ON TRUE
+        {current_file}
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
@@ -297,7 +294,8 @@ pub async fn list_books(
           ))
         ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
-        "#
+        "#,
+        current_file = current_book_file_join!("size_bytes"),
     );
 
     let mut count_builder = sqlx::query(sqlx::AssertSqlSafe(count_sql.as_str()))
@@ -389,7 +387,8 @@ pub async fn list_books(
 }
 
 /// The `get_book` query: the book, its latest `book_files` row and the reader's progress.
-pub(crate) const GET_BOOK_SQL: &str = r#"
+pub(crate) const GET_BOOK_SQL: &str = concat!(
+    r#"
         SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date, b.updated_at,
                bf.abs_path, bf.format, bf.parse_status, bf.size_bytes,
                COALESCE(brp.status, 'unread') AS reading_status,
@@ -397,16 +396,13 @@ pub(crate) const GET_BOOK_SQL: &str = r#"
                brp.last_read_at AS reading_last_read_at
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
-        LEFT JOIN LATERAL (
-          SELECT abs_path, format, parse_status, size_bytes
-          FROM book_files
-          WHERE book_id = b.id
-          ORDER BY updated_at DESC
-          LIMIT 1
-        ) bf ON TRUE
+        "#,
+    current_book_file_join!("abs_path, format, parse_status, size_bytes"),
+    r#"
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
         WHERE b.id = $1
-"#;
+"#
+);
 
 /// Get detailed information about a specific book
 #[utoipa::path(
@@ -492,20 +488,11 @@ pub async fn convert_book(
     Path(book_id): Path<Uuid>,
 ) -> Result<Json<IndexJobResponse>, ApiError> {
     // Fetch book file info
-    let row = sqlx::query(
-        r#"
-        SELECT b.id, bf.abs_path, bf.format
-        FROM books b
-        LEFT JOIN LATERAL (
-            SELECT abs_path, format
-            FROM book_files
-            WHERE book_id = b.id
-            ORDER BY updated_at DESC
-            LIMIT 1
-        ) bf ON TRUE
-        WHERE b.id = $1
-        "#,
-    )
+    let row = sqlx::query(concat!(
+        "SELECT b.id, bf.abs_path, bf.format FROM books b ",
+        current_book_file_join!("abs_path, format"),
+        " WHERE b.id = $1"
+    ))
     .bind(book_id)
     .fetch_optional(&state.pool)
     .await?;

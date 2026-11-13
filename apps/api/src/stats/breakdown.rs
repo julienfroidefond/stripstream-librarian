@@ -6,6 +6,7 @@ use axum::{
 };
 use sqlx::Row;
 
+use crate::books::files::current_book_file_join;
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 use super::types::*;
@@ -21,14 +22,8 @@ pub async fn get_stats_breakdown(
     }
     let pool = &state.pool;
 
-    let (
-        lib_rows,
-        series_rows,
-        dl_row,
-        avail_row,
-        recent_dl_rows,
-    ) = tokio::try_join!(
-        sqlx::query(
+    let (lib_rows, series_rows, dl_row, avail_row, recent_dl_rows) = tokio::try_join!(
+        sqlx::query(concat!(
             r#"
             SELECT
                 l.name AS library_name,
@@ -41,13 +36,13 @@ pub async fn get_stats_breakdown(
             LEFT JOIN books b ON b.library_id = l.id
             LEFT JOIN book_reading_progress brp
               ON brp.book_id = b.id AND $1::uuid IS NOT NULL AND brp.user_id = $1
-            LEFT JOIN LATERAL (
-                SELECT size_bytes FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
-            ) bf ON TRUE
+            "#,
+            current_book_file_join!("size_bytes"),
+            r#"
             GROUP BY l.id, l.name
             ORDER BY book_count DESC
-            "#,
-        )
+            "#
+        ))
         .bind(user_id)
         .fetch_all(pool),
         sqlx::query(

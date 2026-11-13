@@ -108,7 +108,7 @@ cd apps/docs && npm install && npm run dev -- --port 7083
 - **Logging (`RUST_LOG`)**: targets `indexer`, `scan`, `extraction`, `thumbnail`, `watcher`.
   Default: `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`.
 - **Performance**: batch DB writes (100 items recommended); bound CPU-intensive
-  work with `spawn_blocking` + a concurrency limit; cache expensive operations (see `apps/api/src/books/pages.rs` for the memory-LRU + disk
+  work with `spawn_blocking` + a concurrency limit; cache expensive operations (see `apps/api/src/books/renderer.rs` for the memory-LRU + disk
   cache); stream large data.
 
 ### Naming Conventions
@@ -163,7 +163,8 @@ libraries/             # book storage (mounted volume)
 | `apps/api/src/state.rs` | `AppState`: pool, caches, metrics, resizable `page_render_limit` |
 | `apps/api/src/settings/limits.rs` | Typed `app_settings.limits` schema (`Limits::parse` / `load`, ADR 0026) |
 | `apps/api/src/error.rs` | `ApiError` + constructors |
-| `apps/api/src/books/pages.rs` | Page rendering + double cache (memory LRU + disk) |
+| `apps/api/src/books/renderer.rs` | `PageRenderer`: the one page-rendering pipeline + double cache (memory LRU + disk), ADR 0023 |
+| `apps/api/src/books/files.rs` | `current_book_file` / `current_book_file_join!`: the current file of a book |
 | `apps/api/src/books/thumbnails.rs` | Thumbnail rebuild/regenerate job endpoints |
 | `apps/api/src/metadata/shared_sync.rs` | Factored sync used by approve + batch + refresh |
 | `apps/api/src/metadata_providers/mod.rs` | `MetadataProvider` trait + `available_providers()` |

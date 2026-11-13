@@ -36,6 +36,8 @@ pub fn is_image_name(name: &str) -> bool
 pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf>
 
 pub enum BookFormat { Cbz, Cbr, Pdf, Epub }
+// Texte ↔ format : `as_str()` et `FromStr` (insensible à la casse ASCII, `UnknownBookFormat`),
+// `BookFormat::from_extension(path)`. Ne jamais réécrire de `match "cbz" => …` ailleurs.
 pub enum VolumeType { Regular, Hs, Oneshot, Integral }
 
 pub struct ParsedMetadata {

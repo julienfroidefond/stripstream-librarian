@@ -94,16 +94,6 @@ async fn load_analysis_settings(pool: &sqlx::PgPool) -> AnalysisSettings {
     }
 }
 
-fn book_format_from_str(s: &str) -> Option<BookFormat> {
-    match s {
-        "cbz" => Some(BookFormat::Cbz),
-        "cbr" => Some(BookFormat::Cbr),
-        "pdf" => Some(BookFormat::Pdf),
-        "epub" => Some(BookFormat::Epub),
-        _ => None,
-    }
-}
-
 /// Best-effort page count extraction without touching the first page.
 ///
 /// Used when `analyze_book` failed (unrenderable first page, corrupt page,
@@ -348,9 +338,9 @@ pub async fn analyze_library_books(
                             return ExtractOutcome::ResourceFork { book_id };
                         }
 
-                        let format = match book_format_from_str(&task.format) {
-                            Some(f) => f,
-                            None => {
+                        let format = match task.format.parse::<BookFormat>() {
+                            Ok(f) => f,
+                            Err(_) => {
                                 warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
                                 return ExtractOutcome::Skipped { book_id };
                             }
@@ -942,22 +932,6 @@ mod tests {
         let mut cursor = std::io::Cursor::new(Vec::new());
         img.write_to(&mut cursor, image::ImageFormat::Png).unwrap();
         cursor.into_inner()
-    }
-
-    // ─── Pure helpers ───────────────────────────────────────────────────
-
-    #[test]
-    fn book_format_from_str_maps_supported_extensions() {
-        assert_eq!(book_format_from_str("cbz"), Some(BookFormat::Cbz));
-        assert_eq!(book_format_from_str("cbr"), Some(BookFormat::Cbr));
-        assert_eq!(book_format_from_str("pdf"), Some(BookFormat::Pdf));
-        assert_eq!(book_format_from_str("epub"), Some(BookFormat::Epub));
-        assert_eq!(
-            book_format_from_str("CBZ"),
-            None,
-            "matching is case-sensitive"
-        );
-        assert_eq!(book_format_from_str("zip"), None);
     }
 
     // ─── Integration tests (require PostgreSQL) ─────────────────────────
