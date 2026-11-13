@@ -1,9 +1,13 @@
 //! On-disk thumbnail layout: `<directory>/<book_id>.<webp|jpg|png>`, plus the
 //! transient `<book_id>.raw` page extracted by the indexer before encoding.
+//! Atomic writes go through `.<book_id>.<ext>-<uuid>.tmp` siblings, renamed
+//! into place; a crash between the write and the rename leaves one behind,
+//! which [`ThumbnailStore::purge_orphans`] removes once it is stale.
 
 use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use tracing::warn;
@@ -13,6 +17,11 @@ use crate::encode::{encode, EncodedThumbnail, ThumbnailExt};
 use crate::settings::ThumbnailSettings;
 
 const RAW_EXT: &str = "raw";
+const TEMPORARY_SUFFIX: &str = ".tmp";
+/// Age past which a temporary file is considered abandoned by a crashed
+/// writer. A write is a single `fs::write` + rename (milliseconds), so an hour
+/// leaves ample margin for a slow disk without ever deleting a live write.
+pub const STALE_TEMPORARY_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// The thumbnail store of one configuration. All writes are atomic
 /// (temporary file + rename), so a reader never sees a partial image.
@@ -61,6 +70,21 @@ impl ThumbnailStore {
         Uuid::parse_str(stem).ok()
     }
 
+    /// Book of a temporary file left by an atomic write:
+    /// `.<uuid>.<webp|jpg|png|raw>-<uuid>.tmp`. Any other name returns `None`.
+    pub fn temporary_book_id_of(path: &Path) -> Option<Uuid> {
+        let name = path.file_name()?.to_str()?;
+        let inner = name.strip_prefix('.')?.strip_suffix(TEMPORARY_SUFFIX)?;
+        // `<target>-<uuid>`: the write's own UUID is the last 36 characters.
+        let split = inner.len().checked_sub(37)?;
+        if !inner.is_char_boundary(split) {
+            return None;
+        }
+        let (target, write_id) = inner.split_at(split);
+        Uuid::parse_str(write_id.strip_prefix('-')?).ok()?;
+        Self::book_id_of(Path::new(target))
+    }
+
     /// Atomically publish `thumbnail` as the thumbnail of `book_id`, then drop
     /// the thumbnails of the same book left in another format. Returns the
     /// published path.
@@ -95,6 +119,10 @@ impl ThumbnailStore {
 
     /// Delete every file of `book_id` (all formats and the raw page). Returns
     /// the number of thumbnails removed, raw pages excluded.
+    ///
+    /// Leftover temporary files are not looked for here: that needs a
+    /// directory scan, and callers purge books one by one in a loop. They are
+    /// swept by [`Self::purge_orphans`].
     pub fn purge(&self, book_id: Uuid) -> usize {
         remove_if_present(&self.raw_path_for(book_id));
         ThumbnailExt::ALL
@@ -103,9 +131,15 @@ impl ThumbnailStore {
             .count()
     }
 
-    /// Delete the store files whose book is not in `known_books`. Returns the
-    /// number of files removed.
+    /// Delete the store files whose book is not in `known_books`, and the
+    /// temporary files of any book older than [`STALE_TEMPORARY_AGE`] (left by
+    /// a crash between write and rename; younger ones may be a write in
+    /// progress). Returns the number of files removed.
     pub fn purge_orphans(&self, known_books: &HashSet<Uuid>) -> usize {
+        self.purge_orphans_at(known_books, SystemTime::now())
+    }
+
+    fn purge_orphans_at(&self, known_books: &HashSet<Uuid>, now: SystemTime) -> usize {
         let Ok(entries) = std::fs::read_dir(self.directory()) else {
             return 0;
         };
@@ -113,7 +147,10 @@ impl ThumbnailStore {
             .flatten()
             .map(|entry| entry.path())
             .filter(|path| {
-                Self::book_id_of(path).is_some_and(|book_id| !known_books.contains(&book_id))
+                if let Some(book_id) = Self::book_id_of(path) {
+                    return !known_books.contains(&book_id);
+                }
+                Self::temporary_book_id_of(path).is_some() && is_stale(path, now)
             })
             .filter(|path| remove_if_present(path))
             .count()
@@ -126,17 +163,33 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .parent()
         .ok_or_else(|| io::Error::other("thumbnail path has no parent directory"))?;
     std::fs::create_dir_all(directory)?;
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| io::Error::other("invalid thumbnail file name"))?;
-    let temporary = directory.join(format!(".{file_name}-{}.tmp", Uuid::new_v4()));
+    let temporary = temporary_sibling(path)?;
     std::fs::write(&temporary, bytes)?;
     if let Err(error) = std::fs::rename(&temporary, path) {
         let _ = std::fs::remove_file(&temporary);
         return Err(error);
     }
     Ok(())
+}
+
+/// Unique temporary sibling of `path`: `.<file name>-<uuid>.tmp`, recognised
+/// by [`ThumbnailStore::temporary_book_id_of`].
+fn temporary_sibling(path: &Path) -> io::Result<PathBuf> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| io::Error::other("invalid thumbnail file name"))?;
+    Ok(path.with_file_name(format!(".{file_name}-{}{TEMPORARY_SUFFIX}", Uuid::new_v4())))
+}
+
+/// Whether `path` was last modified at least [`STALE_TEMPORARY_AGE`] before
+/// `now`. Unreadable metadata counts as fresh: never delete on doubt.
+fn is_stale(path: &Path, now: SystemTime) -> bool {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= STALE_TEMPORARY_AGE)
 }
 
 /// Remove `path` when it exists. Returns whether a file was removed; failures
@@ -279,6 +332,88 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(files(dir.path()), expected);
+    }
+
+    fn set_modified(path: &Path, time: SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+    }
+
+    #[test]
+    fn purge_orphans_removes_stale_temporaries_but_not_a_write_in_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path(), ThumbnailFormat::Webp);
+        let kept = Uuid::new_v4();
+        let stale_known = format!(".{kept}.webp-{}.tmp", Uuid::new_v4());
+        let stale_orphan = format!(".{}.raw-{}.tmp", Uuid::new_v4(), Uuid::new_v4());
+        let fresh = format!(".{kept}.png-{}.tmp", Uuid::new_v4());
+        let foreign = format!(".notes.webp-{}.tmp", Uuid::new_v4());
+        let modified = SystemTime::now();
+        for name in [
+            format!("{kept}.webp"),
+            stale_known,
+            stale_orphan,
+            fresh.clone(),
+            foreign.clone(),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"x").unwrap();
+            set_modified(&path, modified);
+        }
+
+        // Just below the threshold: nothing is touched.
+        let almost = modified + STALE_TEMPORARY_AGE - Duration::from_secs(1);
+        assert_eq!(store.purge_orphans_at(&HashSet::from([kept]), almost), 0);
+
+        // `fresh` is a write still in progress when the threshold is reached.
+        let later = modified + STALE_TEMPORARY_AGE;
+        set_modified(&dir.path().join(&fresh), later);
+        assert_eq!(store.purge_orphans_at(&HashSet::from([kept]), later), 2);
+
+        let mut expected = vec![format!("{kept}.webp"), fresh, foreign];
+        expected.sort();
+        assert_eq!(files(dir.path()), expected);
+    }
+
+    #[test]
+    fn temporary_book_id_of_parses_write_atomic_names_only() {
+        let book = Uuid::new_v4();
+        for ext in ["webp", "jpg", "png", "raw"] {
+            let path = format!("/t/.{book}.{ext}-{}.tmp", Uuid::new_v4());
+            assert_eq!(
+                ThumbnailStore::temporary_book_id_of(Path::new(&path)),
+                Some(book)
+            );
+        }
+        for name in [
+            format!("/t/{book}.webp"),
+            format!("/t/.{book}.gif-{}.tmp", Uuid::new_v4()),
+            format!("/t/.{book}.webp-nope.tmp"),
+            format!("/t/{book}.webp-{}.tmp", Uuid::new_v4()),
+            "/t/.tmp".to_string(),
+            "/t/.é.tmp".to_string(),
+        ] {
+            assert_eq!(ThumbnailStore::temporary_book_id_of(Path::new(&name)), None);
+        }
+    }
+
+    #[test]
+    fn write_atomic_names_its_temporary_after_the_target() {
+        // Ties the parser to the naming actually used by `write_atomic`.
+        let store = store(Path::new("/t"), ThumbnailFormat::Webp);
+        let book = Uuid::new_v4();
+        for path in [
+            store.path_for(book, ThumbnailExt::Webp),
+            store.raw_path_for(book),
+        ] {
+            let temporary = temporary_sibling(&path).unwrap();
+            assert_eq!(temporary.parent(), path.parent());
+            assert_eq!(ThumbnailStore::temporary_book_id_of(&temporary), Some(book));
+        }
     }
 
     #[test]
