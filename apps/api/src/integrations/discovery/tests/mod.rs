@@ -387,3 +387,101 @@ async fn filter_already_owned_matches_accented_names(pool: sqlx::PgPool) {
         "an unaccented suggestion must match the owned 'Astérix' series"
     );
 }
+
+// ─── Prowlarr ownership annotation ──────────────────────────────────────────
+
+async fn insert_series(pool: &sqlx::PgPool, library_id: Uuid, name: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .expect("failed to create test series")
+}
+
+async fn insert_book(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    series_id: Uuid,
+    volume_type: &str,
+    volume: Option<i32>,
+) {
+    sqlx::query(
+        "INSERT INTO books (id, library_id, title, kind, format, series_id, volume_type, volume) \
+         VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3, $4, $5)",
+    )
+    .bind(library_id)
+    .bind(format!("{volume_type} {volume:?}"))
+    .bind(series_id)
+    .bind(volume_type)
+    .bind(volume)
+    .execute(pool)
+    .await
+    .expect("failed to create test book");
+}
+
+fn prowlarr_item(series_name: &str, volumes_found: Vec<i32>) -> ProwlarrDiscoveryItem {
+    ProwlarrDiscoveryItem {
+        series_name: series_name.to_string(),
+        release_count: 1,
+        best_seeders: 10,
+        total_seeders: 10,
+        categories: vec![],
+        indexers: vec!["idx".to_string()],
+        best_release_title: format!("{series_name} T01"),
+        best_download_url: None,
+        best_size: 0,
+        best_publish_date: None,
+        best_info_url: None,
+        best_indexer: None,
+        volumes_found,
+        local_series_id: None,
+        local_series_name: None,
+        volumes_already_owned: vec![],
+    }
+}
+
+// 11. Owned tomes follow the shared coverage rule (ADR 0005): numbered
+//     `regular` and `integral` count, `hs` never does.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn annotate_local_matches_reports_owned_volumes(pool: sqlx::PgPool) {
+    let library_id = create_test_library(&pool).await;
+    let series_id = insert_series(&pool, library_id, "Astérix").await;
+    insert_book(&pool, library_id, series_id, "regular", Some(1)).await;
+    insert_book(&pool, library_id, series_id, "integral", Some(2)).await;
+    insert_book(&pool, library_id, series_id, "hs", Some(3)).await;
+    insert_book(&pool, library_id, series_id, "regular", None).await;
+
+    let items = annotate_local_matches(&pool, vec![prowlarr_item("asterix", vec![1, 2, 3, 4])])
+        .await
+        .expect("annotation must succeed");
+
+    let item = &items[0];
+    assert_eq!(item.local_series_id, Some(series_id.to_string()));
+    assert_eq!(item.local_series_name.as_deref(), Some("Astérix"));
+    assert_eq!(item.volumes_already_owned, vec![1, 2]);
+}
+
+// 12. An unnumbered integral covers every tome; unmatched items stay bare.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn annotate_local_matches_unnumbered_integral_owns_every_volume(pool: sqlx::PgPool) {
+    let library_id = create_test_library(&pool).await;
+    let series_id = insert_series(&pool, library_id, "Blacksad").await;
+    insert_book(&pool, library_id, series_id, "integral", None).await;
+
+    let items = annotate_local_matches(
+        &pool,
+        vec![
+            prowlarr_item("Blacksad", vec![1, 2, 5]),
+            prowlarr_item("Unknown Series", vec![1]),
+        ],
+    )
+    .await
+    .expect("annotation must succeed");
+
+    assert_eq!(items[0].volumes_already_owned, vec![1, 2, 5]);
+    assert_eq!(items[1].local_series_id, None);
+    assert!(items[1].volumes_already_owned.is_empty());
+}
