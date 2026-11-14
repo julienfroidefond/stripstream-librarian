@@ -35,6 +35,11 @@ describe("createTranslateFunction", () => {
     expect(t("range" as never, { start: 1, end: 9 })).toBe("1 to 9");
   });
 
+  it("inserts replacement patterns ($&, $$, $1) verbatim", () => {
+    const t = translate({ greet: "Hello {{name}}" });
+    expect(t("greet" as never, { name: "$& $$ $1 $`" })).toBe("Hello $& $$ $1 $`");
+  });
+
   it("replaces every occurrence of a repeated placeholder", () => {
     const t = translate({ repeat: "{{v}} and {{v}}" });
     expect(t("repeat" as never, { v: "x" })).toBe("x and x");

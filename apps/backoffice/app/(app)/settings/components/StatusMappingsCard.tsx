@@ -5,6 +5,7 @@ import { SettingsCard, Button, FormInput, FormSelect, Icon } from "@/app/compone
 import type { StatusMappingDto } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
+import { translateSeriesStatus } from "@/lib/i18n/optional";
 
 export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: { initialStatusMappings: StatusMappingDto[]; initialSeriesStatuses: string[]; initialProviderStatuses: string[] }) {
   const { t } = useTranslation();
@@ -74,9 +75,7 @@ export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuse
   }
 
   function statusLabel(status: string) {
-    const key = `seriesStatus.${status}` as Parameters<typeof t>[0];
-    const translated = t(key);
-    return translated !== key ? translated : status;
+    return translateSeriesStatus(t, status);
   }
 
   return (

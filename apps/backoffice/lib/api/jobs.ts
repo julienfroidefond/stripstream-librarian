@@ -35,7 +35,11 @@ export type IndexJobDto = {
   progress_percent: number | null;
   processed_files: number | null;
   total_files: number | null;
-  current_file: string | null;
+  /**
+   * Absent from the list (`IndexJobResponse`, `GET /index/status` and its SSE
+   * stream); only the job detail (`GET /index/jobs/{id}`) carries it.
+   */
+  current_file?: string | null;
 };
 
 export type JobTypeCatalogDto = {

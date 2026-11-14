@@ -24,21 +24,10 @@ export function LocaleProvider({ initialLocale, children }: LocaleProviderProps)
   const dict = getDictionarySync(locale);
   const t = createTranslateFunction(dict);
 
-  const setLocale = useCallback(async (newLocale: Locale) => {
-    // Set cookie
-    document.cookie = `${LOCALE_COOKIE}=${newLocale};path=/;max-age=${365 * 24 * 60 * 60}`;
-
-    // Save to DB
-    try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7080";
-      await fetch(`${apiBase}/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: newLocale }),
-      });
-    } catch {
-      // Best effort — cookie is the primary source for rendering
-    }
+  const setLocale = useCallback((newLocale: Locale) => {
+    // The cookie is the only source of the locale: the server reads it
+    // (`getServerLocale`) and no `app_settings` key stores the UI language.
+    document.cookie = `${LOCALE_COOKIE}=${newLocale};path=/;max-age=${365 * 24 * 60 * 60};SameSite=Lax`;
 
     // Reload to apply new locale everywhere (server + client)
     window.location.reload();

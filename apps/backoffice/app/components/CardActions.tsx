@@ -316,7 +316,8 @@ export function BookCardActions({
               </ActionsMenuItem>
             )}
           </RefreshButton>
-          {book.file_format === "cbr" && (
+          {/* List items (`BookItem`) carry the file format as `format`. */}
+          {book.format === "cbr" && (
             <ConvertButton bookId={book.id}>
               {(action, isLoading) => (
                 <ActionsMenuItem

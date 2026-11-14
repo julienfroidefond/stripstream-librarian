@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
 
+const { revalidateTag } = vi.hoisted(() => ({ revalidateTag: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag }));
+
 vi.mock("@/lib/api", async () => {
   const { createApiMock } = await import("./helpers");
   return createApiMock();
@@ -40,6 +43,7 @@ describe("/api/settings/[key]", () => {
     );
     expect(updateSetting).toHaveBeenCalledWith("foo", "bar");
     expect(res.status).toBe(200);
+    expect(revalidateTag).toHaveBeenCalledWith("settings", { expire: 0 });
   });
 
   it("POST returns 500 on error", async () => {

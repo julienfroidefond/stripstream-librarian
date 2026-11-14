@@ -2,6 +2,7 @@
  * Bibliothèques : CRUD, scan, monitoring, dossiers.
  */
 
+import { cacheTags } from "../cache/tags";
 import { apiFetch } from "./client";
 import type { IndexJobDto } from "./jobs";
 
@@ -37,7 +38,9 @@ export type FolderItem = {
 };
 
 export async function fetchLibraries() {
-  return apiFetch<LibraryDto[]>("/libraries", { next: { revalidate: 30 } });
+  return apiFetch<LibraryDto[]>("/libraries", {
+    next: { revalidate: 30, tags: [cacheTags.libraries()] },
+  });
 }
 
 export async function createLibrary(name: string, rootPath: string) {

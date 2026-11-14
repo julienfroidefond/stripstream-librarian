@@ -1,12 +1,12 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
+import { requireSessionSecret } from "./secret";
+
 export const SESSION_COOKIE = "sl_session";
 
 function getSecret(): Uint8Array {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET env var is required");
-  return new TextEncoder().encode(secret);
+  return requireSessionSecret();
 }
 
 export async function createSessionToken(): Promise<string> {

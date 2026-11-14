@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGr
 import type { MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { SeriesResultRow, ResultStatusBadge } from "./SeriesResultRow";
+import { translateField } from "@/lib/i18n/optional";
 
 export function MetadataBatchReportCard({ report, t }: { report: MetadataBatchReportDto; t: TranslateFunction }) {
   return (
@@ -175,7 +176,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
                 <div className="mt-1 space-y-1">
                   {r.series_changes.map((c, ci) => (
                     <div key={ci} className="flex items-start gap-2 text-xs">
-                      <span className="font-medium text-foreground shrink-0 w-24">{t(`field.${c.field}` as never) || c.field}</span>
+                      <span className="font-medium text-foreground shrink-0 w-24">{translateField(t, c.field)}</span>
                       <span className="text-muted-foreground line-through truncate max-w-[200px]" title={String(c.old ?? "—")}>
                         {c.old != null ? (Array.isArray(c.old) ? (c.old as string[]).join(", ") : String(c.old)) : "—"}
                       </span>
@@ -207,7 +208,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
                       <div className="mt-0.5 space-y-0.5">
                         {b.changes.map((c, ci) => (
                           <div key={ci} className="flex items-start gap-2 text-xs">
-                            <span className="font-medium text-foreground shrink-0 w-24">{t(`field.${c.field}` as never) || c.field}</span>
+                            <span className="font-medium text-foreground shrink-0 w-24">{translateField(t, c.field)}</span>
                             <span className="text-muted-foreground line-through truncate max-w-[150px]" title={String(c.old ?? "—")}>
                               {c.old != null ? (Array.isArray(c.old) ? (c.old as string[]).join(", ") : String(c.old).substring(0, 60)) : "—"}
                             </span>

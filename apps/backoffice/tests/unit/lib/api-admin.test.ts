@@ -109,7 +109,7 @@ describe("admin users and tokens", () => {
 
   it("lists users with revalidation", async () => {
     await fetchUsers();
-    expect(lastCall().init.next).toMatchObject({ revalidate: 60 });
+    expect(lastCall().init.next).toMatchObject({ revalidate: 60, tags: ["users"] });
   });
 
   it("creates, renames and deletes users", async () => {

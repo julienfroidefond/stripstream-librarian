@@ -76,7 +76,7 @@ describe("download providers", () => {
       url: "http://api:7080/ddl-providers",
       method: "GET",
     });
-    expect(lastCall().init.next).toEqual({ revalidate: 60 });
+    expect(lastCall().init.next).toEqual({ revalidate: 60, tags: ["ddl-providers"] });
   });
 
   it("toggles a provider and forwards the base URL", async () => {
@@ -145,7 +145,7 @@ describe("download providers", () => {
       url: "http://api:7080/ddl-providers/search-settings",
       method: "GET",
     });
-    expect(lastCall().init.next).toEqual({ revalidate: 60 });
+    expect(lastCall().init.next).toEqual({ revalidate: 60, tags: ["ddl-providers"] });
   });
 
   it("updates the background-search cadence", async () => {

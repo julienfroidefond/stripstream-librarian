@@ -104,6 +104,41 @@ describe("GET /api/jobs/stream", () => {
   });
 });
 
+describe("streamLoop robustness (lib/server/api-stream)", () => {
+  it("keeps polling when the very first fetch fails", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fetchMock
+      .mockRejectedValueOnce(new Error("down"))
+      .mockImplementation(() => Promise.resolve(jsonResponse([{ status: "running" }])));
+    const ac = new AbortController();
+    const res = await jobsStream(request(ac.signal));
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Idle cadence after a failure, then recovery.
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await readChunk(reader)).toBe('data: [{"status":"running"}]\n\n');
+    ac.abort();
+  });
+
+  it("closes when the client aborts during the first fetch", async () => {
+    let resolveFetch!: (r: Response) => void;
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => { resolveFetch = r; }));
+    const ac = new AbortController();
+    const res = await jobsStream(request(ac.signal));
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    ac.abort();
+    expect(await readChunk(reader)).toBeNull();
+    // A late answer must not throw on the closed controller.
+    resolveFetch(jsonResponse([{ status: "running" }]));
+    await new Promise((r) => setTimeout(r, 0));
+  });
+});
+
 describe("GET /api/jobs/[id]/stream", () => {
   it("emits job updates and closes on a terminal status", async () => {
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ status: "success" })));
@@ -143,6 +178,32 @@ describe("GET /api/jobs/[id]/stream", () => {
     ac.abort();
     await vi.advanceTimersByTimeAsync(0);
     expect(await readChunk(reader)).toBeNull();
+  });
+
+  it("closes once when a terminal status and an abort race", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ status: "success" })));
+    const ac = new AbortController();
+    const res = await jobStream(request(ac.signal), { params: Promise.resolve({ id: "j1" }) } as never);
+    const reader = res.body!.getReader();
+    await readChunk(reader);
+    expect(await readChunk(reader)).toBe('data: {"status":"success"}\n\n');
+    expect(await readChunk(reader)).toBeNull();
+    // Abort after the terminal close: must not throw "Invalid state".
+    expect(() => ac.abort()).not.toThrow();
+  });
+
+  it("closes when the client aborts during the first fetch", async () => {
+    let resolveFetch!: (r: Response) => void;
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => { resolveFetch = r; }));
+    const ac = new AbortController();
+    const res = await jobStream(request(ac.signal), { params: Promise.resolve({ id: "j1" }) } as never);
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    ac.abort();
+    expect(await readChunk(reader)).toBeNull();
+    resolveFetch(jsonResponse({ status: "running" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignores fetch failures", async () => {

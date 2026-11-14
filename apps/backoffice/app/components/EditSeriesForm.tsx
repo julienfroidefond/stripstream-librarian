@@ -13,6 +13,7 @@ import { ApiError } from "@/lib/api/errors";
 import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 import { seriesEditDefaults, type EditSeriesModel } from "@/lib/series/editForm";
+import { translateSeriesStatus } from "@/lib/i18n/optional";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 
@@ -332,7 +333,7 @@ export function EditSeriesForm({ model, children }: EditSeriesFormProps) {
                 >
                   {SERIES_STATUS_VALUES.map((v) => (
                     <option key={v} value={v}>
-                      {v === "" ? t("seriesStatus.notDefined") : t(`seriesStatus.${v}` as any)}
+                      {v === "" ? t("seriesStatus.notDefined") : translateSeriesStatus(t, v)}
                     </option>
                   ))}
                 </select>

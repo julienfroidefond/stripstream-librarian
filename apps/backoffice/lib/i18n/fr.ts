@@ -106,6 +106,7 @@ const fr = {
   "common.error": "Erreur",
   "common.unknownError": "Erreur inconnue",
   "common.networkError": "Erreur réseau",
+  "common.deleteError": "Échec de la suppression",
   "common.show": "Afficher",
   "common.perPage": "par page",
   "common.skipToContent": "Aller au contenu",
@@ -1067,7 +1068,7 @@ const fr = {
   "settings.alldebridConcurrency": "Téléchargements AllDebrid simultanés",
   "settings.alldebridConcurrencyHelp": "Nombre de magnets traités en parallèle. Un magnet en cours de transfert occupe son emplacement jusqu'à la fin.",
   "settings.alldebridStallTimeout": "Délai avant échec d'un magnet bloqué (minutes)",
-  "settings.alldebridStallTimeoutHelp": "Un magnet qui reste à 0 octet pendant cette durée est marqué en échec (torrent mort ou tracker inaccessible). Le magnet n'est pas supprimé.",
+  "settings.alldebridStallTimeoutHelp": "Un magnet qui reste à 0 octet pendant cette durée est marqué en échec (torrent mort ou tracker inaccessible). Le magnet n'est pas supprimé. S'applique aussi aux torrents qBittorrent bloqués faute de sources.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",
@@ -1200,6 +1201,7 @@ const fr = {
   "seriesDetail.mergeConfirm": "Fusionner",
   "seriesDetail.mergeSuccess": "Fusion réussie : {{books}} livres, {{metadata}} métadonnées, {{downloads}} téléchargements déplacés.",
   "seriesDetail.mergeNoResults": "Aucune série trouvée",
+  "seriesDetail.mergeError": "Échec de la fusion",
   "seriesDetail.create": "Ajouter une série",
   "seriesDetail.createTitle": "Nouvelle série",
   "seriesDetail.createLibrary": "Bibliothèque",
@@ -1382,6 +1384,7 @@ const fr = {
   "downloads.unblacklist": "Réafficher",
   "downloads.noBlacklisted": "Aucune release masquée",
   "downloads.delete": "Supprimer",
+  "downloads.releaseChanged": "La liste des releases a changé entre-temps : rien n'a été supprimé, la liste est rafraîchie.",
   "downloads.cancel": "Annuler le téléchargement",
   "downloads.confirmDelete": "Supprimer ce téléchargement ?",
   "downloads.confirmCancel": "Annuler ce téléchargement ? Le torrent sera aussi supprimé de qBittorrent.",

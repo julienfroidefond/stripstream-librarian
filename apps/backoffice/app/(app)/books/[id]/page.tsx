@@ -1,4 +1,4 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus } from "@/lib/api";
+import { fetchLibraries, getBookCoverUrl, type BookDetailsDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus } from "@/lib/api";
 import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { getActiveUser } from "@/lib/auth/activeUser";
 import { BookPreview } from "@/app/components/BookPreview";
@@ -18,9 +18,9 @@ const readingStatusClassNames: Record<ReadingStatus, string> = {
   read: "bg-success/15 text-success dark:text-success border border-success/30",
 };
 
-async function fetchBook(bookId: string): Promise<BookDto | null> {
+async function fetchBook(bookId: string): Promise<BookDetailsDto | null> {
   try {
-    return await apiFetch<BookDto>(`/books/${bookId}`);
+    return await apiFetch<BookDetailsDto>(`/books/${bookId}`);
   } catch {
     return null;
   }
@@ -53,7 +53,8 @@ export default async function BookDetailPage({
   const { t, locale } = await getServerTranslations();
 
   const library = libraries.find(l => l.id === book.library_id);
-  const formatBadge = (book.format ?? book.kind).toUpperCase();
+  // `BookDetails` exposes the file format as `file_format` (no `format`).
+  const formatBadge = (book.file_format ?? book.kind).toUpperCase();
   const formatColor =
     formatBadge === "CBZ" ? "bg-success/10 text-success border-success/30" :
     formatBadge === "CBR" ? "bg-warning/10 text-warning border-warning/30" :

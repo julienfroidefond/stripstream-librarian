@@ -30,7 +30,10 @@ lib/
 │   ├── browser/        # Transport + fonctions typées pour les Client Components
 │   └── ...             # libraries, jobs, books, series, metadata, downloads, ...
 ├── server/             # Infra des route handlers : `api-handler.ts` (`withRoute`), `api-stream.ts` (SSE par polling)
-├── auth/               # `session.ts` (JWT de session), `activeUser.ts` (lecteur sélectionné, cookie)
+├── auth/               # `session.ts` (JWT de session), `secret.ts` (SESSION_SECRET ≥ 32 car., partagé avec
+│                       # `proxy.ts`, fail closed), `redirect.ts` (`from` post-login sûr), `activeUser.ts`
+│                       # (lecteur sélectionné, cookie vidé au logout, à la suppression du lecteur et sur
+│                       # 400 « X-As-User references an unknown user »)
 ├── cache/              # Tags et invalidation (`invalidateAfter`, ADR 0021)
 ├── i18n/               # Dictionnaires + contextes client/serveur
 ├── hooks/              # Hooks React génériques (useEventSource, useIsMounted, usePopin, useMarkRead)
@@ -66,8 +69,12 @@ vers les routes proxy Next (`/api/...`), donc la session et le forward vers l'AP
 dans les route handlers.
 
 - `browserFetch<T>` sérialise le corps JSON, pose les en-têtes, vérifie le statut et décode la
-  réponse (`204`/corps vide → `undefined`). Il lève un `ApiError` (`lib/api/errors.ts`, avec
+  réponse (`204`/corps vide → `undefined` ; un corps non vide qui n'est pas du JSON lève un
+  `ApiError`, il n'est jamais avalé). Il lève un `ApiError` (`lib/api/errors.ts`, avec
   `status` et `detail`) sur une réponse non-2xx, en conservant l'enveloppe `{ error }`.
+- Session expirée : si le proxy a redirigé l'appel vers `/login` (`response.redirected`) ou si une
+  route `/api/` répond du HTML, le transport lève un `ApiError` 401 et navigue vers
+  `/login?from=<page courante>` (`sessionExpiry.redirect`, seam de test).
 - `browserFetchVoid`, `browserFetchText`, `browserFetchRaw` couvrent les réponses sans corps, le
   texte et les blobs ; `withQuery` encode les query strings (`%20`, tableaux répétés) ;
   `browserErrorMessage(error, fallback)` renvoie le détail upstream d'un `ApiError`, sinon le
@@ -183,7 +190,11 @@ démarrer, supprimer, masquer). Le module est pur, sans React :
 - il tient un état par ligne (`idle | pending(verb)`) : une rafale de clics sur une même ligne
   donne une seule requête, deux lignes distinctes partent en parallèle ;
 - une seule politique d'échec : la ligne redevient `idle`, l'erreur remonte au toast et la liste
-  **n'est pas** rafraîchie ; seul un succès déclenche le rafraîchissement.
+  **n'est pas** rafraîchie ; seul un succès déclenche le rafraîchissement. Exception : un `409`
+  sur une suppression de release (`isStaleReleaseError`) signifie que la liste affichée est
+  périmée (l'index ne désigne plus le titre envoyé en `title=`) : rien n'a été supprimé, un toast
+  dédié s'affiche et la liste est rafraîchie. Pendant une suppression, toutes les releases de la
+  même entrée sont désactivées (les index suivants se décalent).
 
 `app/(app)/downloads/useDownloadActions.tsx` expose le store aux composants
 (`DownloadActionsProvider`, `useDownloadActions`, `busy/state/run`) via `useSyncExternalStore`.
@@ -234,6 +245,10 @@ les passe au formulaire et choisit son message d'état vide avec la même règle
 - après une écriture, une route ou une server action appelle
   `invalidateAfter({ type: "series.updated", seriesId })` (union `DomainWrite`) ; le module décide
   des tags (expirés avec `{ expire: 0 }`) et des chemins à revalider.
+
+Les lectures mises en cache des réglages (`cacheTags.settings()`), bibliothèques
+(`libraries()`), lecteurs (`users()`) et fournisseurs DDL (`ddlProviders()`) sont expirées par
+`settings.changed`, `library.*`, `users.changed` / `user.deleted` et `ddl.changed`.
 
 `revalidateTag` / `revalidatePath` / `updateTag` hors de `lib/cache` sont refusés par ESLint et par
 `tests/unit/lib/cache/guard.test.ts`. Une nouvelle écriture ajoute (ou réutilise) un événement et

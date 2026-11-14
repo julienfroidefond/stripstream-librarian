@@ -176,7 +176,10 @@ describe("MetadataRefreshChangesCard", () => {
       ],
     };
 
-    render(<MetadataRefreshChangesCard report={report} libraryId="lib-1" t={t} />);
+    // Only `field.title` is "known": other fields must fall back to their raw name.
+    const tField = ((key: string, params?: Record<string, string | number>) =>
+      key === "field.title" ? "Titre" : t(key as never, params)) as unknown as TranslateFunction;
+    render(<MetadataRefreshChangesCard report={report} libraryId="lib-1" t={tField} />);
 
     expect(screen.getByText("jobDetail.refreshChanges")).toBeInTheDocument();
     expect(screen.getAllByText("anilist").length).toBeGreaterThan(0);
@@ -186,7 +189,8 @@ describe("MetadataRefreshChangesCard", () => {
     expect(screen.getByText("New title")).toBeInTheDocument();
     expect(screen.getByText("action, drama")).toBeInTheDocument();
     expect(screen.getByText("seinen")).toBeInTheDocument();
-    expect(screen.getAllByText("field.title").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Titre").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^field\./)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Vol 1/ })).toHaveAttribute(
       "href",
       "/books/b1"

@@ -2,6 +2,7 @@
  * Utilisateurs, restrictions de genres et vue d'ensemble de lecture.
  */
 
+import { cacheTags } from "../cache/tags";
 import { apiFetch } from "./client";
 import type { ReadingStatus } from "./books";
 
@@ -15,7 +16,9 @@ export type UserDto = {
 };
 
 export async function fetchUsers(): Promise<UserDto[]> {
-  return apiFetch<UserDto[]>("/admin/users", { next: { revalidate: 60 } });
+  return apiFetch<UserDto[]>("/admin/users", {
+    next: { revalidate: 60, tags: [cacheTags.users()] },
+  });
 }
 
 export async function createUser(username: string): Promise<UserDto> {

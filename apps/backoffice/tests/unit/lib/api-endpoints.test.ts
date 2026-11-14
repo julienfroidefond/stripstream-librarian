@@ -86,7 +86,7 @@ describe("libraries", () => {
       url: "http://api:7080/libraries",
       method: "GET",
     });
-    expect(lastCall().init.next).toEqual({ revalidate: 30 });
+    expect(lastCall().init.next).toEqual({ revalidate: 30, tags: ["libraries"] });
   });
 
   it("creates a library", async () => {
@@ -373,7 +373,7 @@ describe("settings", () => {
       url: "http://api:7080/settings",
       method: "GET",
     });
-    expect(lastCall().init.next).toEqual({ revalidate: 60 });
+    expect(lastCall().init.next).toEqual({ revalidate: 60, tags: ["settings"] });
   });
 });
 

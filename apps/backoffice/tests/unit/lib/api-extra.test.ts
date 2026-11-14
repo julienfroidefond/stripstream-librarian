@@ -56,7 +56,6 @@ import {
   moveSeriesToReadingList,
   removeSeriesFromReadingList,
   reorderReadingListSeries,
-  saveTelegramMonitorSettings,
   searchMetadata,
   setMetadataLinkPrimary,
   startDownloadDetection,
@@ -464,14 +463,9 @@ describe("archive and reading overview", () => {
 });
 
 describe("telegram monitor", () => {
-  it("reads the status and saves the settings", async () => {
+  it("reads the status", async () => {
     await getTelegramMonitorStatus();
     expect(lastCall()).toMatchObject({ url: "/telegram-monitor/status", method: "GET" });
-
-    const settings = { api_id: 123, api_hash: "hash", phone: "+33" };
-    await saveTelegramMonitorSettings(settings);
-    expect(lastCall()).toMatchObject({ url: "/telegram-monitor/settings", method: "POST" });
-    expect(lastCall().body).toEqual(settings);
   });
 
   it("runs the auth lifecycle", async () => {

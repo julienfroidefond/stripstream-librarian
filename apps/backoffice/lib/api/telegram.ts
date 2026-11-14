@@ -93,17 +93,6 @@ export async function getTelegramMonitorStatus(
   );
 }
 
-export async function saveTelegramMonitorSettings(data: {
-  api_id: number;
-  api_hash: string;
-  phone: string;
-}): Promise<void> {
-  await apiFetch("/telegram-monitor/settings", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
 export async function startTelegramAuth(): Promise<void> {
   await apiFetch("/telegram-monitor/auth/start", { method: "POST" });
 }

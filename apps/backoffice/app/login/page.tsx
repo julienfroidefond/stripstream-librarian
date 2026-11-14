@@ -7,10 +7,11 @@ import { useState, Suspense } from "react";
 import { Magnetic } from "@/app/components/motion";
 import { browserApi } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
+import { safeRedirectPath } from "@/lib/auth/redirect";
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") || "/";
+  const from = safeRedirectPath(searchParams.get("from"));
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

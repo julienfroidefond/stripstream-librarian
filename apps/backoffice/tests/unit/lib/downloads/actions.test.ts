@@ -6,6 +6,7 @@ import {
   DOWNLOAD_TARGETS,
   DOWNLOAD_VERBS,
   IDLE_DOWNLOAD_ACTION_STATE,
+  isStaleReleaseError,
   needsConfirmation,
   supportsDownloadAction,
   type DownloadAction,
@@ -13,6 +14,7 @@ import {
   type DownloadActionStore,
 } from "@/lib/downloads/actions";
 import type { DdlProviderDownloadDto } from "@/lib/api/ddl-providers";
+import { ApiError } from "@/lib/api/errors";
 
 const api = vi.hoisted(() => ({
   torrentsRetry: vi.fn(async (_id: string): Promise<void> => {}),
@@ -25,6 +27,9 @@ const api = vi.hoisted(() => ({
   ddlDismissDownload: vi.fn(async (_id: string, _hard?: boolean): Promise<void> => {}),
   telegramDownloadBook: vi.fn(async (_id: string): Promise<void> => {}),
   telegramDeleteBook: vi.fn(async (_id: string, _hard?: boolean): Promise<void> => {}),
+  removeRelease: vi.fn(
+    async (_entry: string, _index: number, _blacklist?: boolean, _title?: string): Promise<void> => {},
+  ),
 }));
 
 vi.mock("@/lib/api/browser", () => ({
@@ -32,6 +37,7 @@ vi.mock("@/lib/api/browser", () => ({
     downloads: {
       torrents: { retry: api.torrentsRetry, remove: api.torrentsRemove },
       alldebrid: { restart: api.alldebridRestart },
+      available: { removeRelease: api.removeRelease },
     },
     ddl: {
       startDownload: api.ddlStartDownload,
@@ -179,6 +185,23 @@ describe("actionFor routing", () => {
 
     await routeFor("ddl", "delete").run("ddl-1");
     expect(api.ddlDismissDownload).toHaveBeenLastCalledWith("ddl-1", true);
+  });
+
+  it("removes an available release by index and expected title", async () => {
+    const release = { entryId: "entry-1", releaseIndex: 2, title: "Berserk T03.cbz" };
+
+    await routeFor("release", "delete").run("entry-1-2", { release });
+    expect(api.removeRelease).toHaveBeenLastCalledWith("entry-1", 2, false, "Berserk T03.cbz");
+
+    await routeFor("release", "dismiss").run("entry-1-2", { release });
+    expect(api.removeRelease).toHaveBeenLastCalledWith("entry-1", 2, true, "Berserk T03.cbz");
+  });
+
+  it("flags only a release 409 as a stale list", () => {
+    const conflict = new ApiError(409, "conflict", "release changed");
+    expect(isStaleReleaseError(conflict, action("release", "delete"))).toBe(true);
+    expect(isStaleReleaseError(conflict, action("torrent", "delete"))).toBe(false);
+    expect(isStaleReleaseError(new ApiError(500, "boom"), action("release", "delete"))).toBe(false);
   });
 
   it("routes Telegram retry, dismiss and delete", async () => {

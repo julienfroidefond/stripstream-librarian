@@ -55,36 +55,19 @@ describe("useTranslation", () => {
 });
 
 describe("setLocale", () => {
-  it("persists the locale in a cookie, saves it and reloads", async () => {
+  it("persists the locale in a cookie and reloads, without any API call", () => {
     const { result } = renderHook(() => useTranslation(), {
       wrapper: wrapperFor("en"),
     });
 
-    await act(async () => {
-      await result.current.setLocale("fr");
+    act(() => {
+      result.current.setLocale("fr");
     });
 
     expect(document.cookie).toContain("locale=fr");
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/settings$/);
-    expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ language: "fr" });
-    expect(window.location.reload).toHaveBeenCalledTimes(1);
-  });
-
-  it("still reloads when saving the locale fails", async () => {
-    fetchMock.mockRejectedValue(new Error("network down"));
-
-    const { result } = renderHook(() => useTranslation(), {
-      wrapper: wrapperFor("en"),
-    });
-
-    await act(async () => {
-      await result.current.setLocale("fr");
-    });
-
-    expect(document.cookie).toContain("locale=fr");
+    // No `app_settings` key stores the UI language: the old unauthenticated
+    // PATCH to a non-existent route is gone.
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(window.location.reload).toHaveBeenCalledTimes(1);
   });
 });

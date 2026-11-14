@@ -51,6 +51,43 @@ async function errorDetail(response: Response): Promise<string | undefined> {
   }
 }
 
+/** `/login?from=<current path>` for a session that expired mid-navigation. */
+export function loginRedirectUrl(pathname: string, search = ""): string {
+  if (pathname.startsWith("/login")) return "/login";
+  return `/login?from=${encodeURIComponent(`${pathname}${search}`)}`;
+}
+
+/**
+ * Navigation performed when the session has expired. A seam for tests (jsdom
+ * does not implement navigation).
+ */
+export const sessionExpiry = {
+  redirect(url: string): void {
+    if (typeof window !== "undefined") window.location.assign(url);
+  },
+};
+
+/**
+ * True when the proxy answered an API call with the login page: `fetch`
+ * followed the redirect to `/login` (expired session), or an `/api/` route
+ * served HTML instead of JSON.
+ */
+export function isLoginRedirect(path: string, response: Response): boolean {
+  if (response.redirected && typeof response.url === "string" && response.url) {
+    try {
+      if (new URL(response.url, "http://localhost").pathname.startsWith("/login")) return true;
+    } catch {
+      // Unparsable URL: fall through to the content-type check.
+    }
+  }
+  if (!path.startsWith("/api/")) return false;
+  const contentType =
+    response.headers && typeof response.headers.get === "function"
+      ? response.headers.get("content-type")
+      : null;
+  return !!contentType && contentType.includes("text/html");
+}
+
 function isBodyInit(body: unknown): body is BodyInit {
   if (typeof body === "string") return true;
   if (typeof FormData !== "undefined" && body instanceof FormData) return true;
@@ -93,6 +130,13 @@ export async function browserFetchRaw(
     cache: options.cache,
   });
 
+  if (isLoginRedirect(path, response)) {
+    if (typeof window !== "undefined") {
+      sessionExpiry.redirect(loginRedirectUrl(window.location.pathname, window.location.search));
+    }
+    throw new ApiError(401, "Session expired", "Session expired");
+  }
+
   if (response.ok === false || (typeof response.status === "number" && response.status >= 400)) {
     const detail = await errorDetail(response);
     throw new ApiError(
@@ -114,13 +158,22 @@ export async function browserFetch<T>(
   if (response.status === 204) return undefined as T;
 
   // A successful proxy may still have an empty body (e.g. a 200 with no
-  // payload). Decode errors from an empty body become `undefined`; malformed
-  // JSON is indistinguishable from an empty body with the web Response API.
+  // payload): that one becomes `undefined`. A non-empty body that is not JSON
+  // is an error, never silently dropped.
   if (typeof response.json !== "function") return undefined as T;
+  // Keep a copy to tell an empty body from malformed JSON (test stubs often
+  // omit `clone`).
+  const copy = typeof response.clone === "function" ? response.clone() : null;
   try {
     return (await response.json()) as T;
-  } catch {
-    return undefined as T;
+  } catch (error) {
+    const text = copy ? await copy.text().catch(() => "") : "";
+    if (copy && !text.trim()) return undefined as T;
+    throw new ApiError(
+      response.status,
+      `Invalid JSON response from ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Invalid JSON response",
+    );
   }
 }
 

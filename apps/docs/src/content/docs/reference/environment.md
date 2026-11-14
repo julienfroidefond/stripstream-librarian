@@ -13,7 +13,7 @@ Ces variables doivent être définies avant le premier démarrage. Stripstream r
 | `API_BOOTSTRAP_TOKEN` | Secret utilisé pour créer le premier accès admin (et par le backoffice pour appeler l'API) |
 | `ADMIN_USERNAME` | Nom d'utilisateur du compte administrateur (backoffice) |
 | `ADMIN_PASSWORD` | Mot de passe du compte administrateur (backoffice) |
-| `SESSION_SECRET` | Clé secrète pour les sessions du backoffice (minimum 32 caractères) |
+| `SESSION_SECRET` | Clé secrète pour les sessions du backoffice (minimum 32 caractères). Si elle est absente ou trop courte, le backoffice refuse toutes les connexions et toutes les requêtes. |
 
 :::note[Détails techniques]
 Exemples :

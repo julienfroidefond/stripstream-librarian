@@ -2,7 +2,7 @@
  * Enveloppe HTTP bas niveau vers l'API Rust (`apiFetch`, `config`).
  */
 
-import { getActiveUser } from "../auth/activeUser";
+import { clearActiveUser, getActiveUser, isStaleActiveUserError } from "../auth/activeUser";
 import { ApiError } from "./errors";
 
 export function config() {
@@ -63,19 +63,41 @@ export async function apiFetch<T>(
       ? { next: nextOptions }
       : { cache: "no-store" as const };
 
-  const res = await fetch(`${baseUrl}${path}`, {
+  let res = await fetch(`${baseUrl}${path}`, {
     ...restInit,
     headers,
     ...cacheOptions,
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new ApiError(
-      res.status,
-      `API ${path} failed (${res.status}): ${text}`,
-      upstreamErrorMessage(text),
-    );
+    let text = await res.text();
+    let detail = upstreamErrorMessage(text);
+
+    // Safety net: the selected reader no longer exists (deleted elsewhere).
+    // Drop the cookie and fall back to admin mode. The API rejects the header
+    // before running the handler, so a read can be replayed safely; a write is
+    // not replayed (it would run with admin semantics) and still fails.
+    if (activeUserId && isStaleActiveUserError(res.status, detail)) {
+      await clearActiveUser();
+      const method = (restInit.method ?? "GET").toUpperCase();
+      if (method === "GET" || method === "HEAD") {
+        const adminHeaders = new Headers(headers);
+        adminHeaders.delete("X-As-User");
+        res = await fetch(`${baseUrl}${path}`, {
+          ...restInit,
+          headers: adminHeaders,
+          ...(nextOptions ? { next: nextOptions } : { cache: "no-store" as const }),
+        });
+        if (!res.ok) {
+          text = await res.text();
+          detail = upstreamErrorMessage(text);
+        }
+      }
+    }
+
+    if (!res.ok) {
+      throw new ApiError(res.status, `API ${path} failed (${res.status}): ${text}`, detail);
+    }
   }
 
   if (res.status === 204) {

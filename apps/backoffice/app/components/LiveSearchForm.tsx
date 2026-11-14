@@ -168,6 +168,11 @@ export function LiveSearchForm({
 
   const buildUrl = useCallback((): string => {
     const params = new URLSearchParams(hiddenQuery);
+    // Keep the page size chosen in the pagination; a new filter always
+    // starts back on page 1 (no `page` param).
+    const currentLimit = new URLSearchParams(window.location.search).get("limit");
+    if (currentLimit && !params.has("limit")) params.set("limit", currentLimit);
+    params.delete("page");
     for (const [key, value] of Object.entries(valuesRef.current)) {
       const str = value.trim();
       if (str) params.set(key, str);

@@ -14,33 +14,53 @@ export type ReadingProgressDto = {
   last_read_at: string | null;
 };
 
-export type BookDto = {
+type VolumeType = "regular" | "hs" | "oneshot" | "integral";
+
+/** Fields shared by a list item and the detail of a book. */
+type BookBase = {
   id: string;
   library_id: string;
   kind: string;
-  format: string | null;
   title: string;
   author: string | null;
   authors: string[];
   series: string | null;
+  series_id: string | null;
   volume: number | null;
-  volume_type: "regular" | "hs" | "oneshot" | "integral";
+  volume_type: VolumeType;
   language: string | null;
   page_count: number | null;
-  file_path: string | null;
-  file_format: string | null;
-  file_parse_status: string | null;
+  thumbnail_url: string | null;
   file_size: number | null;
   updated_at: string;
   reading_status: ReadingStatus;
   reading_current_page: number | null;
   reading_last_read_at: string | null;
-  series_id: string | null;
   summary: string | null;
   isbn: string | null;
   publish_date: string | null;
+};
+
+/**
+ * A book in a list (`GET /books`, `BookItem` in `apps/api/src/books/mod.rs`).
+ * No file path/parse status nor locked fields: those are detail-only.
+ */
+export type BookItemDto = BookBase & {
+  /** Format of the current file (`cbz`, `cbr`, `pdf`, `epub`). */
+  format: string | null;
+};
+
+/** The detail of one book (`GET /books/{id}`, `BookDetails` in the API). */
+export type BookDetailsDto = BookBase & {
+  file_path: string | null;
+  /** Format of the current file; the detail has no `format` field. */
+  file_format: string | null;
+  file_parse_status: string | null;
   locked_fields?: Record<string, boolean>;
 };
+
+/** @deprecated Alias of {@link BookItemDto}; use `BookDetailsDto` for `/books/{id}`. */
+export type BookDto = BookItemDto;
 
 export type BooksPageDto = {
   items: BookDto[];
@@ -192,7 +212,7 @@ export type UpdateBookRequest = {
 };
 
 export async function updateBook(bookId: string, data: UpdateBookRequest) {
-  return apiFetch<BookDto>(`/books/${bookId}`, {
+  return apiFetch<BookDetailsDto>(`/books/${bookId}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });

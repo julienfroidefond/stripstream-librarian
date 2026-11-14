@@ -67,10 +67,21 @@ export const downloadsApi = {
 
   available: {
     /** Remove one release from a series' available downloads. */
-    removeRelease(seriesId: string, releaseIndex: number, blacklist = false): Promise<void> {
+    /**
+     * Remove release `releaseIndex` of an available entry. `title` is the title
+     * the caller expects at that index: the API answers `409` without changing
+     * anything when the list moved since it was read.
+     */
+    removeRelease(
+      seriesId: string,
+      releaseIndex: number,
+      blacklist = false,
+      title?: string
+    ): Promise<void> {
       return browserFetchVoid(
         withQuery(`/api/available-downloads/${encodeURIComponent(seriesId)}`, {
           release: releaseIndex,
+          title,
           blacklist: blacklist ? "true" : undefined,
         }),
         { method: "DELETE" }

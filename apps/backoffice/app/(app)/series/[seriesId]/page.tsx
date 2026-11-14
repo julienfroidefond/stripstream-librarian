@@ -17,6 +17,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
+import { translateSeriesStatus } from "@/lib/i18n/optional";
 
 export const dynamic = "force-dynamic";
 
@@ -140,7 +141,7 @@ export default async function SeriesDetailPage({
                 metadata.status === "cancelled" ? "bg-error/15 text-error" :
                 "bg-muted text-muted-foreground"
               }`}>
-                {t(`seriesStatus.${metadata.status}` as any) || metadata.status}
+                {translateSeriesStatus(t, metadata.status)}
               </span>
             )}
             {existingLink?.status === "approved" && (

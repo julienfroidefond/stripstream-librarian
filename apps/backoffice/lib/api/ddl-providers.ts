@@ -5,6 +5,7 @@
  * automatiquement dans la bibliothèque (même comportement que le moniteur Telegram).
  */
 
+import { cacheTags } from "../cache/tags";
 import { apiFetch } from "./client";
 
 export type DdlProviderDto = {
@@ -97,7 +98,9 @@ export async function fetchDdlProviders(
 ): Promise<DdlProviderDto[]> {
   return apiFetch<DdlProviderDto[]>(
     "/ddl-providers",
-    options?.revalidate ? { next: { revalidate: options.revalidate } } : undefined
+    options?.revalidate
+      ? { next: { revalidate: options.revalidate, tags: [cacheTags.ddlProviders()] } }
+      : undefined
   );
 }
 
@@ -157,7 +160,7 @@ export type DdlSearchSettingsDto = {
 /** Read the background DDL search cadence. */
 export async function fetchDdlSearchSettings(): Promise<DdlSearchSettingsDto> {
   return apiFetch<DdlSearchSettingsDto>("/ddl-providers/search-settings", {
-    next: { revalidate: 60 },
+    next: { revalidate: 60, tags: [cacheTags.ddlProviders()] },
   });
 }
 

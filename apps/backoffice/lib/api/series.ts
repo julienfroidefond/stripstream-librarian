@@ -284,15 +284,21 @@ export async function fetchAllGenres(): Promise<string[]> {
   return apiFetch<string[]>("/series/genres").catch(() => []);
 }
 
+/** Mirrors `UpdateSeriesRequest` in `apps/api/src/series/update.rs`. */
 export type UpdateSeriesRequest = {
   new_name: string;
   authors: string[];
+  genres?: string[];
+  /** Absent = keep the books' author; present (even null) = overwrite all books. */
   author?: string | null;
+  /** Absent = keep the books' language; present (even null) = overwrite all books. */
   language?: string | null;
   description: string | null;
   publishers: string[];
   start_year: number | null;
   total_volumes: number | null;
+  /** `ongoing`, `ended`, `hiatus`, `cancelled`, a mapped status, or null. */
+  status?: string | null;
   locked_fields?: Record<string, boolean>;
 };
 
