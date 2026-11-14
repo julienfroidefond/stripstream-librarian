@@ -8,6 +8,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::users::genre_restrictions::ensure_book_visible;
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Serialize, ToSchema)]
@@ -51,15 +52,8 @@ pub async fn get_reading_progress(
     let auth_user = user
         .ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?
         .0;
-    // Verify book exists
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    if !exists {
-        return Err(ApiError::not_found("book not found"));
-    }
+    // The book must exist and be visible to the reader (genre restrictions).
+    ensure_book_visible(&state.pool, Some(auth_user.user_id), id).await?;
 
     let row = sqlx::query(
         "SELECT status, current_page, last_read_at FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
@@ -136,15 +130,8 @@ pub async fn update_reading_progress(
         }
     }
 
-    // Verify book exists
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    if !exists {
-        return Err(ApiError::not_found("book not found"));
-    }
+    // The book must exist and be visible to the reader (genre restrictions).
+    ensure_book_visible(&state.pool, Some(auth_user.user_id), id).await?;
 
     // current_page is only stored for "reading" status
     let current_page = if body.status == "reading" {
@@ -293,11 +280,23 @@ pub async fn mark_series_read(
             .series
             .parse()
             .map_err(|_| ApiError::bad_request("invalid series id"))?;
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        let mut tx = state.pool.begin().await?;
+        let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(series_uuid)
             .bind(auth_user.user_id)
-            .execute(&state.pool)
-            .await?
+            .execute(&mut *tx)
+            .await?;
+        // "Unread" deletes the progress rows, which the differential AniList
+        // push (`brp.updated_at > synced_at`) can never see: force the next
+        // push of this series instead.
+        if body.status == "unread" && result.rows_affected() > 0 {
+            sqlx::query("UPDATE anilist_series_links SET synced_at = NULL WHERE series_id = $1")
+                .bind(series_uuid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        result
     };
 
     state.stats_cache.invalidate();
@@ -306,3 +305,7 @@ pub async fn mark_series_read(
         updated: result.rows_affected() as i64,
     }))
 }
+
+#[cfg(test)]
+#[path = "tests/progress.rs"]
+mod tests;

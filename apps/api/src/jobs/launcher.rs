@@ -20,8 +20,10 @@ use tracing::warn;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use stripstream_jobs::lifecycle::{job_in_flight, JobScope};
+
 use crate::error::ApiError;
-use crate::jobs::lifecycle::{fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::fail_job;
 
 /// Builds the failure notification from the library name and the error.
 pub(crate) type FailureEvent = fn(Option<String>, String) -> NotificationEvent;
@@ -169,22 +171,10 @@ where
     Fut: Future<Output = Result<(), String>> + Send + 'static,
     N: Fn(PgPool, NotificationEvent) + Send + 'static,
 {
-    let scope = library_id.map_or(JobScope::Global, JobScope::Library);
-    if let Some(existing) = job_in_flight(pool, scope, &spec.blocking_types()).await? {
-        return Ok(Launch::AlreadyRunning(existing));
-    }
-
-    let job_id = Uuid::new_v4();
-    // Inserted directly as `running` so the poller never claims it.
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) \
-         VALUES ($1, $2, $3, 'running', NOW())",
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(spec.job_type)
-    .execute(pool)
-    .await?;
+    let job_id = match insert_unless_in_flight(pool, library_id, spec).await? {
+        Launch::Started(id) => id,
+        running @ Launch::AlreadyRunning(_) => return Ok(running),
+    };
 
     let pool = pool.clone();
     let spec = *spec;
@@ -193,6 +183,49 @@ where
             report_failure_with(&pool, job_id, library_id, &spec, &error, notify).await;
         }
     });
+
+    Ok(Launch::Started(job_id))
+}
+
+/// Check-then-insert of a launch, atomically.
+///
+/// A transaction-scoped advisory lock per target (library, or the global
+/// scope) serializes concurrent launches, so two requests can never both see
+/// "nothing in flight" and insert twice. The job is inserted directly as
+/// `running` so the poller never claims it.
+async fn insert_unless_in_flight(
+    pool: &PgPool,
+    library_id: Option<Uuid>,
+    spec: &JobSpec,
+) -> Result<Launch, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtext('index_jobs_launch:' || COALESCE($1::text, 'global')))",
+    )
+    .bind(library_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let scope = match library_id {
+        Some(id) => JobScope::Library(id),
+        None => JobScope::Global,
+    };
+    let existing = job_in_flight(&mut *tx, scope, &spec.blocking_types()).await?;
+    if let Some(existing) = existing {
+        return Ok(Launch::AlreadyRunning(existing));
+    }
+
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status, started_at) \
+         VALUES ($1, $2, $3, 'running', NOW())",
+    )
+    .bind(job_id)
+    .bind(library_id)
+    .bind(spec.job_type)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
 
     Ok(Launch::Started(job_id))
 }

@@ -14,7 +14,7 @@ async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
 
 /// The list query used in list_index_jobs / get_active_jobs / cancel_job.
 const LIST_JOBS_SQL: &str =
-    "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1";
+    "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.current_file, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1";
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn job_with_library_has_library_name(pool: sqlx::PgPool) {
@@ -41,6 +41,32 @@ async fn job_with_library_has_library_name(pool: sqlx::PgPool) {
     assert_eq!(resp.library_name.as_deref(), Some("My Comics"));
     assert_eq!(resp.r#type, "scan");
     assert_eq!(resp.status, "pending");
+    assert_eq!(resp.current_file, None);
+}
+
+/// List responses carry the file being processed (jobs indicator / jobs list).
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn job_list_row_includes_current_file(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "Running").await;
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status, current_file) \
+         VALUES ($1, $2, 'scan', 'running', 'Series/T01.cbz')",
+    )
+    .bind(job_id)
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let row = sqlx::query(LIST_JOBS_SQL)
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let resp = crate::jobs::index_jobs::map_row(row);
+    assert_eq!(resp.current_file.as_deref(), Some("Series/T01.cbz"));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

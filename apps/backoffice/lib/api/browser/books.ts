@@ -1,13 +1,18 @@
 /** Browser-side book mutations and reading progress. */
 
-import type { BookDto, ReadingProgressDto, UpdateBookRequest } from "../books";
+import type { BookDetailsDto, ReadingProgressDto, UpdateBookRequest } from "../books";
 import { browserFetch, browserFetchVoid } from "./transport";
 
 export type { UpdateBookRequest } from "../books";
 
 export const booksApi = {
-  update(bookId: string, body: UpdateBookRequest): Promise<BookDto> {
-    return browserFetch<BookDto>(`/api/books/${encodeURIComponent(bookId)}`, {
+  /** Full detail of one book (ISBN, locked fields, file info). */
+  detail(bookId: string): Promise<BookDetailsDto> {
+    return browserFetch<BookDetailsDto>(`/api/books/${encodeURIComponent(bookId)}`);
+  },
+
+  update(bookId: string, body: UpdateBookRequest): Promise<BookDetailsDto> {
+    return browserFetch<BookDetailsDto>(`/api/books/${encodeURIComponent(bookId)}`, {
       method: "PATCH",
       body,
     });

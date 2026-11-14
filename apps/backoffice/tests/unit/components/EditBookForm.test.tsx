@@ -9,15 +9,14 @@ vi.mock("next/navigation", () => ({
 
 import { EditBookForm } from "@/app/components/EditBookForm";
 import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
-import type { BookDto } from "@/lib/api";
+import type { BookDetailsDto, BookItemDto } from "@/lib/api";
 import { METADATA_FIELDS_CATALOG } from "../fixtures/metadataFields";
 
-function makeBook(overrides: Partial<BookDto> = {}): BookDto {
+function makeBook(overrides: Partial<BookDetailsDto> = {}): BookDetailsDto {
   return {
     id: "b1",
     library_id: "l1",
     kind: "cbz",
-    format: "cbz",
     title: "Berserk vol. 1",
     author: "Kentaro Miura",
     authors: ["Kentaro Miura"],
@@ -26,6 +25,7 @@ function makeBook(overrides: Partial<BookDto> = {}): BookDto {
     volume_type: "regular",
     language: "fr",
     page_count: 200,
+    thumbnail_url: null,
     file_path: null,
     file_format: null,
     file_parse_status: null,
@@ -224,5 +224,84 @@ describe("EditBookForm", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByTestId("modal-panel")).toBeNull();
+  });
+
+  it("loads the detail of a list item before saving, keeping its ISBN and locks", async () => {
+    const detail = makeBook({ isbn: "978-detail", locked_fields: { language: true } });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/books/b1" && (!init?.method || init.method === "GET")) {
+        return { ok: true, status: 200, json: async () => detail };
+      }
+      return { ok: true, status: 200, json: async () => detail };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // A `BookItem` from GET /books: no locked fields (and a possibly stale ISBN).
+    const { file_path: _p, file_format: _f, file_parse_status: _s, locked_fields: _l, ...base } = makeBook();
+    const listItem: BookItemDto = { ...base, isbn: null, format: "cbz" };
+    render(
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={listItem} />
+      </MetadataFieldsProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /editBook\.editMetadata/ }));
+
+    await waitFor(() => expect(screen.getByPlaceholderText("ISBN")).toHaveValue("978-detail"));
+    fireEvent.submit(screen.getByPlaceholderText("editBook.titlePlaceholder").closest("form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/books/b1", expect.objectContaining({ method: "PATCH" })),
+    );
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+    const body = JSON.parse(patch[1]!.body as string);
+    expect(body.isbn).toBe("978-detail");
+    expect(body.locked_fields).toEqual({ language: true });
+  });
+  it("reopens with the refreshed detail prop, not the values of the first open", () => {
+    stubFetch();
+    const { rerender } = render(
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={makeBook({ title: "Old title" })} />
+      </MetadataFieldsProvider>,
+    );
+    const trigger = () => screen.getByRole("button", { name: /editBook\.editMetadata/ });
+    fireEvent.click(trigger());
+    expect(screen.getByPlaceholderText("editBook.titlePlaceholder")).toHaveValue("Old title");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    // e.g. `router.refresh()` after a save, or a metadata refresh elsewhere.
+    rerender(
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={makeBook({ title: "New title" })} />
+      </MetadataFieldsProvider>,
+    );
+    fireEvent.click(trigger());
+    expect(screen.getByPlaceholderText("editBook.titlePlaceholder")).toHaveValue("New title");
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(trigger());
+    expect(screen.getByPlaceholderText("editBook.titlePlaceholder")).toHaveValue("New title");
+  });
+
+  it("refetches the detail of a list item on every open", async () => {
+    let current = makeBook({ isbn: "978-first" });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => current }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { file_path: _p, file_format: _f, file_parse_status: _s, locked_fields: _l, ...base } = makeBook();
+    const listItem: BookItemDto = { ...base, isbn: null, format: "cbz" };
+    render(
+      <MetadataFieldsProvider catalog={METADATA_FIELDS_CATALOG}>
+        <EditBookForm book={listItem} />
+      </MetadataFieldsProvider>,
+    );
+    const trigger = () => screen.getByRole("button", { name: /editBook\.editMetadata/ });
+
+    fireEvent.click(trigger());
+    await waitFor(() => expect(screen.getByPlaceholderText("ISBN")).toHaveValue("978-first"));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    current = makeBook({ isbn: "978-second" });
+    fireEvent.click(trigger());
+    await waitFor(() => expect(screen.getByPlaceholderText("ISBN")).toHaveValue("978-second"));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

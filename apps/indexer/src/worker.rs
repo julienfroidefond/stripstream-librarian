@@ -9,7 +9,7 @@ use stripstream_core::coverage::SeriesCoverage;
 use stripstream_jobs::{claim_next, fail_job, JobCategory, JobOwner, JobStatus};
 
 use crate::job::{self, RunError};
-use crate::{scheduler, watcher, AppState};
+use crate::{lease, scheduler, watcher, AppState};
 
 pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
@@ -18,6 +18,18 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
     if let Err(err) = job::cleanup_stale_jobs(&state.pool).await {
         error!("[CLEANUP] Failed to cleanup stale jobs: {}", err);
     }
+
+    // Periodic sweep of jobs whose process died (not only at startup): a job
+    // interrupted on another instance, or right after it started, is reaped too.
+    let sweep_pool = state.pool.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(lease::SWEEP_INTERVAL).await;
+            if let Err(err) = job::sweep_orphaned_jobs(&sweep_pool).await {
+                error!("[CLEANUP] Failed to sweep orphaned jobs: {}", err);
+            }
+        }
+    });
 
     // Start file watcher task
     let watcher_state = state.clone();
@@ -286,6 +298,18 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             Ok(Some(claimed)) => {
                 let (job_id, library_id) = (claimed.id, claimed.library_id);
                 info!("[INDEXER] Starting job {} library={:?}", job_id, library_id);
+                // Held for the whole run: tells the orphan sweep (of any instance) that
+                // this job is alive. Released when the run ends (or on drop).
+                let job_lease = match lease::JobLease::acquire(&state.pool, job_id).await {
+                    Ok(lease) => lease,
+                    Err(err) => {
+                        let message = format!("Failed to register the job lease: {err}");
+                        error!("[INDEXER] Job {}: {}", job_id, message);
+                        let _ = fail_job(&state.pool, job_id, &message, None).await;
+                        tokio::time::sleep(wait).await;
+                        continue;
+                    }
+                };
                 let started_at = std::time::Instant::now();
                 let info = load_job_info(&state.pool, job_id, library_id).await;
 
@@ -324,6 +348,8 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                         }
                     },
                 };
+                // The terminal status is written: the job no longer needs its lease.
+                job_lease.release().await;
 
                 if let Some(error) = failure {
                     notifications::notify(

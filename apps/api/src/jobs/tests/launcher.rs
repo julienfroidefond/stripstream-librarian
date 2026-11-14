@@ -380,3 +380,37 @@ fn blocking_types_include_the_job_type_and_its_conflicts() {
         vec!["metadata_batch_rematch", "metadata_batch"]
     );
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn concurrent_launches_start_a_single_job(pool: PgPool) {
+    let library = create_library(&pool, "race").await;
+
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let pool = pool.clone();
+        handles.push(tokio::spawn(async move {
+            launch_with(
+                &pool,
+                Some(library),
+                &SPEC,
+                |_pool, _job_id| async {
+                    // Keep the job in flight for the whole test.
+                    std::future::pending::<()>().await;
+                    Ok(())
+                },
+                no_notifier,
+            )
+            .await
+            .unwrap()
+        }));
+    }
+
+    let mut started = 0;
+    for handle in handles {
+        if matches!(handle.await.unwrap(), Launch::Started(_)) {
+            started += 1;
+        }
+    }
+    assert_eq!(started, 1, "exactly one launch must win");
+    assert_eq!(job_count(&pool).await, 1);
+}

@@ -24,4 +24,12 @@ export const cacheTags = {
   readingLists: () => "reading-lists",
   /** Dashboard statistics. */
   stats: () => "stats",
+  /** `app_settings` reads (snapshot and individual keys). */
+  settings: () => "settings",
+  /** Library list. */
+  libraries: () => "libraries",
+  /** Reader (user) list. */
+  users: () => "users",
+  /** DDL providers and their background search settings. */
+  ddlProviders: () => "ddl-providers",
 } as const;

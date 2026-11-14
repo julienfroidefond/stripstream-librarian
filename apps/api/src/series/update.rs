@@ -285,34 +285,42 @@ pub(crate) async fn prune_series_if_empty(
     pool: &sqlx::PgPool,
     series_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let has_books =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1)")
-            .bind(series_id)
-            .fetch_one(pool)
-            .await?;
-    if has_books {
+    let mut tx = pool.begin().await?;
+
+    // Lock the series row: inserting or moving a book into it takes a
+    // `FOR KEY SHARE` lock on the referenced row, so no book can appear
+    // between the emptiness check and the delete.
+    let locked: Option<Uuid> = sqlx::query_scalar("SELECT id FROM series WHERE id = $1 FOR UPDATE")
+        .bind(series_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if locked.is_none() {
         return Ok(false);
     }
 
-    let protected = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM external_metadata_links WHERE series_id = $1)
-             OR EXISTS(SELECT 1 FROM available_downloads WHERE series_id = $1)",
+    let prunable = sqlx::query_scalar::<_, bool>(
+        "SELECT NOT EXISTS(SELECT 1 FROM books WHERE series_id = $1)
+            AND NOT EXISTS(SELECT 1 FROM external_metadata_links WHERE series_id = $1)
+            AND NOT EXISTS(SELECT 1 FROM available_downloads WHERE series_id = $1)",
     )
     .bind(series_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
-    if protected {
+    if !prunable {
         return Ok(false);
     }
 
-    let mut conn = pool.acquire().await?;
-    archive_series_row(&mut conn, series_id).await?;
+    archive_series_row(&mut tx, series_id).await?;
 
-    let deleted = sqlx::query_scalar::<_, Uuid>("DELETE FROM series WHERE id = $1 RETURNING id")
-        .bind(series_id)
-        .fetch_optional(&mut *conn)
-        .await?;
+    let deleted = sqlx::query_scalar::<_, Uuid>(
+        "DELETE FROM series WHERE id = $1 \
+         AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = $1) RETURNING id",
+    )
+    .bind(series_id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
+    tx.commit().await?;
     Ok(deleted.is_some())
 }
 
@@ -338,37 +346,131 @@ pub async fn delete_series(
     _user: Option<Extension<AuthUser>>,
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
-    let mut conn = state.pool.acquire().await?;
-    delete_series_core(&mut conn, &state.library_root, library_id, series_id, true).await?;
+    // Every DB write is atomic; files are only removed once the commit
+    // succeeded, so a failed deletion never leaves rows pointing at lost files.
+    let mut tx = state.pool.begin().await?;
+    let cleanup =
+        delete_series_core(&mut tx, &state.library_root, library_id, series_id, true).await?;
+    tx.commit().await?;
+    cleanup.run(&state.pool, library_id).await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }
 
-/// Deletes a series row, its books and (optionally) their files.
+/// Files left on disk by [`delete_series_core`], to remove after COMMIT.
+#[derive(Debug, Default)]
+pub(crate) struct SeriesFileCleanup {
+    series_name: String,
+    series_id: Uuid,
+    /// Physical book files.
+    files: Vec<String>,
+    /// Thumbnail files.
+    thumbnails: Vec<String>,
+    /// Series directory derived from a real book path (never from the name).
+    series_dir: Option<String>,
+    /// A book path could not be resolved inside the library root.
+    invalid_paths: bool,
+}
+
+impl SeriesFileCleanup {
+    /// Remove the files of a committed series deletion. When a file cannot be
+    /// removed (or a path was invalid) a scan is queued to reconcile the index
+    /// with the disk — the only case where a series deletion needs a scan.
+    pub(crate) async fn run(self, pool: &sqlx::PgPool, library_id: Uuid) -> Result<(), ApiError> {
+        let Self {
+            series_name,
+            series_id,
+            files,
+            thumbnails,
+            series_dir,
+            invalid_paths,
+        } = self;
+
+        let deletion_failed = tokio::task::spawn_blocking(move || {
+            let mut failed = invalid_paths;
+            for physical in &files {
+                match std::fs::remove_file(physical) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        failed = true;
+                        tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
+                    }
+                }
+            }
+            for thumb in &thumbnails {
+                let _ = std::fs::remove_file(thumb);
+            }
+            if let Some(ref dir) = series_dir {
+                if std::path::Path::new(dir).exists() {
+                    // Non-recursive: shared folders like Oneshots/ are preserved
+                    // when they still contain other books.
+                    match std::fs::remove_dir(dir) {
+                        Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
+                        Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                            tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
+                        }
+                        Err(e) => tracing::warn!(
+                            "[SERIES] Failed to delete series directory {}: {}",
+                            dir,
+                            e
+                        ),
+                    }
+                }
+            }
+            failed
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("file cleanup task failed: {e}")))?;
+
+        if deletion_failed {
+            let scan_job_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
+            )
+            .bind(scan_job_id)
+            .bind(library_id)
+            .execute(pool)
+            .await?;
+
+            tracing::warn!(
+                "[SERIES] Some files could not be deleted for series '{}' ({}), queued scan job {} to reconcile",
+                series_name,
+                series_id,
+                scan_job_id
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Deletes a series row and its books from the database (archiving them
+/// first) and returns the files to remove once the caller has committed.
 ///
-/// Shared by the generic series endpoint and the orphan-only endpoint, which
-/// runs it inside a transaction after re-checking that the series still has no
-/// book. `delete_files` must be `false` for the orphan path: a series without
-/// books has no directory of its own, and deriving one from the library root
-/// plus the series name would let a crafted name escape the root.
+/// Callers run it inside a transaction and only call
+/// [`SeriesFileCleanup::run`] after a successful COMMIT, so a failed deletion
+/// never loses files. `delete_files` must be `false` for the orphan path: a
+/// series without books has no directory of its own, and deriving one from the
+/// library root plus the series name would let a crafted name escape the root.
 ///
-/// Even when `delete_files` is `true`, the filesystem phase is skipped when the
-/// series has no book: there is nothing to delete, and the derived directory
-/// would be a guess.
+/// Even when `delete_files` is `true`, nothing is planned when the series has
+/// no book: there is nothing to delete, and the derived directory would be a
+/// guess.
 pub(crate) async fn delete_series_core(
     conn: &mut sqlx::PgConnection,
     library_root: &stripstream_core::paths::LibraryRoot,
     library_id: Uuid,
     series_id: Uuid,
     delete_files: bool,
-) -> Result<(), ApiError> {
-    // Verify the series exists
-    let series_row = sqlx::query("SELECT name FROM series WHERE id = $1 AND library_id = $2")
-        .bind(series_id)
-        .bind(library_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| ApiError::not_found("series not found"))?;
+) -> Result<SeriesFileCleanup, ApiError> {
+    // Verify the series exists (and lock it for the rest of the transaction)
+    let series_row =
+        sqlx::query("SELECT name FROM series WHERE id = $1 AND library_id = $2 FOR UPDATE")
+            .bind(series_id)
+            .bind(library_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| ApiError::not_found("series not found"))?;
     let series_name: String = series_row.get("name");
 
     // Find all books in this series
@@ -382,18 +484,15 @@ pub(crate) async fn delete_series_core(
     .fetch_all(&mut *conn)
     .await?;
 
-    // Track physical deletion failures so we can fall back to a scan (which
-    // reconciles disk and DB) only in that exceptional case.
-    let mut deletion_failed = false;
+    let mut cleanup = SeriesFileCleanup {
+        series_name: series_name.clone(),
+        series_id,
+        ..Default::default()
+    };
 
     // The orphan path has no books, hence no series directory: never derive one
     // from the library root plus the (torrent/provider supplied) series name.
     if delete_files && !book_rows.is_empty() {
-        // Collect the series directory from a real book path. Never guess it
-        // from the series name: `..` or `/` in a name could escape the library.
-        let mut series_dir: Option<String> = None;
-
-        // Delete each book's physical file and thumbnail
         for row in &book_rows {
             let abs_path: Option<String> = row.get("abs_path");
             let thumbnail_path: Option<String> = row.get("thumbnail_path");
@@ -402,26 +501,17 @@ pub(crate) async fn delete_series_core(
                 match library_root.resolve(path) {
                     Ok(resolved) => {
                         let physical = resolved.to_local().to_string();
-                        if series_dir.is_none() {
+                        // Collect the series directory from a real book path. Never
+                        // guess it from the series name: `..` or `/` could escape.
+                        if cleanup.series_dir.is_none() {
                             if let Some(parent) = std::path::Path::new(&physical).parent() {
-                                series_dir = Some(parent.to_string_lossy().into_owned());
+                                cleanup.series_dir = Some(parent.to_string_lossy().into_owned());
                             }
                         }
-                        match std::fs::remove_file(&physical) {
-                            Ok(()) => {}
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                            Err(e) => {
-                                deletion_failed = true;
-                                tracing::warn!(
-                                    "[SERIES] Failed to delete file {}: {}",
-                                    physical,
-                                    e
-                                );
-                            }
-                        }
+                        cleanup.files.push(physical);
                     }
                     Err(err) => {
-                        deletion_failed = true;
+                        cleanup.invalid_paths = true;
                         tracing::warn!(
                             "[SERIES] Skipping file with invalid library path {}: {}",
                             path,
@@ -431,25 +521,8 @@ pub(crate) async fn delete_series_core(
                 }
             }
 
-            if let Some(ref path) = thumbnail_path {
-                let _ = std::fs::remove_file(path);
-            }
-        }
-
-        if let Some(ref dir) = series_dir {
-            let dir_path = std::path::Path::new(dir);
-            if dir_path.exists() {
-                // Use remove_dir (non-recursive) so shared folders like Oneshots/ are preserved
-                // when they still contain other books after deletion.
-                match std::fs::remove_dir(dir) {
-                    Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
-                    Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
-                        tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
-                    }
-                    Err(e) => {
-                        tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e)
-                    }
-                }
+            if let Some(path) = thumbnail_path {
+                cleanup.thumbnails.push(path);
             }
         }
     }
@@ -528,27 +601,6 @@ pub(crate) async fn delete_series_core(
         .execute(&mut *conn)
         .await?;
 
-    // A file could not be removed: the DB rows are gone but the file remains, so
-    // queue a scan to reconcile the index with the disk. This is the only case
-    // where a series deletion still needs a library scan.
-    if deletion_failed {
-        let scan_job_id = Uuid::new_v4();
-        sqlx::query(
-            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
-        )
-        .bind(scan_job_id)
-        .bind(library_id)
-        .execute(&mut *conn)
-        .await?;
-
-        tracing::warn!(
-            "[SERIES] Some files could not be deleted for series '{}' ({}), queued scan job {} to reconcile",
-            series_name,
-            series_id,
-            scan_job_id
-        );
-    }
-
     tracing::info!(
         "[SERIES] Deleted series '{}' ({}) ({} books) from library {}",
         series_name,
@@ -557,7 +609,7 @@ pub(crate) async fn delete_series_core(
         library_id
     );
 
-    Ok(())
+    Ok(cleanup)
 }
 
 /// Delete a series by its UUID (resolves library_id internally)

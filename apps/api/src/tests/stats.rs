@@ -1287,6 +1287,43 @@ async fn get_series_user_activity_ignores_unread_only_rows(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_excludes_hs_by_series_rule(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let hs_reader = create_user(&pool, "hs_reader").await;
+    let mixed = create_user(&pool, "mixed").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+    let _b2 = create_simple_book(&pool, library, Some(series), "B2", 10).await;
+    let hs = create_simple_book(&pool, library, Some(series), "HS", 10).await;
+    sqlx::query("UPDATE books SET volume_type = 'hs' WHERE id = $1")
+        .bind(hs)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Only read the hors-série: the series has regular books, so it does not count.
+    set_progress(&pool, hs, hs_reader, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, hs, mixed, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b1, mixed, "read", None, Some(Utc::now())).await;
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    let hs_row = rows.iter().find(|r| r.user_id == hs_reader).unwrap();
+    assert_eq!(hs_row.books_total, 2);
+    assert_eq!(
+        hs_row.books_read, 0,
+        "HS must not count against regular total"
+    );
+    let mixed_row = rows.iter().find(|r| r.user_id == mixed).unwrap();
+    assert_eq!(mixed_row.books_read, 1);
+    assert_eq!(mixed_row.books_total, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_series_user_activity_empty_without_readers_or_ratings(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;

@@ -2,6 +2,7 @@
  * Paramètres applicatifs, cache, mappings de statuts.
  */
 
+import { cacheTags } from "../cache/tags";
 import { apiFetch } from "./client";
 
 export type Settings = {
@@ -96,7 +97,7 @@ export async function getSettings() {
  */
 export async function fetchSettingsSnapshot(): Promise<Record<string, unknown>> {
   return apiFetch<Record<string, unknown>>("/settings", {
-    next: { revalidate: 60 },
+    next: { revalidate: 60, tags: [cacheTags.settings()] },
   });
 }
 

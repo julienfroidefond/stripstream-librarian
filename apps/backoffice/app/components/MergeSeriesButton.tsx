@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Icon, Modal } from "./ui";
-import { browserApi } from "@/lib/api/browser";
+import { Button, Icon, Modal, toast } from "./ui";
+import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 
 type SeriesResult = {
@@ -68,11 +68,20 @@ export function MergeSeriesButton({
     if (!selected) return;
     setMerging(true);
     try {
-      await browserApi.series.merge(seriesId, selected.series_id);
-      setIsOpen(false);
+      const result = await browserApi.series.merge(seriesId, selected.series_id);
+      toast(
+        t("seriesDetail.mergeSuccess", {
+          books: result.books_moved,
+          metadata: result.metadata_moved,
+          downloads: result.downloads_moved,
+        }),
+        "success",
+      );
+      // Close only once the merge succeeded; a failure keeps the selection.
+      handleClose();
       router.refresh();
-    } catch {
-      // error
+    } catch (error) {
+      toast(browserErrorMessage(error, t("seriesDetail.mergeError")), "error");
     } finally {
       setMerging(false);
     }

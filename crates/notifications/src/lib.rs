@@ -385,13 +385,13 @@ fn format_event(event: &NotificationEvent) -> String {
             stats,
             duration_seconds,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let duration = format_duration(*duration_seconds);
             let mut lines = vec![
                 "✅ <b>Scan completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("🏷 <b>Type:</b> {}", esc(job_type)),
                 format!("⏱ <b>Duration:</b> {duration}"),
                 String::new(),
                 "📊 <b>Results</b>".to_string(),
@@ -407,14 +407,14 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("🆕 <b>Series added</b>".to_string());
                 for name in &stats.new_series_names {
-                    lines.push(format!("  • {name}"));
+                    lines.push(format!("  • {}", esc(name)));
                 }
             }
             if !stats.new_book_titles.is_empty() {
                 lines.push(String::new());
                 lines.push("📚 <b>Books added</b>".to_string());
                 for title in &stats.new_book_titles {
-                    lines.push(format!("  • {title}"));
+                    lines.push(format!("  • {}", esc(title)));
                 }
             }
             lines.join("\n")
@@ -424,13 +424,13 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Scan failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("🏷 <b>Type:</b> {}", esc(job_type)),
                 String::new(),
                 format!("💬 <code>{err}</code>"),
             ]
@@ -440,12 +440,12 @@ fn format_event(event: &NotificationEvent) -> String {
             job_type,
             library_name,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             [
                 "⏹ <b>Scan cancelled</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("🏷 <b>Type:</b> {}", esc(job_type)),
             ]
             .join("\n")
         }
@@ -455,12 +455,12 @@ fn format_event(event: &NotificationEvent) -> String {
             book_titles,
             ..
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let mut lines = vec![
                 "📚 <b>Nouveaux livres détectés</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Bibliothèque:</b> {lib}"),
-                format!("📚 <b>Série:</b> {}", truncate(series_name, 60)),
+                format!("📚 <b>Série:</b> {}", esc_trunc(series_name, 60)),
                 format!(
                     "📥 <b>{}</b> nouveau{} livre{}",
                     book_titles.len(),
@@ -472,7 +472,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("📖 <b>Livres ajoutés :</b>".to_string());
                 for title in book_titles.iter().take(15) {
-                    lines.push(format!("  • {}", truncate(title, 80)));
+                    lines.push(format!("  • {}", esc_trunc(title, 80)));
                 }
                 if book_titles.len() > 15 {
                     lines.push(format!("  … et {} de plus", book_titles.len() - 15));
@@ -485,13 +485,13 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             duration_seconds,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let duration = format_duration(*duration_seconds);
             [
                 "✅ <b>Thumbnails completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("🏷 <b>Type:</b> {}", esc(job_type)),
                 format!("⏱ <b>Duration:</b> {duration}"),
             ]
             .join("\n")
@@ -501,13 +501,13 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Thumbnails failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("🏷 <b>Type:</b> {}", esc(job_type)),
                 String::new(),
                 format!("💬 <code>{err}</code>"),
             ]
@@ -518,8 +518,8 @@ fn format_event(event: &NotificationEvent) -> String {
             book_title,
             ..
         } => {
-            let lib = library_name.as_deref().unwrap_or("Unknown");
-            let title = book_title.as_deref().unwrap_or("Unknown");
+            let lib = esc(library_name.as_deref().unwrap_or("Unknown"));
+            let title = esc(book_title.as_deref().unwrap_or("Unknown"));
             [
                 "✅ <b>CBR → CBZ conversion completed</b>".to_string(),
                 String::new(),
@@ -534,9 +534,9 @@ fn format_event(event: &NotificationEvent) -> String {
             error,
             ..
         } => {
-            let lib = library_name.as_deref().unwrap_or("Unknown");
-            let title = book_title.as_deref().unwrap_or("Unknown");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("Unknown"));
+            let title = esc(book_title.as_deref().unwrap_or("Unknown"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>CBR → CBZ conversion failed</b>".to_string(),
                 String::new(),
@@ -558,11 +558,14 @@ fn format_event(event: &NotificationEvent) -> String {
             let mut lines = vec![
                 "✅ <b>Metadata linked</b>".to_string(),
                 String::new(),
-                format!("📚 <b>Series:</b> {series_name}"),
-                format!("🔗 <b>Provider:</b> {provider}"),
+                format!("📚 <b>Series:</b> {}", esc(series_name)),
+                format!("🔗 <b>Provider:</b> {}", esc(provider)),
             ];
             if !fields_updated.is_empty() {
-                lines.push(format!("📝 <b>Fields:</b> {}", fields_updated.join(", ")));
+                lines.push(format!(
+                    "📝 <b>Fields:</b> {}",
+                    esc(&fields_updated.join(", "))
+                ));
             }
             if *books_matched > 0 || *books_updated > 0 {
                 lines.push(format!(
@@ -584,7 +587,7 @@ fn format_event(event: &NotificationEvent) -> String {
             errors,
             new_matches,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let title = if *errors > 0 {
                 "⚠️ <b>Metadata batch partially completed</b>"
             } else {
@@ -603,7 +606,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("🆕 <b>New matches:</b>".to_string());
                 for name in new_matches.iter().take(10) {
-                    lines.push(format!("  • {}", truncate(name, 60)));
+                    lines.push(format!("  • {}", esc_trunc(name, 60)));
                 }
                 if new_matches.len() > 10 {
                     lines.push(format!("  … and {} more", new_matches.len() - 10));
@@ -638,8 +641,8 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Metadata batch failed</b>".to_string(),
                 String::new(),
@@ -659,7 +662,7 @@ fn format_event(event: &NotificationEvent) -> String {
             details,
             error_details,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let title = if *errors > 0 {
                 "⚠️ <b>Metadata refresh partially completed</b>"
             } else {
@@ -677,11 +680,11 @@ fn format_event(event: &NotificationEvent) -> String {
             if *errors > 0 {
                 lines.push(format!("❌ Errors: <b>{errors}</b>"));
                 for error in error_details.iter().take(5) {
-                    lines.push(format!("⚠️ {}", escape_html(&truncate(error, 240))));
+                    lines.push(format!("⚠️ {}", esc_trunc(error, 240)));
                 }
             }
             for detail in details.iter().take(5) {
-                lines.push(format!("📖 {}", escape_html(detail)));
+                lines.push(format!("📖 {}", esc(detail)));
             }
             lines.join("\n")
         }
@@ -689,8 +692,8 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Metadata refresh failed</b>".to_string(),
                 String::new(),
@@ -710,7 +713,7 @@ fn format_event(event: &NotificationEvent) -> String {
             errors,
             linked_series_names,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let title = if *errors > 0 {
                 "⚠️ <b>Reading status match partially completed</b>"
             } else {
@@ -738,7 +741,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("🆕 <b>Series linked</b>".to_string());
                 for name in linked_series_names.iter().take(10) {
-                    lines.push(format!("  • {}", truncate(name, 60)));
+                    lines.push(format!("  • {}", esc_trunc(name, 60)));
                 }
                 if linked_series_names.len() > 10 {
                     lines.push(format!("  … and {} more", linked_series_names.len() - 10));
@@ -750,8 +753,8 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Reading status match failed</b>".to_string(),
                 String::new(),
@@ -770,7 +773,7 @@ fn format_event(event: &NotificationEvent) -> String {
             errors,
             pushed_series_names,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let title = if *errors > 0 {
                 "⚠️ <b>Reading status push partially completed</b>"
             } else {
@@ -795,7 +798,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("🆕 <b>Series pushed</b>".to_string());
                 for name in pushed_series_names.iter().take(10) {
-                    lines.push(format!("  • {}", truncate(name, 60)));
+                    lines.push(format!("  • {}", esc_trunc(name, 60)));
                 }
                 if pushed_series_names.len() > 10 {
                     lines.push(format!("  … and {} more", pushed_series_names.len() - 10));
@@ -807,8 +810,8 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Reading status push failed</b>".to_string(),
                 String::new(),
@@ -829,7 +832,7 @@ fn format_event(event: &NotificationEvent) -> String {
             errors,
             new_items,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let mut lines = vec![
                 "✅ <b>Download detection completed</b>".to_string(),
                 String::new(),
@@ -845,8 +848,8 @@ fn format_event(event: &NotificationEvent) -> String {
                 for (series, title) in new_items.iter().take(10) {
                     lines.push(format!(
                         "  • <b>{}</b> — {}",
-                        truncate(series, 40),
-                        truncate(title, 60)
+                        esc_trunc(series, 40),
+                        esc_trunc(title, 60)
                     ));
                 }
                 if new_items.len() > 10 {
@@ -871,8 +874,8 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Download detection failed</b>".to_string(),
                 String::new(),
@@ -891,12 +894,12 @@ fn format_event(event: &NotificationEvent) -> String {
             new_releases,
             new_items,
         } => {
-            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let lib = esc(library_name.as_deref().unwrap_or("All libraries"));
             let mut lines = vec![
                 "⚠️ <b>Download detection partially failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("🏷 <b>Job:</b> {job_type}"),
+                format!("🏷 <b>Job:</b> {}", esc(job_type)),
                 format!("📥 Found: <b>{found}</b>"),
                 format!("❌ <b>Errors:</b> {errors}"),
             ];
@@ -909,8 +912,8 @@ fn format_event(event: &NotificationEvent) -> String {
                 for (series, title) in new_items.iter().take(10) {
                     lines.push(format!(
                         "  • <b>{}</b> — {}",
-                        truncate(series, 40),
-                        truncate(title, 60)
+                        esc_trunc(series, 40),
+                        esc_trunc(title, 60)
                     ));
                 }
                 if new_items.len() > 10 {
@@ -922,7 +925,7 @@ fn format_event(event: &NotificationEvent) -> String {
                     "🔌 <b>Failed indexers:</b> {}",
                     failed_indexers
                         .iter()
-                        .map(|name| truncate(name, 40))
+                        .map(|name| esc_trunc(name, 40))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));
@@ -935,12 +938,15 @@ fn format_event(event: &NotificationEvent) -> String {
             imported_count,
             volumes,
         } => {
-            let lib = library_name.as_deref().unwrap_or("Unknown");
+            let lib = esc(library_name.as_deref().unwrap_or("Unknown"));
             let mut lines = vec![
                 "📥 <b>Torrent import completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("📚 <b>{series_name}</b> — {imported_count} files imported"),
+                format!(
+                    "📚 <b>{}</b> — {imported_count} files imported",
+                    esc(series_name)
+                ),
             ];
             if !volumes.is_empty() {
                 let mut sorted = volumes.clone();
@@ -955,13 +961,13 @@ fn format_event(event: &NotificationEvent) -> String {
             series_name,
             error,
         } => {
-            let lib = library_name.as_deref().unwrap_or("Unknown");
-            let err = truncate(error, 200);
+            let lib = esc(library_name.as_deref().unwrap_or("Unknown"));
+            let err = esc_trunc(error, 200);
             [
                 "🚨 <b>Torrent import failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("📚 <b>Series:</b> {series_name}"),
+                format!("📚 <b>Series:</b> {}", esc(series_name)),
                 String::new(),
                 format!("💬 <code>{err}</code>"),
             ]
@@ -994,7 +1000,7 @@ fn format_event(event: &NotificationEvent) -> String {
             if active_sources.len() > 1 {
                 lines.push(String::new());
                 for (username, count) in &active_sources {
-                    lines.push(format!("  • @{username}: <b>{count}</b>"));
+                    lines.push(format!("  • @{}: <b>{count}</b>", esc(username)));
                 }
             }
             if !new_items.is_empty() {
@@ -1002,7 +1008,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push("📦 <b>Correspondances :</b>".to_string());
                 for (label, vol) in new_items.iter().take(15) {
                     let vol_str = vol.map(|v| format!(" T{v:02}")).unwrap_or_default();
-                    lines.push(format!("  • <b>{}</b>{}", truncate(label, 50), vol_str));
+                    lines.push(format!("  • <b>{}</b>{}", esc_trunc(label, 50), vol_str));
                 }
                 if new_items.len() > 15 {
                     lines.push(format!("  … et {} de plus", new_items.len() - 15));
@@ -1013,18 +1019,30 @@ fn format_event(event: &NotificationEvent) -> String {
     }
 }
 
+/// Keep at most `max` characters (not bytes: cutting inside a multi-byte character such as
+/// an accent or an emoji would panic), with an ellipsis when something was cut.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}…", &s[..max])
-    } else {
-        s.to_string()
+    match s.char_indices().nth(max) {
+        Some((cut, _)) => format!("{}…", &s[..cut]),
+        None => s.to_string(),
     }
 }
 
+/// Escape text for Telegram's HTML `parse_mode` (only `&`, `<` and `>` are significant).
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Every dynamic value of a message goes through here exactly once: raw text in, HTML out.
+fn esc(s: &str) -> String {
+    escape_html(s)
+}
+
+/// Truncate raw text, then escape it: escaping first could cut an entity in half.
+fn esc_trunc(s: &str, max: usize) -> String {
+    escape_html(&truncate(s, max))
 }
 
 fn format_duration(secs: u64) -> String {
@@ -1177,7 +1195,9 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_event, is_event_enabled, NotificationEvent, TelegramConfig};
+    use super::{
+        format_event, is_event_enabled, truncate, NotificationEvent, ScanStats, TelegramConfig,
+    };
 
     #[test]
     fn telegram_config_without_events_enables_all() {
@@ -1329,5 +1349,97 @@ mod tests {
 
         // Disabling the completed event must not silence partial runs.
         assert!(is_event_enabled(&config, &partial));
+    }
+
+    #[test]
+    fn truncate_counts_characters_not_bytes() {
+        // Every cut point of these strings falls inside a multi-byte character in bytes.
+        assert_eq!(truncate("Éléphant", 3), "Élé…");
+        assert_eq!(truncate("🦀🦀🦀🦀", 2), "🦀🦀…");
+        assert_eq!(truncate("Les Légendaires", 15), "Les Légendaires");
+        assert_eq!(truncate("ok", 10), "ok");
+        assert_eq!(truncate("", 0), "");
+    }
+
+    #[test]
+    fn long_accented_and_emoji_values_never_panic() {
+        let long_title = "Les Aventures de l'Élève 🦀 ".repeat(20);
+        let text = format_event(&NotificationEvent::ScanSeriesDiscovered {
+            library_name: Some("Bandes dessinées".to_string()),
+            series_name: long_title.clone(),
+            thumbnail_path: None,
+            book_titles: vec![long_title.clone()],
+        });
+        assert!(text.contains('…'));
+
+        let text = format_event(&NotificationEvent::ScanFailed {
+            job_type: "rebuild".to_string(),
+            library_name: None,
+            error: "é".repeat(300),
+        });
+        assert!(text.contains(&format!("{}…", "é".repeat(200))));
+    }
+
+    /// Every dynamic value is escaped once for Telegram's HTML parse mode.
+    #[test]
+    fn dynamic_values_are_html_escaped_once() {
+        let scan = format_event(&NotificationEvent::ScanCompleted {
+            job_type: "re<build>".to_string(),
+            library_name: Some("BD & Comics".to_string()),
+            stats: ScanStats {
+                indexed_files: 1,
+                new_series: 1,
+                new_series_names: vec!["Tom & Jerry".to_string()],
+                new_book_titles: vec!["<i>T01</i>".to_string()],
+                ..ScanStats::default()
+            },
+            duration_seconds: 3,
+        });
+        assert!(scan.contains("BD &amp; Comics"));
+        assert!(scan.contains("re&lt;build&gt;"));
+        assert!(scan.contains("Tom &amp; Jerry"));
+        assert!(scan.contains("&lt;i&gt;T01&lt;/i&gt;"));
+        assert!(!scan.contains("&amp;amp;"), "never escaped twice");
+
+        let failed = format_event(&NotificationEvent::ConversionFailed {
+            library_name: Some("A<B".to_string()),
+            book_title: Some("Q&A".to_string()),
+            thumbnail_path: None,
+            error: "unexpected </code> in archive".to_string(),
+        });
+        assert!(failed.contains("A&lt;B"));
+        assert!(failed.contains("Q&amp;A"));
+        assert!(failed.contains("<code>unexpected &lt;/code&gt; in archive</code>"));
+
+        let approved = format_event(&NotificationEvent::MetadataApproved {
+            series_name: "Spirou & Fantasio".to_string(),
+            provider: "<p>".to_string(),
+            fields_updated: vec!["a&b".to_string()],
+            books_matched: 0,
+            books_updated: 0,
+            thumbnail_path: None,
+        });
+        assert!(approved.contains("Spirou &amp; Fantasio"));
+        assert!(approved.contains("&lt;p&gt;"));
+        assert!(approved.contains("a&amp;b"));
+
+        let torrent = format_event(&NotificationEvent::TorrentImportCompleted {
+            library_name: None,
+            series_name: "<b>x</b>".to_string(),
+            imported_count: 1,
+            volumes: vec![],
+        });
+        assert!(torrent.contains("<b>&lt;b&gt;x&lt;/b&gt;</b>"));
+    }
+
+    /// Truncation happens on the raw text, so an entity is never cut in half.
+    #[test]
+    fn truncation_never_splits_an_html_entity() {
+        let text = format_event(&NotificationEvent::ScanFailed {
+            job_type: "rebuild".to_string(),
+            library_name: None,
+            error: format!("{}&&&", "x".repeat(198)),
+        });
+        assert!(text.contains(&format!("{}&amp;&amp;…", "x".repeat(198))));
     }
 }

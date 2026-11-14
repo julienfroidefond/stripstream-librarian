@@ -135,6 +135,21 @@ describe("download routes", () => {
     await deleteAvailable(jsonRequest("/api/available-downloads/d1?permanent=1", { method: "DELETE" }), routeCtx({ id: "d1" }));
     expect(mockApi).toHaveBeenCalledWith("/available-downloads/d1?permanent=1", { method: "DELETE" });
   });
+
+  it("forwards the 409 of a stale release index", async () => {
+    const { ApiError } = await import("@/lib/api/errors");
+    mockApi.mockRejectedValueOnce(
+      new ApiError(409, "API failed (409)", "release at index 0 does not have the expected title"),
+    );
+    const res = await deleteAvailable(
+      jsonRequest("/api/available-downloads/d1?release=0&title=x", { method: "DELETE" }),
+      routeCtx({ id: "d1" }),
+    );
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({
+      error: "release at index 0 does not have the expected title",
+    });
+  });
 });
 
 describe("release blacklist routes", () => {

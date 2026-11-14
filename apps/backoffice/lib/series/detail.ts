@@ -51,6 +51,7 @@ import type {
 
 import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
+import { cacheTags } from "@/lib/cache/tags";
 import { getActiveUser } from "@/lib/auth/activeUser";
 import { ratedActivity, readingActivity, type RatedSeriesUserActivity } from "@/lib/series/userActivity";
 import type { ViewMode } from "@/lib/catalog/viewMode";
@@ -198,13 +199,13 @@ export async function loadSeriesDetail(
     optional(getReadingStatusLink(seriesId)),
     optional(
       apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers", {
-        next: { revalidate: 3600 },
+        next: { revalidate: 3600, tags: [cacheTags.settings()] },
       }),
     ),
-    optional(apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600 } })),
-    optional(apiFetch<string>("/settings/rename_format_hs", { next: { revalidate: 3600 } })),
-    optional(apiFetch<string>("/settings/rename_format_int", { next: { revalidate: 3600 } })),
-    optional(apiFetch<string>("/settings/rename_format_oneshot", { next: { revalidate: 3600 } })),
+    optional(apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600, tags: [cacheTags.settings()] } })),
+    optional(apiFetch<string>("/settings/rename_format_hs", { next: { revalidate: 3600, tags: [cacheTags.settings()] } })),
+    optional(apiFetch<string>("/settings/rename_format_int", { next: { revalidate: 3600, tags: [cacheTags.settings()] } })),
+    optional(apiFetch<string>("/settings/rename_format_oneshot", { next: { revalidate: 3600, tags: [cacheTags.settings()] } })),
     optional(fetchRelatedSeries(seriesId, 12)),
     optional(fetchSeriesReadingLists(seriesId)),
     optional(fetchSeriesRatings(seriesId)),
@@ -286,7 +287,8 @@ export async function loadSeriesDetail(
     ...book,
     coverUrl: getBookCoverUrl(book.id, book.updated_at),
   }));
-  const booksReadCount = booksPage.items.filter((book) => book.reading_status === "read").length;
+  // Series-wide total from the API, not the read books of the current page.
+  const booksReadCount = series.books_read_count;
 
   // Valeurs par défaut du formulaire d'édition : la métadonnée de série prime,
   // le premier livre sert de repli.

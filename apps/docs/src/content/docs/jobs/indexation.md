@@ -49,6 +49,10 @@ Les suppressions effectuées depuis Stripstream (livre ou série) sont appliqué
 
 Si un scan détecte que la quasi-totalité de vos fichiers ont "disparu" (par exemple si le disque est démonté accidentellement), la suppression est annulée automatiquement pour éviter une perte de données.
 
+De même, si le parcours du disque est interrompu ou si un dossier n'a pas pu être lu (erreur d'accès, partage réseau qui décroche en cours de scan), **aucun livre n'est supprimé** lors de ce scan : un avertissement est ajouté au rapport et le scan suivant fera le ménage normalement.
+
+**Liens symboliques** : ils ne sont jamais suivis, ni par le scan ni par la surveillance du dossier. **Noms de fichiers** : un fichier dont le nom n'est pas encodé en UTF-8 est ignoré (avec un avertissement) ; renommez-le pour qu'il soit indexé.
+
 :::note[Détails techniques]
 **Phase 1 — Discovery** : WalkDir, fingerprint `SHA256(taille + mtime + nom)`, insertion avec `page_count = NULL`, skip des répertoires inchangés via `directory_mtimes`. Détecte les fichiers supprimés et les retire de la DB.
 

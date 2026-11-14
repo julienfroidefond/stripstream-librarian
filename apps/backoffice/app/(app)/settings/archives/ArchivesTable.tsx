@@ -7,6 +7,7 @@ import { Icon } from "@/app/components/ui/Icon";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi } from "@/lib/api/browser";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { translateSeriesStatus } from "@/lib/i18n/optional";
 
 function volumeLabel(t: TranslateFunction, volume: number | null, volumeType: string): string {
   if (volumeType === "hs") return volume != null ? t("settings.archives.volumeHs", { volume }) : t("volumeType.hs");
@@ -122,7 +123,7 @@ export function ArchivesTable({ series }: Props) {
                     <span className="font-medium text-foreground">{s.name}</span>
                     {s.status && (
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {t(`seriesStatus.${s.status}` as Parameters<typeof t>[0])}
+                        {translateSeriesStatus(t, s.status)}
                       </span>
                     )}
                   </td>

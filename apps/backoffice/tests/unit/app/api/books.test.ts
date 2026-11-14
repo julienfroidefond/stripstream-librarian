@@ -13,6 +13,7 @@ vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 
 import { apiFetch, convertBook, updateBook, updateReadingProgress } from "@/lib/api";
 import {
+  GET as getBook,
   PATCH as patchBook,
   DELETE as deleteBook,
 } from "@/app/api/books/[bookId]/route";
@@ -22,6 +23,18 @@ import { PATCH as patchProgress } from "@/app/api/books/[bookId]/progress/route"
 const mockApi = vi.mocked(apiFetch);
 
 describe("/api/books/[bookId]", () => {
+  it("GET proxies the book detail", async () => {
+    mockApi.mockResolvedValue({ id: "b1", isbn: "978" });
+    const res = await getBook(jsonRequest("/api/books/b1"), routeCtx({ bookId: "b1" }));
+    expect(mockApi).toHaveBeenCalledWith("/books/b1");
+    await expect(res.json()).resolves.toEqual({ id: "b1", isbn: "978" });
+  });
+
+  it("GET maps an upstream 404", async () => {
+    mockApi.mockRejectedValue(new Error("API /books/x failed (404): not found"));
+    expect((await getBook(jsonRequest("/api/books/x"), routeCtx({ bookId: "x" }))).status).toBe(404);
+  });
+
   it("PATCH delegates to updateBook", async () => {
     vi.mocked(updateBook).mockResolvedValue({ id: "b1", series_id: "s1" } as never);
     const res = await patchBook(

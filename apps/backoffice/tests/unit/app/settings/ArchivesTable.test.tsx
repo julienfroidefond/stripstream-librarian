@@ -1,6 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/i18n/context", () => ({
+  useTranslation: () => ({
+    // Only `seriesStatus.ongoing` is known: an unknown status must show raw.
+    t: (key: string, vars?: Record<string, unknown>) =>
+      key === "seriesStatus.ongoing" ? "En cours" : vars ? `${key}:${JSON.stringify(vars)}` : key,
+    locale: "fr",
+    setLocale: vi.fn(),
+  }),
+}));
+
 import { ArchivesTable } from "@/app/(app)/settings/archives/ArchivesTable";
 import type { ArchivedSeriesDetailDto, ArchivedSeriesItemDto } from "@/lib/api";
 
@@ -77,8 +87,14 @@ describe("ArchivesTable", () => {
     expect(screen.getByText("settings.archives.colSeries")).toBeInTheDocument();
     expect(screen.getByText("settings.archives.colArchivedAt")).toBeInTheDocument();
     // The raw enum must not leak through (it used to be rendered with `capitalize`).
-    expect(screen.getByText("seriesStatus.ongoing")).toBeInTheDocument();
+    expect(screen.getByText("En cours")).toBeInTheDocument();
     expect(screen.queryByText("ongoing")).not.toBeInTheDocument();
+  });
+
+  it("shows an unknown series status raw instead of its translation key", () => {
+    render(<ArchivesTable series={[makeSeries({ status: "en pause" })]} />);
+    expect(screen.getByText("en pause")).toBeInTheDocument();
+    expect(screen.queryByText("seriesStatus.en pause")).not.toBeInTheDocument();
   });
 
   it("fetches the detail on expand and renders volume + reading labels", async () => {

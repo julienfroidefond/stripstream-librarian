@@ -134,6 +134,20 @@ describe("useEventSource", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
+  it("closes the old connection and opens the new url when it changes", () => {
+    const { rerender } = renderHook(
+      ({ url }) => useEventSource({ url, onMessage: vi.fn() }),
+      { initialProps: { url: "/api/jobs/j1/stream" } }
+    );
+    const first = latest();
+
+    rerender({ url: "/api/jobs/j2/stream" });
+
+    expect(first.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(latest().url).toBe("/api/jobs/j2/stream");
+  });
+
   it("closes the connection on unmount", () => {
     const { unmount } = renderHook(() =>
       useEventSource({ url: "/api/events", onMessage: vi.fn() })

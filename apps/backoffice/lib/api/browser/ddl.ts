@@ -31,10 +31,14 @@ export const ddlApi = {
     );
   },
 
-  search(id: string, body: DdlProviderSearchRequest): Promise<DdlProviderSearchResponse> {
+  search(
+    id: string,
+    body: DdlProviderSearchRequest,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<DdlProviderSearchResponse> {
     return browserFetch<DdlProviderSearchResponse>(
       `/api/ddl-providers/${encodeURIComponent(id)}/search`,
-      { method: "POST", body }
+      { method: "POST", body, signal: options.signal }
     );
   },
 

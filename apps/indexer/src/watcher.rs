@@ -23,11 +23,13 @@ async fn has_active_jobs(pool: &sqlx::PgPool) -> bool {
 type LibrarySnapshot = HashSet<String>;
 
 /// Walk a library directory and collect all book file paths.
-/// Walks sequentially to limit open file descriptors.
+/// Walks sequentially to limit open file descriptors. Symbolic links follow the discovery
+/// rule ([`crate::scanner::FOLLOW_SYMLINKS`]): a symlinked file the scan ignores must not
+/// trigger a rebuild.
 fn snapshot_library(root_path: &str) -> LibrarySnapshot {
     let mut files = HashSet::new();
     let walker = WalkDir::new(root_path)
-        .follow_links(true)
+        .follow_links(crate::scanner::FOLLOW_SYMLINKS)
         .max_open(10)
         .into_iter()
         .filter_map(|e| e.ok());
@@ -356,5 +358,29 @@ mod tests {
             !is_already_reconciled(&pool, &library_root(), &old, &new).await,
             "a newly added file must trigger a rebuild"
         );
+    }
+
+    /// The watcher must see exactly what discovery indexes: symlinked files and directories
+    /// are ignored by both (see `scanner::FOLLOW_SYMLINKS`).
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_ignores_symlinks_like_discovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(outside.join("Linked")).unwrap();
+        std::fs::write(outside.join("Linked/Linked - T01.cbz"), b"zip").unwrap();
+        std::fs::write(outside.join("Single.cbz"), b"zip").unwrap();
+
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("Series")).unwrap();
+        let real = root.join("Series/Series - T01.cbz");
+        std::fs::write(&real, b"zip").unwrap();
+        std::os::unix::fs::symlink(outside.join("Linked"), root.join("Linked")).unwrap();
+        std::os::unix::fs::symlink(outside.join("Single.cbz"), root.join("Series/Single.cbz"))
+            .unwrap();
+
+        let files = snapshot_library(root.to_str().unwrap());
+
+        assert_eq!(files, snapshot(&[real.to_str().unwrap()]));
     }
 }

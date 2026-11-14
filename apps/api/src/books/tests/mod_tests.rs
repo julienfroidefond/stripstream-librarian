@@ -192,6 +192,24 @@ async fn list_books_query_matches_series_name_accent_insensitively(pool: sqlx::P
     assert_eq!(page.items[0].title, "Le Devin");
 }
 
+/// `/books` items expose the ISBN (the backoffice metadata table shows it).
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_books_items_include_isbn(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "comics").await;
+    let book_id = create_test_book(&pool, lib_id, None, "Blacksad", "comic").await;
+    sqlx::query("UPDATE books SET isbn = '9782205049653' WHERE id = $1")
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(page) = list_books(State(state), query_all(), None).await.unwrap();
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].isbn.as_deref(), Some("9782205049653"));
+}
+
 /// Same for the legacy scalar `author` column.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn list_books_query_matches_scalar_author_accent_insensitively(pool: sqlx::PgPool) {
@@ -425,9 +443,14 @@ async fn thumbnail_fallback_uses_shared_store_settings(pool: sqlx::PgPool) {
     let stale = thumbnails.path().join(format!("{book_id}.webp"));
     std::fs::write(&stale, b"stale").unwrap();
 
-    let response = super::get_thumbnail(State(state), Path(book_id), axum::http::HeaderMap::new())
-        .await
-        .unwrap();
+    let response = super::get_thumbnail(
+        State(state),
+        None,
+        Path(book_id),
+        axum::http::HeaderMap::new(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(response.headers()["content-type"], "image/png");
     assert_eq!(response.headers()["x-thumbnail-source"], "rendered");

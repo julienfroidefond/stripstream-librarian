@@ -114,6 +114,24 @@ pub async fn rename_genre(
         return Err(ApiError::bad_request("genre name cannot be empty"));
     }
 
+    rename_genre_core(&state.pool, &name, &new_name).await?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Rename (or merge, when `new_name` already exists) a genre on every series
+/// and carry the user genre restrictions along, atomically: a reader who had
+/// blocked `name` keeps the same series blocked under `new_name`.
+pub(crate) async fn rename_genre_core(
+    pool: &sqlx::PgPool,
+    name: &str,
+    new_name: &str,
+) -> Result<(), ApiError> {
+    if name == new_name {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         r#"
         UPDATE series
@@ -127,12 +145,30 @@ pub async fn rename_genre(
         WHERE $1 = ANY(genres)
         "#,
     )
-    .bind(&name)
-    .bind(&new_name)
-    .execute(&state.pool)
+    .bind(name)
+    .bind(new_name)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    // Move restrictions; a user who already blocks the target keeps one row.
+    sqlx::query(
+        r#"
+        INSERT INTO user_genre_restrictions (user_id, genre)
+        SELECT user_id, $2 FROM user_genre_restrictions WHERE genre = $1
+        ON CONFLICT (user_id, genre) DO NOTHING
+        "#,
+    )
+    .bind(name)
+    .bind(new_name)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM user_genre_restrictions WHERE genre = $1")
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Remove a genre from all series

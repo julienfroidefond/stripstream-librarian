@@ -34,7 +34,6 @@ export function useEventSource<T>({
   const onMessageRef = useRef(onMessage);
   const onErrorRef = useRef(onError);
   const onParseErrorRef = useRef(onParseError);
-  const urlRef = useRef(url);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
@@ -47,10 +46,6 @@ export function useEventSource<T>({
   useEffect(() => {
     onParseErrorRef.current = onParseError;
   }, [onParseError]);
-
-  useEffect(() => {
-    urlRef.current = url;
-  }, [url]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -69,10 +64,14 @@ export function useEventSource<T>({
     };
 
     const connect = () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
       if (eventSource) {
         eventSource.close();
       }
-      eventSource = new EventSource(urlRef.current);
+      eventSource = new EventSource(url);
       resetStaleTimer();
 
       eventSource.onmessage = (event) => {
@@ -122,5 +121,6 @@ export function useEventSource<T>({
       disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [staleTimeoutMs, reconnectDelayMs, enabled]);
+    // A new `url` tears the old connection down (cleanup) and opens a new one.
+  }, [url, staleTimeoutMs, reconnectDelayMs, enabled]);
 }

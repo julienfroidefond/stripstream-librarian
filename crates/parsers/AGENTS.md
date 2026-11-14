@@ -32,8 +32,12 @@ pub fn list_archive_images(path: &Path, format: BookFormat) -> Result<Vec<String
 pub fn extract_image_by_name(path: &Path, format: BookFormat, image_name: &str) -> Result<Vec<u8>>
 pub fn is_image_name(name: &str) -> bool
 
-// Conversion CBR → CBZ (écrit le fichier, renvoie son chemin)
+// Conversion CBR → CBZ (écrit le fichier, renvoie son chemin). Conserve le chemin relatif de
+// chaque image (sanitisé : ni `..`, ni racine, ni lecteur) et trie sur le chemin complet (natord),
+// comme les lecteurs de pages ; les collisions sont suffixées `~N`, jamais perdues.
 pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf>
+// Le CBZ existant est-il exactement la conversion de ce CBR ? (reprise après crash)
+pub fn cbz_is_conversion_of(cbr_path: &Path, cbz_path: &Path) -> Result<bool>
 
 pub enum BookFormat { Cbz, Cbr, Pdf, Epub }
 // Texte ↔ format : `as_str()` et `FromStr` (insensible à la casse ASCII, `UnknownBookFormat`),
@@ -147,3 +151,11 @@ Répertoire temp : plus utilisé pour le parsing (les archives sont lues en mém
   magic bytes ne servent qu'en interne à choisir le bon lecteur (ZIP vs RAR) sur les archives atypiques.
 - En cas d'échec de parsing, l'appelant stocke `parse_status = 'error'` sur `book_files` mais continue.
 - `parse_metadata_fast` ne touche jamais l'archive — c'est le chemin de la phase discovery de l'indexer.
+- **Taille d'entrée bornée** : toute lecture d'entrée ZIP/EPUB passe par `zip::read_entry_bounded`
+  (`MAX_ENTRY_BYTES` = 256 Mio décompressés) ; au-delà, erreur explicite (protection zip bomb).
+- **Replis CBZ ↔ CBR** : `analyze_cbz` et `parse_cbz_page_count` tentent RAR (si pas de magic `PK`)
+  puis le lecteur streaming. Le repli RAR appelé depuis le lecteur CBZ se fait **sans** repli inverse
+  (`count_cbr_pages(path, false)`, `list_cbr_images_with(path, false)`) : un fichier ni ZIP ni RAR
+  ne doit pas faire boucler les deux lecteurs.
+- Tests : `test_support::write_rar4` écrit une archive RAR 4 « stored » à la main (aucun crate
+  n'écrit de RAR) pour tester CBR et conversion.

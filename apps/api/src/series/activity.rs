@@ -51,31 +51,35 @@ pub async fn get_series_user_activity(
     }
 
     let sql = r#"
-        WITH progress AS (
+        WITH totals AS (
+            -- Hors-séries are excluded as soon as the series has a regular
+            -- book: the rule is decided on the series, never on what one reader
+            -- happened to open.
             SELECT
-                brp.user_id,
-                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
-                     THEN COUNT(*) FILTER (WHERE brp.status = 'read' AND b.volume_type <> 'hs')
-                     ELSE COUNT(*) FILTER (WHERE brp.status = 'read')
-                END AS books_read,
-                CASE WHEN COUNT(b.id) FILTER (WHERE b.volume_type <> 'hs') > 0
-                     THEN COUNT(*) FILTER (WHERE brp.status = 'reading' AND b.volume_type <> 'hs')
-                     ELSE COUNT(*) FILTER (WHERE brp.status = 'reading')
-                END AS books_reading,
-                MAX(brp.last_read_at) AS last_read_at
-            FROM book_reading_progress brp
-            JOIN books b ON b.id = brp.book_id
-            WHERE b.series_id = $1
-            GROUP BY brp.user_id
-        ),
-        totals AS (
-            SELECT
+                COUNT(*) FILTER (WHERE b.volume_type <> 'hs') > 0 AS has_regular,
                 CASE WHEN COUNT(*) FILTER (WHERE b.volume_type <> 'hs') > 0
                      THEN COUNT(*) FILTER (WHERE b.volume_type <> 'hs')
                      ELSE COUNT(*)
                 END AS books_total
             FROM books b
             WHERE b.series_id = $1
+        ),
+        progress AS (
+            SELECT
+                brp.user_id,
+                COUNT(*) FILTER (
+                    WHERE brp.status = 'read' AND (NOT t.has_regular OR b.volume_type <> 'hs')
+                ) AS books_read,
+                COUNT(*) FILTER (
+                    WHERE brp.status = 'reading' AND (NOT t.has_regular OR b.volume_type <> 'hs')
+                ) AS books_reading,
+                COUNT(*) FILTER (WHERE brp.status IN ('read', 'reading')) AS active_books,
+                MAX(brp.last_read_at) AS last_read_at
+            FROM book_reading_progress brp
+            JOIN books b ON b.id = brp.book_id
+            CROSS JOIN totals t
+            WHERE b.series_id = $1
+            GROUP BY brp.user_id
         )
         SELECT
             u.id AS user_id,
@@ -90,7 +94,7 @@ pub async fn get_series_user_activity(
         LEFT JOIN progress p ON p.user_id = u.id
         LEFT JOIN series_user_ratings sur
             ON sur.series_id = $1 AND sur.user_id = u.id
-        WHERE COALESCE(p.books_read, 0) + COALESCE(p.books_reading, 0) > 0
+        WHERE COALESCE(p.active_books, 0) > 0
            OR sur.rating IS NOT NULL
         ORDER BY p.last_read_at DESC NULLS LAST, u.username ASC
         "#;

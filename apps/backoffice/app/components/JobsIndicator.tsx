@@ -18,7 +18,8 @@ interface Job {
   library_name: string | null;
   type: string;
   status: string;
-  current_file: string | null;
+  /** Not sent by the job list (`GET /index/status`). */
+  current_file?: string | null;
   progress_percent: number | null;
   processed_files: number | null;
   total_files: number | null;

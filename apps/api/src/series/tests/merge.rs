@@ -354,3 +354,120 @@ async fn merge_series_promotes_a_primary_when_the_target_has_none(pool: sqlx::Pg
     .unwrap();
     assert_eq!(primary, source_primary);
 }
+
+async fn create_user(pool: &sqlx::PgPool, username: &str) -> Uuid {
+    sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn merge_series_carries_user_state_and_keeps_target_values(pool: sqlx::PgPool) {
+    let lib = create_test_library(&pool, "merge_user_state").await;
+    let target = create_series(&pool, lib, "Target").await;
+    let source = create_series(&pool, lib, "Source").await;
+    let alice = create_user(&pool, "alice").await; // only rated/faved the source
+    let bob = create_user(&pool, "bob").await; // rated both: target wins
+
+    for (user, series, rating) in [(alice, source, 7), (bob, source, 2), (bob, target, 9)] {
+        sqlx::query(
+            "INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, $3)",
+        )
+        .bind(user)
+        .bind(series)
+        .bind(rating as i16)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    for (user, series) in [(alice, source), (bob, source), (bob, target)] {
+        for table in ["series_user_favorites", "series_user_shelves"] {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO {table} (user_id, series_id) VALUES ($1, $2)"
+            )))
+            .bind(user)
+            .bind(series)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    merge(&pool, target, source).await.unwrap();
+
+    let ratings: Vec<(Uuid, i16)> = sqlx::query_as(
+        "SELECT user_id, rating FROM series_user_ratings WHERE series_id = $1 ORDER BY rating",
+    )
+    .bind(target)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ratings, vec![(alice, 7), (bob, 9)]);
+
+    for table in ["series_user_favorites", "series_user_shelves"] {
+        let users: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {table} WHERE series_id = $1"
+        )))
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(users, 2, "{table}");
+    }
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn merge_series_carries_reading_list_items(pool: sqlx::PgPool) {
+    let lib = create_test_library(&pool, "merge_lists").await;
+    let target = create_series(&pool, lib, "Target").await;
+    let source = create_series(&pool, lib, "Source").await;
+    let other = create_series(&pool, lib, "Other").await;
+
+    let only_source: Uuid =
+        sqlx::query_scalar("INSERT INTO reading_lists (name) VALUES ('only source') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let both: Uuid =
+        sqlx::query_scalar("INSERT INTO reading_lists (name) VALUES ('both') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    for (list, series, position) in [
+        (only_source, other, 0),
+        (only_source, source, 1),
+        (both, source, 0),
+        (both, other, 1),
+        (both, target, 2),
+    ] {
+        sqlx::query(
+            "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, $3)",
+        )
+        .bind(list)
+        .bind(series)
+        .bind(position)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    merge(&pool, target, source).await.unwrap();
+
+    let items = |list: Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_as::<_, (Uuid, i32)>(
+                "SELECT series_id, position FROM reading_list_items WHERE list_id = $1 ORDER BY position",
+            )
+            .bind(list)
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(items(only_source).await, vec![(other, 0), (target, 1)]);
+    // The target keeps its own place; the list is compacted densely.
+    assert_eq!(items(both).await, vec![(other, 0), (target, 1)]);
+}

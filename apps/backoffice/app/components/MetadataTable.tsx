@@ -191,7 +191,7 @@ export function MetadataBooksTable({ books, t }: MetadataBooksTableProps) {
     <TableShell columns={columns}>
       {books.map((b) => {
         const authors = b.authors.length > 0 ? b.authors.join(", ") : b.author;
-        const format = b.format ?? b.file_format;
+        const format = b.format;
         return (
           <tr key={b.id} className="transition-colors hover:bg-accent/50">
             <td className={BODY_CELL}>

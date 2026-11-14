@@ -492,7 +492,8 @@ async fn failed_downloads_by_series(
         "SELECT td.library_id, td.series_name, \
                 COUNT(DISTINCT td.id) AS failed_count, \
                 COALESCE(array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL), ARRAY[]::integer[]) AS failed_volumes \
-         FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
+         FROM torrent_downloads td \
+         LEFT JOIN LATERAL unnest(td.expected_volumes) AS vol ON TRUE \
          WHERE td.library_id = ANY($1) AND td.status = 'error' \
          GROUP BY td.library_id, td.series_name",
     )
@@ -545,6 +546,13 @@ async fn failed_downloads_by_series(
 /// - Without `?release=N`: deletes the entire series entry.
 /// - With `?release=N`: removes release at index N from the array;
 ///   if the array becomes empty, the entire entry is deleted.
+/// - With `?title=...` (alongside `release`): the title the caller expects at
+///   index N. When the release at that index has another title (the list
+///   changed since the caller read it), nothing is modified and `409` is
+///   returned.
+///
+/// The read-modify-write runs in a transaction holding a row lock, so two
+/// concurrent removals cannot drop the wrong release.
 #[utoipa::path(
     delete,
     path = "/available-downloads/{id}",
@@ -552,10 +560,14 @@ async fn failed_downloads_by_series(
     params(
         ("id" = String, Path, description = "Available download ID"),
         ("release" = Option<usize>, Query, description = "Release index to remove (omit to delete entire entry)"),
+        ("title" = Option<String>, Query, description = "Expected title of the release at `release`; a mismatch returns 409 without changing anything"),
+        ("blacklist" = Option<bool>, Query, description = "Also blacklist the removed release so it does not come back"),
     ),
     responses(
         (status = 200, description = "Deleted"),
+        (status = 400, description = "Release index out of bounds"),
         (status = 404, description = "Not found"),
+        (status = 409, description = "The release at this index does not have the expected title"),
     ),
     security(("Bearer" = []))
 )]
@@ -565,75 +577,14 @@ pub async fn delete_available_download(
     axum::extract::Query(query): axum::extract::Query<DeleteAvailableQuery>,
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     if let Some(release_idx) = query.release {
-        // Remove a single release from the JSON array
-        let row = sqlx::query(
-            "SELECT available_releases, series_id FROM available_downloads WHERE id = $1",
+        remove_available_release(
+            &state.pool,
+            id,
+            release_idx,
+            query.title.as_deref(),
+            query.blacklist == Some(true),
         )
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("available download not found"))?;
-
-        let series_id: Option<Uuid> = row.get("series_id");
-        let series_name: Option<String> = if let Some(sid) = series_id {
-            sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
-                .bind(sid)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten()
-        } else {
-            None
-        };
-
-        let releases_json: Option<serde_json::Value> = row.get("available_releases");
-        if let Some(serde_json::Value::Array(mut releases)) = releases_json {
-            if release_idx >= releases.len() {
-                return Err(ApiError::bad_request("release index out of bounds"));
-            }
-
-            // Blacklist the release if requested
-            if query.blacklist == Some(true) {
-                let release_title = releases[release_idx]
-                    .get("title")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or_default();
-                let release_indexer = releases[release_idx]
-                    .get("indexer")
-                    .and_then(|t| t.as_str())
-                    .map(String::from);
-                if !release_title.is_empty() {
-                    let _ = sqlx::query(
-                        "INSERT INTO release_blacklist (title, indexer, series_name) \
-                         VALUES ($1, $2, $3) ON CONFLICT (title) DO NOTHING",
-                    )
-                    .bind(release_title)
-                    .bind(&release_indexer)
-                    .bind(&series_name)
-                    .execute(&state.pool)
-                    .await;
-                }
-            }
-
-            releases.remove(release_idx);
-
-            if releases.is_empty() {
-                sqlx::query("DELETE FROM available_downloads WHERE id = $1")
-                    .bind(id)
-                    .execute(&state.pool)
-                    .await?;
-            } else {
-                sqlx::query(
-                    "UPDATE available_downloads SET available_releases = $1, updated_at = NOW() WHERE id = $2",
-                )
-                .bind(serde_json::Value::Array(releases))
-                .bind(id)
-                .execute(&state.pool)
-                .await?;
-            }
-        } else {
-            return Err(ApiError::not_found("no releases found"));
-        }
+        .await?;
     } else {
         // Delete the entire entry
         let result = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
@@ -649,9 +600,98 @@ pub async fn delete_available_download(
     Ok(Json(crate::responses::OkResponse::new()))
 }
 
+/// Remove the release at `release_idx` from an `available_downloads` row,
+/// optionally checking its title first and blacklisting it.
+///
+/// Runs in one transaction with `SELECT ... FOR UPDATE`: a concurrent removal
+/// waits for this one and then sees the shifted array, so an index never
+/// points at a release the caller did not see.
+pub(super) async fn remove_available_release(
+    pool: &PgPool,
+    id: Uuid,
+    release_idx: usize,
+    expected_title: Option<&str>,
+    blacklist: bool,
+) -> Result<(), ApiError> {
+    let mut tx = pool.begin().await?;
+
+    let row = sqlx::query(
+        "SELECT ad.available_releases, s.name AS series_name \
+         FROM available_downloads ad \
+         LEFT JOIN series s ON s.id = ad.series_id \
+         WHERE ad.id = $1 \
+         FOR UPDATE OF ad",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::not_found("available download not found"))?;
+
+    let series_name: Option<String> = row.get("series_name");
+    let releases_json: Option<serde_json::Value> = row.get("available_releases");
+    let Some(serde_json::Value::Array(mut releases)) = releases_json else {
+        return Err(ApiError::not_found("no releases found"));
+    };
+    if release_idx >= releases.len() {
+        return Err(ApiError::bad_request("release index out of bounds"));
+    }
+
+    let release_title = releases[release_idx]
+        .get("title")
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if let Some(expected) = expected_title {
+        if expected != release_title {
+            return Err(ApiError::conflict(
+                "the release at this index changed; reload the list and try again",
+            ));
+        }
+    }
+
+    if blacklist && !release_title.is_empty() {
+        let release_indexer = releases[release_idx]
+            .get("indexer")
+            .and_then(|t| t.as_str())
+            .map(String::from);
+        sqlx::query(
+            "INSERT INTO release_blacklist (title, indexer, series_name) \
+             VALUES ($1, $2, $3) ON CONFLICT (title) DO NOTHING",
+        )
+        .bind(&release_title)
+        .bind(&release_indexer)
+        .bind(&series_name)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    releases.remove(release_idx);
+
+    if releases.is_empty() {
+        sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    } else {
+        sqlx::query(
+            "UPDATE available_downloads SET available_releases = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(serde_json::Value::Array(releases))
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct DeleteAvailableQuery {
     pub release: Option<usize>,
+    /// Expected title of the release at `release`; a mismatch returns `409`.
+    #[serde(default)]
+    pub title: Option<String>,
     /// If true, also blacklist the release so it doesn't come back
     #[serde(default)]
     pub blacklist: Option<bool>,

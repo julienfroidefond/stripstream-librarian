@@ -27,7 +27,9 @@ export function createTranslateFunction(dict: Record<TranslationKey, string>): T
     let value: string = dict[key] ?? key;
     if (params) {
       for (const [k, v] of Object.entries(params)) {
-        value = value.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), String(v));
+        // A replacer function: `$&`, `$$`… in the value are inserted verbatim.
+        const replacement = String(v);
+        value = value.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), () => replacement);
       }
     }
     return value;

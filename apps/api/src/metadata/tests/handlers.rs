@@ -265,6 +265,49 @@ fn match_request_deserializes_fully() {
     assert!(req.external_url.is_none());
 }
 
+#[test]
+fn match_request_merges_typed_candidate_fields_into_metadata_json() {
+    let json = r#"{
+        "library_id": "550e8400-e29b-41d4-a716-446655440000",
+        "series_name": "Akira",
+        "provider": "anilist",
+        "external_id": "1",
+        "title": "Akira",
+        "metadata_json": {"status": "FINISHED", "authors": ["Blob"]},
+        "authors": ["Katsuhiro Otomo"],
+        "publishers": [],
+        "start_year": 1982,
+        "cover_url": "https://img/akira.jpg"
+    }"#;
+    let req: MetadataMatchRequest = serde_json::from_str(json).unwrap();
+    let stored = req.stored_metadata_json();
+    assert_eq!(stored["authors"], serde_json::json!(["Katsuhiro Otomo"]));
+    assert_eq!(stored["start_year"], serde_json::json!(1982));
+    assert_eq!(
+        stored["cover_url"],
+        serde_json::json!("https://img/akira.jpg")
+    );
+    assert_eq!(stored["status"], serde_json::json!("FINISHED"));
+    assert!(stored.get("publishers").is_none());
+}
+
+#[test]
+fn match_request_without_typed_fields_keeps_the_blob() {
+    let json = r#"{
+        "library_id": "550e8400-e29b-41d4-a716-446655440000",
+        "series_name": "One Piece",
+        "provider": "google_books",
+        "external_id": "ext123",
+        "title": "One Piece",
+        "metadata_json": {"authors": ["Oda"]}
+    }"#;
+    let req: MetadataMatchRequest = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        req.stored_metadata_json(),
+        serde_json::json!({"authors": ["Oda"]})
+    );
+}
+
 // -----------------------------------------------------------------------
 // ExternalMetadataLinkDto serialization
 // -----------------------------------------------------------------------

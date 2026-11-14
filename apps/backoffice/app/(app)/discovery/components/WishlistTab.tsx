@@ -7,6 +7,7 @@ import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { useTranslation } from "@/lib/i18n/context";
 import { getBookCoverUrl, type SeriesDto } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
+import { translateSeriesStatus } from "@/lib/i18n/optional";
 
 interface Library {
   id: string;
@@ -89,7 +90,7 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
                       s.series_status === "cancelled" ? "bg-error text-error-foreground" :
                       "bg-muted text-muted-foreground"
                     }`}>
-                      {t(`seriesStatus.${s.series_status}` as Parameters<typeof t>[0]) || s.series_status}
+                      {translateSeriesStatus(t, s.series_status)}
                     </span>
                   )}
                 </div>

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    extract::{Path as AxumPath, Query, State},
+    extract::{Extension, Path as AxumPath, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -19,7 +19,8 @@ use super::files::current_book_file;
 use super::renderer::{
     ArchivePages, Origin, OutputFormat, PageRenderer, PageSpec, RenderOptions, Urgency,
 };
-use crate::{error::ApiError, state::AppState};
+use crate::users::genre_restrictions::ensure_book_visible;
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 /// Pages rendered in the background after a freshly rendered page.
 const PREFETCH_AHEAD: u32 = 2;
@@ -76,10 +77,12 @@ fn detect_content_type(data: &[u8]) -> &'static str {
 #[instrument(skip(state, headers), fields(book_id = %book_id, page = n))]
 pub async fn get_page(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     AxumPath((book_id, n)): AxumPath<(Uuid, u32)>,
     Query(query): Query<PageQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    ensure_book_visible(&state.pool, user.map(|u| u.0.user_id), book_id).await?;
     let renderer = PageRenderer::for_state(&state, Arc::new(ArchivePages)).await;
     serve_page(&state, &renderer, book_id, n, &query, &headers).await
 }
@@ -552,6 +555,7 @@ mod tests {
         // 1) Cold miss: rendered from disk and stored in both caches.
         let first = get_page(
             State(state.clone()),
+            None,
             AxumPath((book_id, 1)),
             request(),
             HeaderMap::new(),
@@ -571,6 +575,7 @@ mod tests {
         // 2) Warm hit: served from the memory cache, identical bytes and etag.
         let second = get_page(
             State(state.clone()),
+            None,
             AxumPath((book_id, 1)),
             request(),
             HeaderMap::new(),
@@ -602,6 +607,7 @@ mod tests {
         //    content is rendered instead of the stale page.
         let third = get_page(
             State(state.clone()),
+            None,
             AxumPath((book_id, 1)),
             request(),
             HeaderMap::new(),

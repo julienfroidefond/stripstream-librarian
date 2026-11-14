@@ -18,7 +18,7 @@ use crate::books::files::current_book_file_join;
 use crate::{error::ApiError, state::AppState};
 
 /// Column list + join shared by every job list response (see [`map_row`]).
-const JOB_SELECT: &str = "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id";
+const JOB_SELECT: &str = "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.current_file, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id";
 
 /// Column list for the detailed job view (see [`map_row_detail`]).
 const JOB_DETAIL_SELECT: &str = "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at, generating_thumbnails_started_at, stats_json, error_opt, created_at, current_file, progress_percent, total_files, processed_files FROM index_jobs";
@@ -56,6 +56,8 @@ pub struct IndexJobResponse {
     pub error_opt: Option<String>,
     #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
+    /// File currently being processed (only meaningful while the job is active).
+    pub current_file: Option<String>,
     pub progress_percent: Option<i32>,
     pub processed_files: Option<i32>,
     pub total_files: Option<i32>,
@@ -383,6 +385,7 @@ pub fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
         stats_json: row.get("stats_json"),
         error_opt: row.get("error_opt"),
         created_at: row.get("created_at"),
+        current_file: row.try_get("current_file").ok().flatten(),
         progress_percent: row.try_get("progress_percent").ok(),
         processed_files: row.try_get("processed_files").ok(),
         total_files: row.try_get("total_files").ok(),

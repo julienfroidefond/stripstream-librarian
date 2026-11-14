@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { readSessionSecret } from "./lib/auth/secret";
 import { SESSION_COOKIE } from "./lib/auth/session";
 
-function getSecret(): Uint8Array {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) return new TextEncoder().encode("dev-insecure-secret");
-  return new TextEncoder().encode(secret);
+/** Unauthenticated response: 401 JSON for API routes, redirect to /login otherwise. */
+function denied(req: NextRequest, pathname: string): NextResponse {
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const loginUrl = new URL("/login", req.url);
+  loginUrl.searchParams.set("from", pathname);
+  return NextResponse.redirect(loginUrl);
 }
 
 /** Paths where filter persistence is active */
@@ -24,10 +29,17 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Fail closed: without a usable secret no session can be trusted.
+  const secret = readSessionSecret();
+  if (!secret) {
+    console.error("SESSION_SECRET is missing or shorter than 32 characters: refusing all sessions");
+    return denied(req, pathname);
+  }
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     try {
-      await jwtVerify(token, getSecret());
+      await jwtVerify(token, secret);
     } catch {
       // Token invalid or expired — redirect to login
       const loginUrl = new URL("/login", req.url);

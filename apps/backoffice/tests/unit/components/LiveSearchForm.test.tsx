@@ -61,6 +61,19 @@ describe("LiveSearchForm", () => {
     expect(replaceState).toHaveBeenLastCalledWith(null, "", "/series?library=lib-1");
   });
 
+  it("keeps the page size and resets the page when a filter changes", () => {
+    window.history.pushState({}, "", "/series?page=4&limit=50&library=");
+    try {
+      render(<LiveSearchForm basePath="/series" fields={fields} />);
+
+      fireEvent.change(screen.getByLabelText("books.library"), { target: { value: "lib-1" } });
+
+      expect(replaceState).toHaveBeenLastCalledWith(null, "", "/series?limit=50&library=lib-1");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
   it("keeps hidden values in the generated URL", () => {
     render(
       <LiveSearchForm

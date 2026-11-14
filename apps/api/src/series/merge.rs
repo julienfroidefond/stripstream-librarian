@@ -115,7 +115,12 @@ pub async fn merge_series(
         .execute(&mut *tx)
         .await?;
 
-    // 5. Delete the source series
+    // 5. Carry per-user state over to the target. When the user already has a
+    //    row on the target, the target's value wins.
+    move_user_series_state(&mut tx, source_id, target_id).await?;
+    crate::reading_lists::reassign_series_items(&mut tx, source_id, target_id).await?;
+
+    // 6. Delete the source series
     sqlx::query("DELETE FROM series WHERE id = $1")
         .bind(source_id)
         .execute(&mut *tx)
@@ -128,4 +133,42 @@ pub async fn merge_series(
         metadata_moved,
         downloads_moved,
     }))
+}
+
+/// Copy ratings, favorites and shelf entries of `source_id` onto `target_id`
+/// (`ON CONFLICT DO NOTHING`: the target's own row is kept). The source rows go
+/// away with the source series (`ON DELETE CASCADE`).
+async fn move_user_series_state(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    source_id: Uuid,
+    target_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO series_user_ratings (user_id, series_id, rating, created_at, updated_at) \
+         SELECT user_id, $2, rating, created_at, updated_at FROM series_user_ratings WHERE series_id = $1 \
+         ON CONFLICT (user_id, series_id) DO NOTHING",
+    )
+    .bind(source_id)
+    .bind(target_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO series_user_favorites (user_id, series_id, created_at) \
+         SELECT user_id, $2, created_at FROM series_user_favorites WHERE series_id = $1 \
+         ON CONFLICT (user_id, series_id) DO NOTHING",
+    )
+    .bind(source_id)
+    .bind(target_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO series_user_shelves (user_id, series_id, created_at) \
+         SELECT user_id, $2, created_at FROM series_user_shelves WHERE series_id = $1 \
+         ON CONFLICT (user_id, series_id) DO NOTHING",
+    )
+    .bind(source_id)
+    .bind(target_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }

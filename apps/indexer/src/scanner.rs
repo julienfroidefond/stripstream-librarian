@@ -24,6 +24,12 @@ pub struct JobStats {
 
 const BATCH_SIZE: usize = 100;
 
+/// Symbolic links are never followed when walking a library — by the discovery scan, the
+/// file count of a job, and the watcher alike, so the watcher never reports a file that the
+/// scan would not index. Following links could loop, leave the library root (a path that
+/// `LibraryRoot` cannot map back) or index the same book twice under two paths.
+pub const FOLLOW_SYMLINKS: bool = false;
+
 /// A file already present in the DB, with the book fields the scan loop compares against.
 pub struct ExistingFile {
     pub file_id: Uuid,

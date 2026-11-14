@@ -7,6 +7,7 @@ use super::field_policy;
 use super::shared_sync;
 use super::types::FieldChange;
 use crate::metadata_providers;
+use crate::metadata_providers::series_metadata;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,14 +78,7 @@ pub(crate) async fn refresh_link(
         .map_err(|e| format!("provider lookup by external ID failed: {e}"))?;
 
     // Store the provider's latest series data and rating notes on the link.
-    super::links::record_provider_snapshot(
-        pool,
-        link_id,
-        &candidate.metadata_json,
-        candidate.total_volumes,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    store_refreshed_snapshot(pool, link_id, &candidate).await?;
 
     // Merge series fields across all approved links (primary first), so the
     // result does not depend on which link triggered this refresh.
@@ -154,6 +148,7 @@ pub(crate) async fn refresh_link(
     let has_changes = !series_changes.is_empty() || !book_changes.is_empty();
 
     Ok(super::refresh::SeriesRefreshResult {
+        series_id: Some(series_id),
         series_name: series_name.to_string(),
         provider: provider_name.to_string(),
         status: if has_changes {
@@ -165,6 +160,30 @@ pub(crate) async fn refresh_link(
         book_changes,
         error: None,
     })
+}
+
+/// Store a refreshed provider snapshot on a link.
+///
+/// The fresh `metadata_json` (enriched with the typed candidate fields) is
+/// merged over the stored one, so a field the provider stopped returning is
+/// kept rather than wiped.
+pub(crate) async fn store_refreshed_snapshot(
+    pool: &PgPool,
+    link_id: Uuid,
+    candidate: &metadata_providers::SeriesCandidate,
+) -> Result<(), String> {
+    let stored_json: serde_json::Value =
+        sqlx::query_scalar("SELECT metadata_json FROM external_metadata_links WHERE id = $1")
+            .bind(link_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("metadata link {link_id} not found"))?;
+    let snapshot =
+        series_metadata::merge_series_snapshot(&stored_json, &candidate.stored_metadata_json());
+    super::links::record_provider_snapshot(pool, link_id, &snapshot, candidate.total_volumes)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Re-match external_book_metadata rows that have book_id IS NULL

@@ -1,7 +1,7 @@
 "use client";
 
 import nextDynamic from "next/dynamic";
-import type { BookDto } from "@/lib/api";
+import type { BookDetailsDto } from "@/lib/api";
 import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkBookReadButton } from "./MarkBookReadButton";
@@ -29,7 +29,7 @@ const DdlProviderSearchModal = nextDynamic(
   () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
 );
 
-export function BookActionsToolbar({ book, hasActiveUser = true, readiness, ownedVolumes }: { book: BookDto; hasActiveUser?: boolean; readiness: AcquisitionReadiness; ownedVolumes?: number[] }) {
+export function BookActionsToolbar({ book, hasActiveUser = true, readiness, ownedVolumes }: { book: BookDetailsDto; hasActiveUser?: boolean; readiness: AcquisitionReadiness; ownedVolumes?: number[] }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book

@@ -6,8 +6,33 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 
-use crate::cbr::{analyze_cbr, extract_cbr_page, list_cbr_images};
+use crate::cbr::{analyze_cbr, count_cbr_pages, extract_cbr_page, list_cbr_images_with};
 use crate::{is_image_name, ArchiveIndexCache};
+
+/// Largest decompressed size accepted for a single archive entry (256 MiB). A comic page is a
+/// few MB at most; the cap only exists so a crafted entry (zip bomb) cannot exhaust memory.
+pub const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Read one archive entry fully, refusing anything larger than [`MAX_ENTRY_BYTES`] once
+/// decompressed. The size announced by the archive header is not trusted: the reader is
+/// capped and the cap checked on the bytes actually produced.
+pub(crate) fn read_entry_bounded<R: Read>(reader: R, name: &str) -> Result<Vec<u8>> {
+    read_entry_with_limit(reader, name, MAX_ENTRY_BYTES)
+}
+
+fn read_entry_with_limit<R: Read>(reader: R, name: &str, limit: u64) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut buf)
+        .with_context(|| format!("cannot read archive entry '{name}'"))?;
+    if buf.len() as u64 > limit {
+        return Err(anyhow::anyhow!(
+            "archive entry '{name}' exceeds the {limit} bytes limit (possible zip bomb)"
+        ));
+    }
+    Ok(buf)
+}
 
 pub fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     let file = std::fs::File::open(path)
@@ -19,15 +44,7 @@ pub fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> 
                 tracing::debug!(target: "extraction", "[EXTRACTION] ZipArchive::new failed for {}: {} — trying fallbacks", path.display(), zip_err);
 
                 // Check magic bytes to avoid expensive RAR probe on ZIP files
-                let is_zip_magic = std::fs::File::open(path)
-                    .and_then(|mut f| {
-                        let mut magic = [0u8; 4];
-                        std::io::Read::read_exact(&mut f, &mut magic)?;
-                        Ok(magic[0] == b'P' && magic[1] == b'K')
-                    })
-                    .unwrap_or(false);
-
-                if !is_zip_magic {
+                if !has_zip_magic(path) {
                     // Try RAR fallback (file might be a RAR with .cbz extension)
                     if let Ok(result) = analyze_cbr(path, false) {
                         tracing::debug!(target: "extraction", "[EXTRACTION] RAR fallback succeeded for {}", path.display());
@@ -72,10 +89,11 @@ pub fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> 
     // Try images in order until one reads successfully (first pages can be corrupted too)
     let count = image_names.len() as i32;
     for first_image in &image_names {
-        if let Ok(mut entry) = archive.by_name(first_image) {
-            let mut buf = Vec::new();
-            if entry.read_to_end(&mut buf).is_ok() && !buf.is_empty() {
-                return Ok((count, buf));
+        if let Ok(entry) = archive.by_name(first_image) {
+            if let Ok(buf) = read_entry_bounded(entry, first_image) {
+                if !buf.is_empty() {
+                    return Ok((count, buf));
+                }
             }
         }
     }
@@ -104,7 +122,6 @@ pub struct RawZipEntry {
     name: String,
     compression: u16,
     compressed_size: u64,
-    uncompressed_size: u64,
     /// File offset of the compressed data (right after name + extra field).
     data_offset: u64,
 }
@@ -135,7 +152,6 @@ pub fn raw_zip_list_entries(path: &Path) -> Result<Vec<RawZipEntry>> {
 
         let compression = u16::from_le_bytes([hdr[4], hdr[5]]);
         let compressed_size = u32::from_le_bytes([hdr[14], hdr[15], hdr[16], hdr[17]]) as u64;
-        let uncompressed_size = u32::from_le_bytes([hdr[18], hdr[19], hdr[20], hdr[21]]) as u64;
         let name_len = u16::from_le_bytes([hdr[22], hdr[23]]) as u64;
         let extra_len = u16::from_le_bytes([hdr[24], hdr[25]]) as u64;
 
@@ -154,7 +170,6 @@ pub fn raw_zip_list_entries(path: &Path) -> Result<Vec<RawZipEntry>> {
             name,
             compression,
             compressed_size,
-            uncompressed_size,
             data_offset,
         });
 
@@ -171,6 +186,13 @@ pub fn raw_zip_list_entries(path: &Path) -> Result<Vec<RawZipEntry>> {
 pub fn raw_zip_read_entry(path: &Path, entry: &RawZipEntry) -> Result<Vec<u8>> {
     use std::io::{BufReader, Seek, SeekFrom};
 
+    if entry.compressed_size > MAX_ENTRY_BYTES {
+        return Err(anyhow::anyhow!(
+            "archive entry '{}' exceeds the {MAX_ENTRY_BYTES} bytes limit",
+            entry.name
+        ));
+    }
+
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(file);
     reader.seek(SeekFrom::Start(entry.data_offset))?;
@@ -180,12 +202,10 @@ pub fn raw_zip_read_entry(path: &Path, entry: &RawZipEntry) -> Result<Vec<u8>> {
 
     match entry.compression {
         0 => Ok(compressed),
-        8 => {
-            let mut decoder = flate2::read::DeflateDecoder::new(&compressed[..]);
-            let mut decompressed = Vec::with_capacity(entry.uncompressed_size as usize);
-            decoder.read_to_end(&mut decompressed)?;
-            Ok(decompressed)
-        }
+        8 => read_entry_bounded(
+            flate2::read::DeflateDecoder::new(&compressed[..]),
+            &entry.name,
+        ),
         other => Err(anyhow::anyhow!(
             "unsupported zip compression method: {}",
             other
@@ -233,11 +253,31 @@ pub fn parse_cbz_page_count(path: &Path) -> Result<i32> {
             }
             Ok(count)
         }
-        Err(_) => {
-            // Fallback: streaming count (bypasses extra field validation)
-            parse_cbz_page_count_streaming(path)
+        Err(zip_err) => {
+            // Same fallbacks as `analyze_cbz`: a RAR with a `.cbz` extension (checked only when
+            // the magic bytes are not ZIP's, the RAR probe is expensive), then the streaming
+            // reader that bypasses extra-field validation.
+            if !has_zip_magic(path) {
+                if let Ok(count) = count_cbr_pages(path, false) {
+                    return Ok(count);
+                }
+            }
+            parse_cbz_page_count_streaming(path).map_err(|_| {
+                anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), zip_err)
+            })
         }
     }
+}
+
+/// Whether the file starts with the `PK` ZIP signature.
+fn has_zip_magic(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|mut f| {
+            let mut magic = [0u8; 4];
+            f.read_exact(&mut magic)?;
+            Ok(magic[0] == b'P' && magic[1] == b'K')
+        })
+        .unwrap_or(false)
 }
 
 pub fn parse_cbz_page_count_streaming(path: &Path) -> Result<i32> {
@@ -256,7 +296,7 @@ pub fn list_cbz_images(path: &Path) -> Result<Vec<String>> {
         Ok(a) => a,
         Err(zip_err) => {
             // Try RAR fallback
-            if let Ok(names) = list_cbr_images(path) {
+            if let Ok(names) = list_cbr_images_with(path, false) {
                 return Ok(names);
             }
             // Try streaming fallback
@@ -330,12 +370,10 @@ pub fn extract_cbz_by_name(path: &Path, image_name: &str) -> Result<Vec<u8>> {
         Ok(a) => a,
         Err(_) => return extract_cbz_by_name_streaming(path, image_name),
     };
-    let mut entry = archive
+    let entry = archive
         .by_name(image_name)
         .with_context(|| format!("entry '{}' not found in {}", image_name, path.display()))?;
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf)?;
-    Ok(buf)
+    read_entry_bounded(entry, image_name)
 }
 
 pub fn extract_cbz_by_name_streaming(path: &Path, image_name: &str) -> Result<Vec<u8>> {
@@ -346,9 +384,7 @@ pub fn extract_cbz_by_name_streaming(path: &Path, image_name: &str) -> Result<Ve
         match zip::read::read_zipfile_from_stream(&mut reader) {
             Ok(Some(mut entry)) => {
                 if entry.name().is_ok_and(|name| name == image_name) {
-                    let mut buf = Vec::new();
-                    entry.read_to_end(&mut buf)?;
-                    return Ok(buf);
+                    return read_entry_bounded(entry, image_name);
                 }
                 std::io::copy(&mut entry, &mut std::io::sink())?;
             }
@@ -425,12 +461,10 @@ pub fn extract_cbz_page(path: &Path, page_number: u32, allow_fallback: bool) -> 
                 )
             })?;
 
-            let mut entry = archive
+            let entry = archive
                 .by_name(selected)
                 .with_context(|| format!("cannot read page {}", selected))?;
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf)?;
-            Ok(buf)
+            read_entry_bounded(entry, selected)
         }
         Err(zip_err) => {
             if allow_fallback {
@@ -551,5 +585,55 @@ mod tests {
             list_cbz_images_streaming(&path).unwrap(),
             vec!["01.jpg".to_string(), "é2.jpg".to_string()]
         );
+    }
+
+    #[test]
+    fn entry_reads_are_capped() {
+        // Highly compressible data, as in a zip bomb: the cap applies to decompressed bytes.
+        let zeros = vec![0u8; 4096];
+        let mut compressed = Vec::new();
+        {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(&mut compressed, flate2::Compression::best());
+            encoder.write_all(&zeros).unwrap();
+            encoder.finish().unwrap();
+        }
+        let decoder = || flate2::read::DeflateDecoder::new(&compressed[..]);
+
+        assert_eq!(
+            read_entry_with_limit(decoder(), "page.jpg", 4096).unwrap(),
+            zeros
+        );
+        let err = read_entry_with_limit(decoder(), "bomb.jpg", 1024).unwrap_err();
+        assert!(err.to_string().contains("bomb.jpg"), "{err}");
+        assert!(err.to_string().contains("limit"), "{err}");
+    }
+
+    #[test]
+    fn max_entry_size_is_a_few_hundred_mib() {
+        assert_eq!(MAX_ENTRY_BYTES, 256 * 1024 * 1024);
+    }
+
+    /// A RAR mislabelled `.cbz` gets its page count like `analyze_cbz` gets its pages.
+    #[test]
+    fn page_count_falls_back_to_rar() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbz");
+        crate::test_support::write_rar4(&path, &[("01.jpg", JPEG), ("02.jpg", JPEG)]);
+
+        assert_eq!(parse_cbz_page_count(&path).unwrap(), 2);
+        assert_eq!(analyze_cbz(&path, true).unwrap().0, 2);
+    }
+
+    /// Neither ZIP nor RAR: the CBZ → RAR fallback must not bounce back to the CBZ reader
+    /// (stack overflow); the streaming reader finds no page.
+    #[test]
+    fn page_count_of_garbage_terminates_without_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbz");
+        std::fs::write(&path, b"definitely not an archive").unwrap();
+
+        assert_eq!(parse_cbz_page_count(&path).unwrap_or(0), 0);
+        assert!(list_cbz_images(&path).unwrap_or_default().is_empty());
     }
 }

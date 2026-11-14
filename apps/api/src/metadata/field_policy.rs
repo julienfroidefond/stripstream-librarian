@@ -994,4 +994,20 @@ mod tests {
         assert!(sql.contains("(locked_fields->>'authors')::boolean IS TRUE"));
         assert!(sql.contains("$7[1]"));
     }
+
+    /// Migration 0143: BDphile's masculine statuses are mapped like the
+    /// feminine ones seeded by 0038.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn masculine_bdphile_statuses_are_normalized(pool: sqlx::PgPool) {
+        for (raw, expected) in [
+            ("Terminé", "ended"),
+            ("Annulé", "cancelled"),
+            ("Abandonné", "cancelled"),
+            ("Suspendu", "hiatus"),
+            ("Terminée", "ended"),
+            ("En cours", "ongoing"),
+        ] {
+            assert_eq!(normalize_series_status(&pool, raw).await, expected, "{raw}");
+        }
+    }
 }

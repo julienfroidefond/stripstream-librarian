@@ -432,3 +432,53 @@ async fn rematch_cleanup_promotes_the_remaining_link(pool: sqlx::PgPool) {
     assert_eq!(provider, "senscritique");
     assert!(is_primary, "the remaining link must become primary");
 }
+
+/// Providers such as AniList or Google Books only expose authors, publishers,
+/// start year and cover as typed candidate fields: auto-apply must store them in
+/// the link `metadata_json` so the series sync picks them up.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn auto_apply_stores_typed_candidate_fields_and_syncs_them(pool: sqlx::PgPool) {
+    let lib = create_lib(&pool, "auto_apply_fields").await;
+    let series_id = create_series(&pool, lib, "Akira").await;
+
+    let mut c = scored_candidate("Akira", Some(6), Score::exact());
+    c.authors = vec!["Katsuhiro Otomo".to_string()];
+    c.publishers = vec!["Glénat".to_string()];
+    c.start_year = Some(1982);
+    c.cover_url = Some("https://img/akira.jpg".to_string());
+    c.metadata_json = serde_json::json!({ "status": "FINISHED" });
+
+    // The book sync then queries AniList with the fake external id and fails
+    // (no network in tests); the link and the series sync are committed before.
+    let result = auto_apply(&pool, lib, "Akira", "anilist", &c).await;
+    assert!(
+        result.as_ref().is_err_and(|e| e.contains("AniList")),
+        "{result:?}"
+    );
+
+    let stored: serde_json::Value = sqlx::query_scalar(
+        "SELECT metadata_json FROM external_metadata_links WHERE series_id = $1 AND provider = 'anilist'",
+    )
+    .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored["authors"], serde_json::json!(["Katsuhiro Otomo"]));
+    assert_eq!(stored["publishers"], serde_json::json!(["Glénat"]));
+    assert_eq!(stored["start_year"], serde_json::json!(1982));
+    assert_eq!(
+        stored["cover_url"],
+        serde_json::json!("https://img/akira.jpg")
+    );
+    assert_eq!(stored["status"], serde_json::json!("FINISHED"));
+
+    let (authors, publishers, start_year): (Vec<String>, Vec<String>, Option<i32>) =
+        sqlx::query_as("SELECT authors, publishers, start_year FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(authors, vec!["Katsuhiro Otomo".to_string()]);
+    assert_eq!(publishers, vec!["Glénat".to_string()]);
+    assert_eq!(start_year, Some(1982));
+}

@@ -28,6 +28,7 @@
 import type { DdlProviderDownloadDto, StartDdlProviderDownloadRequest } from "@/lib/api/ddl-providers";
 
 import { browserApi } from "@/lib/api/browser";
+import { ApiError } from "@/lib/api/errors";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -79,6 +80,11 @@ export interface DdlStartContext {
 export interface AvailableReleaseContext {
   readonly entryId: string;
   readonly releaseIndex: number;
+  /**
+   * Title of the release the user acted on. Sent with the index so the API
+   * refuses (`409`) to remove another release when the list shifted.
+   */
+  readonly title: string;
 }
 
 /**
@@ -180,7 +186,17 @@ async function removeAvailableRelease(
     release.entryId,
     release.releaseIndex,
     blacklist,
+    release.title,
   );
+}
+
+/**
+ * The API refused an index-based release removal because the release at that
+ * index no longer has the expected title (`409`): nothing changed, but the
+ * list on screen is stale and must be refreshed.
+ */
+export function isStaleReleaseError(error: unknown, action: DownloadAction): boolean {
+  return action.target === "release" && error instanceof ApiError && error.status === 409;
 }
 
 /** Remove every detection entry of one available group ("dismiss these results"). */

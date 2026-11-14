@@ -3,17 +3,21 @@ use uuid::Uuid;
 
 use super::anilist::{anilist_graphql, load_anilist_settings};
 
+/// `scoreRaw` is always on the 100-point scale, whatever the user's
+/// `scoreFormat`; `score` would be interpreted in the user's own format.
 const SAVE_SCORE_MUTATION: &str = r#"
-    mutation SaveScore($mediaId: Int, $score: Float) {
-        SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+    mutation SaveScore($mediaId: Int, $scoreRaw: Int) {
+        SaveMediaListEntry(mediaId: $mediaId, scoreRaw: $scoreRaw) {
             id
             score
         }
     }
 "#;
 
-/// Push a local rating (1-10 half-star scale) to AniList as a POINT_100 score.
-/// Silently no-ops if AniList is not configured or the series has no AniList link.
+/// Push a local rating (1-10 half-star scale) to AniList as a raw 100-point score.
+/// Silently no-ops if AniList is not configured, if `local_user_id` is not the
+/// local user linked to the configured AniList account, or if the series has no
+/// AniList link.
 /// Should be called via tokio::spawn so it doesn't block the HTTP response.
 pub async fn push_rating_to_anilist(
     pool: &PgPool,
@@ -29,10 +33,16 @@ pub async fn push_rating_to_anilist(
 async fn push_rating_inner(
     pool: &PgPool,
     series_id: Uuid,
-    _local_user_id: Uuid,
+    local_user_id: Uuid,
     rating_1_10: i16,
 ) -> Result<(), String> {
-    let (token, _, _) = load_anilist_settings(pool).await.map_err(|e| e.message)?;
+    let (token, _, linked_user_id) = load_anilist_settings(pool).await.map_err(|e| e.message)?;
+
+    // The AniList account belongs to one local user: another user's rating must
+    // never land on it.
+    if !is_linked_user(linked_user_id, local_user_id) {
+        return Ok(());
+    }
 
     let row =
         sqlx::query("SELECT anilist_id FROM anilist_series_links WHERE series_id = $1 LIMIT 1")
@@ -46,16 +56,10 @@ async fn push_rating_inner(
         None => return Ok(()), // No AniList link for this series
     };
 
-    // Convert 1-10 (half-star ×2) to POINT_100
-    let score_100 = local_rating_to_anilist_score(rating_1_10);
-
     anilist_graphql(
         &token,
         SAVE_SCORE_MUTATION,
-        serde_json::json!({
-            "mediaId": anilist_id,
-            "score": score_100,
-        }),
+        save_score_variables(anilist_id, rating_1_10),
     )
     .await
     .map_err(|e| e.message)?;
@@ -71,6 +75,21 @@ async fn push_rating_inner(
 }
 
 // ─── Conversion helpers (tested) ─────────────────────────────────────────────
+
+/// True when `local_user_id` is the local user linked to the configured AniList
+/// account. Without a linked user, nobody's rating is pushed.
+fn is_linked_user(linked_user_id: Option<Uuid>, local_user_id: Uuid) -> bool {
+    linked_user_id == Some(local_user_id)
+}
+
+/// GraphQL variables of [`SAVE_SCORE_MUTATION`]: the 1-10 rating as an integer
+/// `scoreRaw` on the 100-point scale.
+fn save_score_variables(anilist_id: i32, rating_1_10: i16) -> serde_json::Value {
+    serde_json::json!({
+        "mediaId": anilist_id,
+        "scoreRaw": local_rating_to_anilist_score(rating_1_10).round() as i32,
+    })
+}
 
 /// Convert a local 1-10 rating to an AniList score according to the user's scoreFormat.
 /// AniList accepts score as a float regardless of format; the API normalizes it.
@@ -107,6 +126,43 @@ mod tests {
         assert_eq!(anilist_score_to_local(75.0), 8);
         // score 45 → round(4.5) = 5
         assert_eq!(anilist_score_to_local(45.0), 5);
+    }
+
+    #[test]
+    fn only_the_linked_local_user_is_pushed() {
+        let linked = Uuid::new_v4();
+        assert!(is_linked_user(Some(linked), linked));
+        assert!(!is_linked_user(Some(linked), Uuid::new_v4()));
+        assert!(!is_linked_user(None, linked));
+    }
+
+    #[test]
+    fn mutation_uses_score_raw_on_the_100_point_scale() {
+        assert!(SAVE_SCORE_MUTATION.contains("scoreRaw: $scoreRaw"));
+        assert!(SAVE_SCORE_MUTATION.contains("$scoreRaw: Int"));
+        assert!(!SAVE_SCORE_MUTATION.contains("score: $score"));
+        let vars = save_score_variables(42, 7);
+        assert_eq!(vars, serde_json::json!({ "mediaId": 42, "scoreRaw": 70 }));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn rating_of_another_user_is_not_pushed(pool: sqlx::PgPool) {
+        let linked = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('anilist', $1) \
+                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(serde_json::json!({
+            "access_token": "token",
+            "local_user_id": linked.to_string(),
+        }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Another user: returns before any DB lookup or network call.
+        let result = push_rating_inner(&pool, Uuid::new_v4(), Uuid::new_v4(), 8).await;
+        assert_eq!(result, Ok(()));
     }
 
     #[test]

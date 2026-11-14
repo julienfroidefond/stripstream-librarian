@@ -106,54 +106,23 @@ pub async fn preview_sync(
         let anilist_title: Option<String> = link.get("anilist_title");
         let anilist_url: Option<String> = link.get("anilist_url");
 
-        let stats = sqlx::query(
-            r#"
-            SELECT
-                COUNT(*) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series sm WHERE sm.id = $1 LIMIT 1) as total_volumes
-            FROM books b
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $2
-            WHERE b.series_id = $1
-            "#,
-        )
-        .bind(series_id)
-        .bind(local_user_id)
-        .fetch_one(&state.pool)
-        .await;
-
-        let (book_count, books_read, total_volumes) = match stats {
-            Ok(row) => {
-                let bc: i64 = row.get("book_count");
-                let br: i64 = row.get("books_read");
-                let tv: Option<i32> = row.get("total_volumes");
-                (bc, br, tv)
-            }
-            Err(_) => continue,
+        let Ok(stats) = series_reading_stats(&state.pool, series_id, local_user_id).await else {
+            continue;
         };
-
-        if book_count == 0 {
+        if stats.book_count == 0 {
             continue;
         }
-
-        let (status, progress_volumes) =
-            if books_read > 0 && total_volumes.is_some_and(|tv| books_read >= tv as i64) {
-                ("COMPLETED".to_string(), books_read as i32)
-            } else if books_read > 0 {
-                ("CURRENT".to_string(), books_read as i32)
-            } else {
-                ("PLANNING".to_string(), 0i32)
-            };
+        let (status, progress_volumes) = stats.anilist_progress();
 
         items.push(AnilistSyncPreviewItem {
             series_name,
             anilist_id,
             anilist_title,
             anilist_url,
-            status,
+            status: status.to_string(),
             progress_volumes,
-            books_read,
-            book_count,
+            books_read: stats.books_read,
+            book_count: stats.book_count,
         });
     }
 
@@ -216,45 +185,18 @@ pub async fn sync_to_anilist(
         let anilist_title: Option<String> = link.get("anilist_title");
         let anilist_url: Option<String> = link.get("anilist_url");
 
-        let stats = sqlx::query(
-            r#"
-            SELECT
-                COUNT(*) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series sm WHERE sm.id = $1 LIMIT 1) as total_volumes
-            FROM books b
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $2
-            WHERE b.series_id = $1
-            "#,
-        )
-        .bind(series_id)
-        .bind(local_user_id)
-        .fetch_one(&state.pool)
-        .await;
-
-        let (book_count, books_read, total_volumes) = match stats {
-            Ok(row) => {
-                let bc: i64 = row.get("book_count");
-                let br: i64 = row.get("books_read");
-                let tv: Option<i32> = row.get("total_volumes");
-                (bc, br, tv)
-            }
+        let stats = match series_reading_stats(&state.pool, series_id, local_user_id).await {
+            Ok(stats) => stats,
             Err(e) => {
                 errors.push(format!("{series_name}: DB error: {e}"));
                 continue;
             }
         };
-
-        let (status, progress_volumes) = if book_count == 0 {
+        if stats.book_count == 0 {
             skipped += 1;
             continue;
-        } else if books_read > 0 && total_volumes.is_some_and(|tv| books_read >= tv as i64) {
-            ("COMPLETED", books_read as i32)
-        } else if books_read > 0 {
-            ("CURRENT", books_read as i32)
-        } else {
-            ("PLANNING", 0i32)
-        };
+        }
+        let (status, progress_volumes) = stats.anilist_progress();
 
         let vars = serde_json::json!({
             "mediaId": anilist_id,
@@ -437,61 +379,32 @@ pub async fn pull_from_anilist(
             }
         };
 
-        let book_rows = sqlx::query(
-            "SELECT b.id, b.volume FROM books b WHERE b.series_id = $1 ORDER BY b.volume NULLS LAST",
+        let books_updated = match apply_pulled_progress(
+            &state.pool,
+            *series_id,
+            local_user_id,
+            local_status,
+            *progress_volumes,
         )
-        .bind(series_id)
-        .fetch_all(&state.pool)
-        .await;
-
-        let book_rows = match book_rows {
-            Ok(r) => r,
+        .await
+        {
+            Ok(Some(count)) => count,
+            Ok(None) => {
+                skipped += 1;
+                continue;
+            }
             Err(e) => {
                 errors.push(format!("{series_name}: {e}"));
                 continue;
             }
         };
 
-        if book_rows.is_empty() {
-            skipped += 1;
-            continue;
-        }
-
-        let total_books = book_rows.len() as i32;
-        let volumes_done = (*progress_volumes).min(total_books);
-
-        for (idx, book_row) in book_rows.iter().enumerate() {
-            let book_id: Uuid = book_row.get("id");
-            let book_status = if local_status == "read" || (idx as i32) < volumes_done {
-                "read"
-            } else if local_status == "reading" && idx as i32 == volumes_done {
-                "reading"
-            } else {
-                "unread"
-            };
-
-            let _ = sqlx::query(
-                r#"
-                INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
-                VALUES ($1, $3, $2, NULL, NOW(), NOW())
-                ON CONFLICT (book_id, user_id) DO UPDATE
-                  SET status = EXCLUDED.status, updated_at = NOW()
-                  WHERE book_reading_progress.status != EXCLUDED.status
-                "#,
-            )
-            .bind(book_id)
-            .bind(book_status)
-            .bind(local_user_id)
-            .execute(&state.pool)
-            .await;
-        }
-
         items.push(AnilistPullItem {
             series_name: series_name.clone(),
             anilist_title: anilist_title.clone(),
             anilist_url: anilist_url.clone(),
             anilist_status: anilist_status.clone(),
-            books_updated: total_books,
+            books_updated,
         });
         updated += 1;
     }
@@ -505,3 +418,147 @@ pub async fn pull_from_anilist(
         items,
     }))
 }
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+/// Local reading stats of a series for the AniList user, on `regular` volumes
+/// only (HS / oneshot / integral do not take part in tome numbering).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SeriesReadingStats {
+    pub book_count: i64,
+    pub books_read: i64,
+    pub total_volumes: Option<i32>,
+}
+
+impl SeriesReadingStats {
+    /// AniList status and `progressVolumes` derived from the local stats.
+    pub(crate) fn anilist_progress(&self) -> (&'static str, i32) {
+        if self.books_read > 0
+            && self
+                .total_volumes
+                .is_some_and(|tv| self.books_read >= tv as i64)
+        {
+            ("COMPLETED", self.books_read as i32)
+        } else if self.books_read > 0 {
+            ("CURRENT", self.books_read as i32)
+        } else {
+            ("PLANNING", 0)
+        }
+    }
+}
+
+pub(crate) async fn series_reading_stats(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+    local_user_id: Uuid,
+) -> Result<SeriesReadingStats, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) as book_count,
+            COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
+            (SELECT sm.total_volumes FROM series sm WHERE sm.id = $1 LIMIT 1) as total_volumes
+        FROM books b
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $2
+        -- Same scope as the status push (reading/status_push.rs): integrals
+        -- count towards completion, specials and one-shots never do.
+        WHERE b.series_id = $1 AND b.volume_type IN ('regular', 'integral')
+        "#,
+    )
+    .bind(series_id)
+    .bind(local_user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(SeriesReadingStats {
+        book_count: row.get("book_count"),
+        books_read: row.get("books_read"),
+        total_volumes: row.get("total_volumes"),
+    })
+}
+
+/// Rank of a local reading status: a pull only ever moves a book forward.
+fn status_rank(status: &str) -> u8 {
+    match status {
+        "read" => 2,
+        "reading" => 1,
+        _ => 0,
+    }
+}
+
+/// Target status of each book (in volume order) for an AniList entry mapped to
+/// `local_status` with `progress_volumes` volumes read.
+pub(crate) fn pulled_book_statuses(
+    local_status: &str,
+    progress_volumes: i32,
+    book_count: usize,
+) -> Vec<&'static str> {
+    let volumes_done = progress_volumes.clamp(0, book_count as i32) as usize;
+    (0..book_count)
+        .map(|idx| {
+            if local_status == "read" || idx < volumes_done {
+                "read"
+            } else if local_status == "reading" && idx == volumes_done {
+                "reading"
+            } else {
+                "unread"
+            }
+        })
+        .collect()
+}
+
+/// Apply a pulled AniList entry to the local progress of the `regular` books of
+/// a series. Only advances are written (unread → reading → read): a book read
+/// locally is never moved back, whatever AniList reports. Returns the number of
+/// books updated, or `None` when the series has no regular book.
+pub(crate) async fn apply_pulled_progress(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+    local_user_id: Uuid,
+    local_status: &str,
+    progress_volumes: i32,
+) -> Result<Option<i32>, sqlx::Error> {
+    let book_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT b.id FROM books b \
+         WHERE b.series_id = $1 AND b.volume_type = 'regular' \
+         ORDER BY b.volume NULLS LAST, b.title, b.id",
+    )
+    .bind(series_id)
+    .fetch_all(pool)
+    .await?;
+    if book_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let statuses = pulled_book_statuses(local_status, progress_volumes, book_ids.len());
+    let (ids, targets): (Vec<Uuid>, Vec<String>) = book_ids
+        .into_iter()
+        .zip(statuses)
+        .filter(|(_, status)| status_rank(status) > 0)
+        .map(|(id, status)| (id, status.to_string()))
+        .unzip();
+    if ids.is_empty() {
+        return Ok(Some(0));
+    }
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+        SELECT t.book_id, $3, t.status, NULL, NOW(), NOW()
+        FROM UNNEST($1::uuid[], $2::text[]) AS t(book_id, status)
+        ON CONFLICT (book_id, user_id) DO UPDATE
+          SET status = EXCLUDED.status, updated_at = NOW()
+          WHERE (CASE book_reading_progress.status WHEN 'read' THEN 2 WHEN 'reading' THEN 1 ELSE 0 END)
+              < (CASE EXCLUDED.status WHEN 'read' THEN 2 WHEN 'reading' THEN 1 ELSE 0 END)
+        "#,
+    )
+    .bind(&ids)
+    .bind(&targets)
+    .bind(local_user_id)
+    .execute(pool)
+    .await?;
+    Ok(Some(result.rows_affected() as i32))
+}
+
+#[cfg(test)]
+#[path = "tests/anilist_sync.rs"]
+mod tests;

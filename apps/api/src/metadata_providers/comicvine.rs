@@ -7,6 +7,12 @@ use super::{
 
 const DEFAULT_BASE_URL: &str = "https://comicvine.gamespot.com";
 
+/// ComicVine caps `limit` at 100 per request.
+const ISSUES_PAGE_SIZE: usize = 100;
+const ISSUES_PAGE_SIZE_STR: &str = "100";
+/// Safety bound on the number of issue pages fetched for one volume.
+const ISSUES_MAX_PAGES: usize = 30;
+
 pub struct ComicVineProvider;
 
 #[async_trait::async_trait]
@@ -249,38 +255,60 @@ async fn get_series_books_impl(
     let url = format!("{base_url}/api/issues/");
     let filter = format!("volume:{external_id}");
 
-    let resp = client
-        .get(&url)
-        .query(&[
-            ("api_key", api_key),
-            ("format", "json"),
-            ("filter", filter.as_str()),
-            ("sort", "issue_number:asc"),
-            ("limit", "100"),
-            (
-                "field_list",
-                "id,name,issue_number,description,image,cover_date,site_detail_url,person_credits",
-            ),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("ComicVine request failed: {e}"))?;
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    for page in 0..ISSUES_MAX_PAGES {
+        let offset = (page * ISSUES_PAGE_SIZE).to_string();
+        let resp = client
+            .get(&url)
+            .query(&[
+                ("api_key", api_key),
+                ("format", "json"),
+                ("filter", filter.as_str()),
+                ("sort", "issue_number:asc"),
+                ("limit", ISSUES_PAGE_SIZE_STR),
+                ("offset", offset.as_str()),
+                (
+                    "field_list",
+                    "id,name,issue_number,description,image,cover_date,site_detail_url,person_credits",
+                ),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("ComicVine request failed: {e}"))?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("ComicVine returned {status}: {text}"));
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("ComicVine returned {status}: {text}"));
+        }
+
+        let data: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse ComicVine response: {e}"))?;
+
+        let page_results = data
+            .get("results")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let page_len = page_results.len();
+        results.extend(page_results);
+
+        let total = data
+            .get("number_of_total_results")
+            .and_then(|t| t.as_u64())
+            .map(|t| t as usize);
+        let fetched_all = total.is_some_and(|total| results.len() >= total);
+        if page_len < ISSUES_PAGE_SIZE || fetched_all {
+            break;
+        }
+        if page + 1 == ISSUES_MAX_PAGES {
+            tracing::warn!(
+                "[COMICVINE] volume {external_id}: stopped after {ISSUES_MAX_PAGES} pages of issues"
+            );
+        }
     }
-
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse ComicVine response: {e}"))?;
-
-    let results = match data.get("results").and_then(|r| r.as_array()) {
-        Some(results) => results,
-        None => return Ok(vec![]),
-    };
 
     let books: Vec<BookCandidate> = results
         .iter()

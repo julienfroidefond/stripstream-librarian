@@ -692,12 +692,26 @@ export function AvailableDownloadsSection({
     return current.status === "pending" ? current.verb : null;
   }
 
-  function handleDeleteRelease(entryId: string, releaseIdx: number, blacklist = false) {
+  function handleDeleteRelease(entryId: string, releaseIdx: number, title: string, blacklist = false) {
     run(
       { target: "release", verb: blacklist ? "dismiss" : "delete" },
       `${entryId}-${releaseIdx}`,
-      { context: { release: { entryId, releaseIndex: releaseIdx } } },
+      { context: { release: { entryId, releaseIndex: releaseIdx, title } } },
     );
+  }
+
+  /**
+   * Removing a release shifts the indexes of the following ones in the same
+   * entry: while one removal of an entry is in flight, every release row of
+   * that entry stays disabled.
+   */
+  function releaseRowBusy(sources: AvailableSource[], entryId: string, releaseIndex: number) {
+    if (busy(`${entryId}-${releaseIndex}`)) return true;
+    return sources.some((source) => {
+      if (source.kind === "telegram" || source.entryId !== entryId) return false;
+      const verb = pendingVerb(`${source.entryId}-${source.releaseIndex}`);
+      return verb === "delete" || verb === "dismiss";
+    });
   }
 
   function handleDeleteProwlarrEntries(group: AvailableGroup) {
@@ -997,7 +1011,7 @@ export function AvailableDownloadsSection({
                           <button
                             type="button"
                             onClick={() => handleDdlDownload(r, source)}
-                            disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
+                            disabled={releaseRowBusy(visibleSources, source.entryId, source.releaseIndex)}
                             title={t("ddlProviders.download")}
                             className="inline-flex items-center justify-center w-7 h-7 rounded-md text-success hover:bg-success/10 transition-colors disabled:opacity-30 shrink-0"
                           >
@@ -1020,8 +1034,8 @@ export function AvailableDownloadsSection({
                         )}
                         <button
                           type="button"
-                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex, true)}
-                          disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
+                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex, source.release.title, true)}
+                          disabled={releaseRowBusy(visibleSources, source.entryId, source.releaseIndex)}
                           title={t("downloads.blacklist")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                         >
@@ -1031,8 +1045,8 @@ export function AvailableDownloadsSection({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex)}
-                          disabled={busy(`${source.entryId}-${source.releaseIndex}`)}
+                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex, source.release.title)}
+                          disabled={releaseRowBusy(visibleSources, source.entryId, source.releaseIndex)}
                           title={t("downloads.delete")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
                         >

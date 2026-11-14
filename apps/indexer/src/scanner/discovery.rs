@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use parsers::{detect_format, parse_metadata_fast};
 use sqlx::Row;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -26,6 +26,58 @@ const NOTIFICATION_ITEMS_LIMIT: usize = 10;
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 /// ...and every this many files outside unchanged directories.
 const PROGRESS_EVERY_FILES: i32 = 10;
+
+/// Paths the walk skipped because their name is not valid UTF-8.
+///
+/// Older scans stored such paths through `to_string_lossy`, so the database may still hold
+/// books under their lossy form. They are never in `seen` (the walk cannot record them), yet
+/// they are still on disk: those rows must not be treated as stale. Only rows under a skipped
+/// path are protected, so one odd name never blocks deletions in the rest of the library.
+#[derive(Debug, Default)]
+pub(crate) struct NonUtf8Skips {
+    files: HashSet<String>,
+    dir_prefixes: Vec<String>,
+}
+
+impl NonUtf8Skips {
+    pub(crate) fn skip(&mut self, path: &Path, is_dir: bool) {
+        let lossy = path.to_string_lossy().into_owned();
+        if is_dir {
+            let prefix = if lossy.ends_with('/') {
+                lossy
+            } else {
+                format!("{lossy}/")
+            };
+            self.dir_prefixes.push(prefix);
+        } else {
+            self.files.insert(lossy);
+        }
+    }
+
+    /// Whether the known (local) path `path` lies under a path skipped by this walk.
+    pub(crate) fn protects(&self, path: &str) -> bool {
+        self.files.contains(path)
+            || self
+                .dir_prefixes
+                .iter()
+                .any(|prefix| path.starts_with(prefix.as_str()))
+    }
+
+    /// Mark every known path under a skipped path as seen, so stale deletion keeps it.
+    pub(crate) fn protect_existing<'a>(
+        &self,
+        existing: impl Iterator<Item = &'a String>,
+        seen: &mut HashMap<String, bool>,
+    ) -> usize {
+        let mut protected = 0;
+        for path in existing {
+            if self.protects(path) && seen.insert(path.clone(), true).is_none() {
+                protected += 1;
+            }
+        }
+        protected
+    }
+}
 
 pub fn push_capped_item(items: &mut Vec<String>, value: String) {
     if items.len() < NOTIFICATION_ITEMS_LIMIT {
@@ -176,21 +228,36 @@ pub async fn scan_library_discovery(
     // Track discovered directory mtimes for upsert after scan
     let mut new_dir_mtimes: Vec<(String, DateTime<Utc>)> = Vec::new();
 
-    // Prefixes (with trailing "/") of directories whose mtime hasn't changed.
-    // Files under these prefixes are added to `seen` but not reprocessed.
-    let mut skipped_dir_prefixes: Vec<String> = Vec::new();
+    // Directories whose *own* mtime hasn't changed since the last scan. Only files directly
+    // inside one of them skip the new-file path: a directory mtime only reflects its direct
+    // entries, so a subdirectory always compares its own mtime (a new file in
+    // `Publisher/Series/` bumps `Series/`, not `Publisher/`).
+    let mut unchanged_dirs: HashSet<String> = HashSet::new();
+
+    // Set when part of the tree could not be explored (walk aborted, unreadable subtree):
+    // `seen` is then partial and no stale deletion may be derived from it.
+    let mut walk_incomplete = false;
+    // Non UTF-8 paths skipped by the walk: known books under them are kept.
+    let mut non_utf8_skips = NonUtf8Skips::default();
 
     // Track consecutive IO errors to detect fd exhaustion (ENFILE)
     let mut consecutive_io_errors: usize = 0;
     const MAX_CONSECUTIVE_IO_ERRORS: usize = 10;
 
-    for result in WalkDir::new(root).max_open(20).into_iter() {
+    let mut walker = WalkDir::new(root)
+        .follow_links(super::FOLLOW_SYMLINKS)
+        .max_open(20)
+        .into_iter();
+    while let Some(result) = walker.next() {
         let entry = match result {
             Ok(e) => {
                 consecutive_io_errors = 0;
                 e
             }
             Err(e) => {
+                // Whatever failed (unreadable directory, vanished entry...), the subtree below
+                // it was not explored.
+                walk_incomplete = true;
                 consecutive_io_errors += 1;
                 let is_enfile = e
                     .io_error()
@@ -212,34 +279,39 @@ pub async fn scan_library_discovery(
         };
 
         let path = entry.path().to_path_buf();
-        let local_path = path.to_string_lossy().to_string();
+        // A non UTF-8 name cannot be stored without corrupting it (a lossy path would never
+        // resolve back to the file): skip it, and the whole subtree for a directory.
+        let Some(local_path) = path.to_str().map(str::to_string) else {
+            warn!(
+                "[SCAN] Skipping non UTF-8 path in library {}: {}",
+                library_id,
+                path.display()
+            );
+            stats.warnings += 1;
+            let is_dir = entry.file_type().is_dir();
+            non_utf8_skips.skip(&path, is_dir);
+            if is_dir {
+                walker.skip_current_dir();
+            }
+            continue;
+        };
 
         if entry.file_type().is_dir() {
             if entry.depth() == 0 {
                 continue; // skip root itself
             }
 
-            // Check if parent dir is already skipped (propagate skip to subdirs)
-            let already_under_skipped = skipped_dir_prefixes
-                .iter()
-                .any(|p| local_path.starts_with(p.as_str()));
-
             if let Ok(meta) = entry.metadata() {
                 if let Ok(sys_mtime) = meta.modified() {
                     let mtime_utc: DateTime<Utc> = DateTime::from(sys_mtime);
+                    new_dir_mtimes.push((local_path.clone(), mtime_utc));
 
-                    // Only record mtimes for non-skipped dirs (to avoid polluting DB)
-                    if !already_under_skipped {
-                        new_dir_mtimes.push((local_path.clone(), mtime_utc));
-                    }
-
-                    // Skip if mtime unchanged (incremental only, not already skipped subtree)
-                    if !is_full_rebuild && !already_under_skipped {
+                    // Skip if mtime unchanged (incremental only)
+                    if !is_full_rebuild {
                         if let Some(&stored_mtime) = dir_mtimes.get(&local_path) {
                             if mtime_utc <= stored_mtime {
                                 trace!("[SCAN] Skipping unchanged dir: {}", local_path);
-                                // Add trailing slash so starts_with check is exact per-segment
-                                skipped_dir_prefixes.push(format!("{}/", local_path));
+                                unchanged_dirs.insert(local_path);
                             }
                         }
                     }
@@ -261,20 +333,17 @@ pub async fn scan_library_discovery(
 
         // Files under an unchanged directory are still reconciled: an in-place copy does not
         // bump the parent mtime, and a filename rule may have changed since the last scan.
-        let under_skipped = skipped_dir_prefixes
-            .iter()
-            .any(|p| local_path.starts_with(p.as_str()));
+        let under_skipped = path
+            .parent()
+            .and_then(Path::to_str)
+            .is_some_and(|parent| unchanged_dirs.contains(parent));
 
         let library_path = state.library_root.resolve(&local_path)?;
         let abs_path = library_path.to_db().to_string();
         let lookup_path = library_path.to_local().to_string();
 
-        if under_skipped {
-            // Unchanged dir: the file is present even if it cannot be stat'ed below.
-            seen.insert(lookup_path.clone(), true);
-            if !existing.contains_key(&lookup_path) {
-                continue;
-            }
+        if under_skipped && !existing.contains_key(&lookup_path) {
+            continue;
         }
 
         let Some(format) = detect_format(&path) else {
@@ -297,6 +366,9 @@ pub async fn scan_library_discovery(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| abs_path.clone());
 
+        // The walk listed this file: it is present even if it cannot be stat'ed below.
+        seen.insert(lookup_path.clone(), true);
+
         let metadata = match std::fs::metadata(&path) {
             Ok(m) => m,
             Err(e) => {
@@ -309,6 +381,8 @@ pub async fn scan_library_discovery(
                         "[SCAN] fd limit exhausted while stat'ing files in library {}. Aborting.",
                         library_id
                     );
+                    stats.warnings += 1;
+                    walk_incomplete = true;
                     break;
                 }
                 warn!("[SCAN] cannot stat {}, skipping: {}", path.display(), e);
@@ -360,8 +434,6 @@ pub async fn scan_library_discovery(
             }
         }
 
-        seen.insert(lookup_path.clone(), true);
-
         // Fast metadata extraction — no archive I/O
         let mut parsed = parse_metadata_fast(&path, format, root);
 
@@ -400,10 +472,10 @@ pub async fn scan_library_discovery(
     // Flush remaining batches
     writer.flush().await?;
 
-    if !skipped_dir_prefixes.is_empty() {
+    if !unchanged_dirs.is_empty() {
         info!(
             "[SCAN] Skipped {} unchanged directories",
-            skipped_dir_prefixes.len()
+            unchanged_dirs.len()
         );
     }
 
@@ -412,8 +484,28 @@ pub async fn scan_library_discovery(
         library_id, library_processed_count, stats.indexed_files, stats.errors
     );
 
-    handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
-    upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
+    if walk_incomplete {
+        // `seen` misses whatever lived in the unexplored part of the tree: deleting from it
+        // would drop books still on disk. Directory mtimes are not saved either, so the next
+        // scan re-reads the directories this one may not have finished.
+        warn!(
+            "[SCAN] Library {} was not fully explored (walk errors): skipping stale deletions \
+             and directory mtime updates for this scan",
+            library_id
+        );
+        stats.warnings += 1;
+    } else {
+        let protected = non_utf8_skips.protect_existing(existing.keys(), &mut seen);
+        if protected > 0 {
+            warn!(
+                "[SCAN] Library {}: keeping {} known book(s) under non UTF-8 paths skipped by \
+                 this scan",
+                library_id, protected
+            );
+        }
+        handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
+        upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
+    }
 
     if stats.indexed_files > 0 || stats.removed_files > 0 {
         if let Err(e) = restore_archived_data(&state.pool, library_id).await {
@@ -426,3 +518,6 @@ pub async fn scan_library_discovery(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

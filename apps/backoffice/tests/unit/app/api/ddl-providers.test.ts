@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
 
+const { revalidateTag } = vi.hoisted(() => ({ revalidateTag: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag }));
+
 vi.mock("@/lib/api", async () => {
   const { createApiMock } = await import("./helpers");
   return createApiMock();
@@ -47,6 +50,7 @@ describe("/api/ddl-providers", () => {
       body: JSON.stringify({ enabled: true, base_url: "https://mirror.example" }),
     });
     expect(res.status).toBe(200);
+    expect(revalidateTag).toHaveBeenCalledWith("ddl-providers", { expire: 0 });
   });
 
   it("POST test tolerates an empty body", async () => {

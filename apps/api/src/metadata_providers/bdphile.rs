@@ -420,7 +420,17 @@ async fn get_series_books_impl(
         let publish_date = cells.get(3).cloned();
         let album_url = absolute(base, &href);
         let external_book_id = album_external_id(&album_url).unwrap_or_else(|| album_url.clone());
-        let detail = fetch_album(&c, &album_url).await?;
+        // One broken album page must not lose the whole series: keep the row
+        // data from the series table and carry on.
+        let detail = match fetch_album(&c, &album_url).await {
+            Ok(detail) => detail,
+            Err(e) => {
+                tracing::warn!(
+                    "[BDPHILE] album page {album_url} failed, using series row only: {e}"
+                );
+                std::collections::HashMap::new()
+            }
+        };
         let isbn = detail.get("isbn").cloned();
         let cover_url = detail.get("cover_url").cloned();
         let authors = detail

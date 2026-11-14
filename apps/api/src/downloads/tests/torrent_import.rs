@@ -1015,18 +1015,8 @@ async fn imported_volumes_prune_availability_once(pool: sqlx::PgPool) {
     .unwrap();
 
     let imported = vec![
-        ImportedFile {
-            volume: 1,
-            source: "a.cbz".to_string(),
-            destination: "a.cbz".to_string(),
-            already_existed: false,
-        },
-        ImportedFile {
-            volume: 1,
-            source: "b.cbz".to_string(),
-            destination: "b.cbz".to_string(),
-            already_existed: true,
-        },
+        ImportedFile::new(&[1], "a.cbz".to_string(), "a.cbz".to_string(), false),
+        ImportedFile::new(&[1], "b.cbz".to_string(), "b.cbz".to_string(), true),
     ];
     crate::downloads::torrent_import::prune_imported_volumes(
         &pool, library_id, "Series", &imported,
@@ -1082,12 +1072,12 @@ async fn imported_volumes_match_accented_series_name(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    let imported = vec![ImportedFile {
-        volume: 1,
-        source: "a.cbz".to_string(),
-        destination: "a.cbz".to_string(),
-        already_existed: false,
-    }];
+    let imported = vec![ImportedFile::new(
+        &[1],
+        "a.cbz".to_string(),
+        "a.cbz".to_string(),
+        false,
+    )];
     crate::downloads::torrent_import::prune_imported_volumes(
         &pool, library_id, "Asterix", &imported,
     )

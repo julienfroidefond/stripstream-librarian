@@ -138,17 +138,40 @@ function streamLoop(request: NextRequest, options: StreamLoopOptions): Response 
       let intervalId: ReturnType<typeof setInterval> | null = null;
       let heartbeatId: ReturnType<typeof setInterval> | null = null;
 
+      /** Idempotent teardown: safe from abort, a failed enqueue or both. */
+      const close = () => {
+        if (!isActive) return;
+        isActive = false;
+        if (intervalId !== null) clearInterval(intervalId);
+        if (heartbeatId !== null) clearInterval(heartbeatId);
+        try {
+          controller.close();
+        } catch {
+          // Already closed or errored by the runtime.
+        }
+      };
+
+      // Registered before any await: an abort during the first poll must
+      // still tear the loop down.
+      if (request.signal.aborted) {
+        close();
+        return;
+      }
+      request.signal.addEventListener("abort", close, { once: true });
+
       const send = (msg: string): boolean => {
+        if (!isActive) return false;
         try {
           controller.enqueue(encoder.encode(msg));
           return true;
         } catch {
-          isActive = false;
+          close();
           return false;
         }
       };
 
       function restartInterval(ms: number) {
+        if (!isActive) return;
         if (intervalId !== null) clearInterval(intervalId);
         intervalId = setInterval(fetchData, ms);
       }
@@ -170,6 +193,9 @@ function streamLoop(request: NextRequest, options: StreamLoopOptions): Response 
             if (consecutiveErrors === 1 || consecutiveErrors % 30 === 0) {
               console.warn(`SSE ${label} fetch error (${consecutiveErrors} consecutive):`, error);
             }
+            // Keep polling (idle cadence) so a transient failure — including
+            // on the very first fetch — does not freeze the stream.
+            if (intervalId === null) restartInterval(idleIntervalMs);
           }
         }
       }
@@ -181,14 +207,6 @@ function streamLoop(request: NextRequest, options: StreamLoopOptions): Response 
 
       // Initial fetch + start polling
       await fetchData();
-
-      // Cleanup
-      request.signal.addEventListener("abort", () => {
-        isActive = false;
-        if (intervalId !== null) clearInterval(intervalId);
-        if (heartbeatId !== null) clearInterval(heartbeatId);
-        controller.close();
-      });
     },
   });
 

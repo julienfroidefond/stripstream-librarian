@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback } from "react";
+import { useState, useTransition, useEffect, useCallback, useRef } from "react";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
-import { BookDto } from "@/lib/api";
+import type { BookDetailsDto, BookItemDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
@@ -14,16 +14,37 @@ import { useLockableFields } from "./MetadataFieldsProvider";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface EditBookFormProps {
-  book: BookDto;
+  /**
+   * A list item (`BookItem`) lacks the ISBN and the locked fields; the form
+   * then loads the detail before allowing a save, since `PATCH /books/{id}`
+   * replaces every field (saving a list item would wipe both).
+   */
+  book: BookItemDto | BookDetailsDto;
   children?: (open: () => void) => React.ReactNode;
 }
 
-export function EditBookForm({ book, children }: EditBookFormProps) {
+function isBookDetails(book: BookItemDto | BookDetailsDto): book is BookDetailsDto {
+  return "isbn" in book && "file_parse_status" in book;
+}
+
+export function EditBookForm({ book: initialBook, children }: EditBookFormProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A detail passed as prop is always used as-is, so a `router.refresh()`
+  // (after a save, or a change made elsewhere) is picked up. A list item has
+  // no ISBN / locked fields: the detail is fetched fresh on every open, never
+  // kept from a previous open, so the form never writes back stale values.
+  const propDetails = isBookDetails(initialBook) ? initialBook : null;
+  const [fetchedDetails, setFetchedDetails] = useState<BookDetailsDto | null>(null);
+  const details = propDetails ?? fetchedDetails;
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const loadRequest = useRef(0);
+  const book = details ?? initialBook;
+  const bookIsbn = details?.isbn ?? null;
+  const bookLockedFields = details?.locked_fields;
 
   const [title, setTitle] = useState(book.title);
   const [authors, setAuthors] = useState<string[]>(book.authors ?? []);
@@ -33,13 +54,13 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
   const [volume, setVolume] = useState(book.volume?.toString() ?? "");
   const [language, setLanguage] = useState(book.language ?? "");
   const [summary, setSummary] = useState(book.summary ?? "");
-  const [isbn, setIsbn] = useState(book.isbn ?? "");
+  const [isbn, setIsbn] = useState(bookIsbn ?? "");
   const [publishDate, setPublishDate] = useState(book.publish_date ?? "");
   // The raw map is kept as-is; the catalog decides which keys are still
   // meaningful for the lock UI and the PATCH payload.
   const lockableFields = useLockableFields("books");
   const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(
-    () => book.locked_fields ?? {},
+    () => bookLockedFields ?? {},
   );
   const visibleLockedFields = pickLockableFields(lockedFields, lockableFields);
 
@@ -67,20 +88,27 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
     }
   };
 
-  const handleClose = useCallback(() => {
-    setTitle(book.title);
-    setAuthors(book.authors ?? []);
+  const resetFrom = useCallback((source: BookItemDto | BookDetailsDto) => {
+    const sourceDetails = isBookDetails(source) ? source : null;
+    setTitle(source.title);
+    setAuthors(source.authors ?? []);
     setAuthorInput("");
-    setSeries(book.series ?? "");
-    setVolume(book.volume?.toString() ?? "");
-    setLanguage(book.language ?? "");
-    setSummary(book.summary ?? "");
-    setIsbn(book.isbn ?? "");
-    setPublishDate(book.publish_date ?? "");
-    setLockedFields(book.locked_fields ?? {});
+    setSeries(source.series ?? "");
+    setVolume(source.volume?.toString() ?? "");
+    setLanguage(source.language ?? "");
+    setSummary(source.summary ?? "");
+    setIsbn(sourceDetails?.isbn ?? "");
+    setPublishDate(source.publish_date ?? "");
+    setLockedFields(sourceDetails?.locked_fields ?? {});
+  }, []);
+
+  const handleClose = useCallback(() => {
+    loadRequest.current += 1; // ignore a detail load still in flight
+    setLoadingDetails(false);
+    resetFrom(book);
     setError(null);
     setIsOpen(false);
-  }, [book]);
+  }, [book, resetFrom]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,7 +121,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !details) return;
     setError(null);
 
     const finalAuthors = authorInput.trim()
@@ -115,6 +143,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
           locked_fields: visibleLockedFields,
         };
         await browserApi.books.update(book.id, body);
+        setFetchedDetails(null);
         setIsOpen(false);
         router.refresh();
       } catch (error) {
@@ -262,7 +291,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               </button>
               <button
                 type="submit"
-                disabled={isPending || !title.trim()}
+                disabled={isPending || loadingDetails || !details || !title.trim()}
                 className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isPending ? t("editBook.savingLabel") : t("editBook.saveLabel")}
@@ -272,7 +301,32 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
     </Modal>
   );
 
-  const open = () => setIsOpen(true);
+  const open = () => {
+    setError(null);
+    setIsOpen(true);
+    if (propDetails) {
+      // Start from the current prop, not from the values of a previous open.
+      resetFrom(propDetails);
+      return;
+    }
+    const request = ++loadRequest.current;
+    setFetchedDetails(null);
+    resetFrom(initialBook);
+    setLoadingDetails(true);
+    browserApi.books
+      .detail(initialBook.id)
+      .then((loaded) => {
+        if (request !== loadRequest.current) return;
+        setFetchedDetails(loaded);
+        resetFrom(loaded);
+      })
+      .catch((err) => {
+        if (request === loadRequest.current) setError(browserErrorMessage(err, t("editBook.saveError")));
+      })
+      .finally(() => {
+        if (request === loadRequest.current) setLoadingDetails(false);
+      });
+  };
 
   return (
     <>

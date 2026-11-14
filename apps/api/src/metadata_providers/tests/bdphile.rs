@@ -96,36 +96,45 @@ async fn propagates_http_errors() {
 }
 
 #[tokio::test]
-async fn album_fetch_error_is_propagated() {
+async fn album_fetch_error_keeps_the_other_books() {
     let server = MockServer::start().await;
-    let search_body = format!(
-        r#"{{"bests":[{{"url":"{uri}/series/bd/36511-les-geants","text":"Les Géants (fr)"}}],"series":[]}}"#,
-        uri = server.uri()
-    );
-    Mock::given(method("GET"))
-        .and(path_regex(r"/search/ajax"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(search_body))
-        .mount(&server)
-        .await;
     Mock::given(method("GET"))
         .and(path_regex(r"/series/bd/36511-les-geants"))
         .respond_with(ResponseTemplate::new(200).set_body_string(
-            r#"<h1>Les Géants</h1><div id="detail_view"><table><tbody><tr><td>1</td><td><a href="/album/bd/138208-les-geants-1-erin">Erin</a></td><td>Glénat</td><td>26 août 2020</td></tr></tbody></table></div>"#,
+            r#"<h1>Les Géants</h1><div id="detail_view"><table><tbody>
+            <tr><td>1</td><td><a href="/album/bd/138208-les-geants-1-erin">Erin</a></td><td>Glénat</td><td>26 août 2020</td></tr>
+            <tr><td>2</td><td><a href="/album/bd/138209-les-geants-2-siegfried">Siegfried</a></td><td>Glénat</td><td>3 mars 2021</td></tr>
+            </tbody></table></div>"#,
         ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path_regex(r"/album/bd/138208-les-geants-1-erin"))
-        .respond_with(ResponseTemplate::new(500))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/album/bd/138209-les-geants-2-siegfried"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<html><head><meta property="og:image" content="https://img/2.jpg"></head><body></body></html>"#,
+        ))
         .mount(&server)
         .await;
 
-    let result = get_series_books_impl("bd/36511-les-geants", &server.uri()).await;
+    let books = get_series_books_impl("bd/36511-les-geants", &server.uri())
+        .await
+        .expect("one failing album page must not fail the whole series");
 
-    assert!(
-        result.is_err(),
-        "a failing album fetch must surface the error, not produce an empty book"
-    );
+    assert_eq!(books.len(), 2);
+    // The failed album keeps what the series table gave.
+    assert_eq!(books[0].title, "Erin");
+    assert_eq!(books[0].volume_number, Some(1));
+    assert_eq!(books[0].publish_date.as_deref(), Some("26 août 2020"));
+    assert!(books[0].isbn.is_none());
+    assert!(books[0].cover_url.is_none());
+    // The other album is fully parsed.
+    assert_eq!(books[1].title, "Siegfried");
+    assert_eq!(books[1].cover_url.as_deref(), Some("https://img/2.jpg"));
 }
 
 #[tokio::test]

@@ -7,6 +7,8 @@ import {
   browserFetchRaw,
   browserFetchVoid,
   browserFetchText,
+  loginRedirectUrl,
+  sessionExpiry,
   withQuery,
 } from "@/lib/api/browser/transport";
 
@@ -115,6 +117,54 @@ describe("browserFetch", () => {
     stubFetch(new Response(null, { status: 200 }));
 
     await expect(browserFetch("/api/settings/anilist")).resolves.toBeUndefined();
+  });
+});
+
+describe("browserFetch — body decoding", () => {
+  it("throws instead of swallowing a malformed JSON body", async () => {
+    stubFetch(new Response("{not json", { status: 200 }));
+
+    await expect(browserFetch("/api/series")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 200,
+      detail: "Invalid JSON response",
+    });
+  });
+});
+
+describe("browserFetch — expired session", () => {
+  function redirectedToLogin(): Response {
+    const response = new Response("<html>login</html>", {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+    Object.defineProperty(response, "redirected", { value: true });
+    Object.defineProperty(response, "url", { value: "http://localhost:7082/login?from=%2Fapi%2Fseries" });
+    return response;
+  }
+
+  it("raises a 401 and redirects to /login with the current page", async () => {
+    const redirect = vi.spyOn(sessionExpiry, "redirect").mockImplementation(() => {});
+    window.history.pushState({}, "", "/series?page=2");
+    stubFetch(redirectedToLogin());
+
+    await expect(browserFetch("/api/series")).rejects.toMatchObject({ name: "ApiError", status: 401 });
+    expect(redirect).toHaveBeenCalledWith("/login?from=%2Fseries%3Fpage%3D2");
+    redirect.mockRestore();
+  });
+
+  it("treats an HTML answer from an API route as an expired session", async () => {
+    const redirect = vi.spyOn(sessionExpiry, "redirect").mockImplementation(() => {});
+    stubFetch(new Response("<html></html>", { status: 200, headers: { "Content-Type": "text/html" } }));
+
+    await expect(browserFetchVoid("/api/jobs/j1/cancel")).rejects.toMatchObject({ status: 401 });
+    expect(redirect).toHaveBeenCalledTimes(1);
+    redirect.mockRestore();
+  });
+
+  it("builds the login URL without looping on /login", () => {
+    expect(loginRedirectUrl("/books/1", "?x=1")).toBe("/login?from=%2Fbooks%2F1%3Fx%3D1");
+    expect(loginRedirectUrl("/login", "?from=%2F")).toBe("/login");
   });
 });
 

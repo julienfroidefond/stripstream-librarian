@@ -275,7 +275,9 @@ never write that column in SQL elsewhere (discovery only inserts `discovered`).
 
 - **`volume_type`** (`regular`, `hs`, `oneshot`, `integral`): all metadata matching, missing-volume
   counting, and AniList progress logic MUST filter on `volume_type = 'regular'`. HS/oneshot/integral
-  do not participate in tome numbering.
+  do not participate in tome numbering. Exception: completion/progress *counts* sent to AniList
+  (`reading/status_push.rs`, `integrations/anilist_sync.rs` stats) use `IN ('regular', 'integral')`
+  — an integral makes a series complete (see `apps/docs/.../integrations/anilist.md`).
 - **Series matching**: always compare with `LOWER(unaccent(name))`. Never match exactly — torrents,
   providers, and the UI use different casing/accents.
 - **Auth tokens**: format `stl_<prefix>_<secret>`, argon2 hash in DB, scopes `admin` or `read`.

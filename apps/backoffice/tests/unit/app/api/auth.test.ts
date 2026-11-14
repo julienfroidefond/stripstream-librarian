@@ -85,5 +85,6 @@ describe("POST /api/auth/logout", () => {
     expect(await res.json()).toEqual({ success: true });
     const cookie = res.cookies.get("sl_session");
     expect(cookie?.value).toBe("");
+    expect(res.cookies.get("as_user_id")?.value).toBe("");
   });
 });

@@ -4,6 +4,18 @@ use stripstream_core::schedule::mode_to_interval_minutes;
 use tracing::info;
 use uuid::Uuid;
 
+use stripstream_jobs::JobState;
+
+/// Every status in which a job still holds its slot (queued or running, including the
+/// `extracting_pages` / `generating_thumbnails` phases): a scheduled job must not be
+/// duplicated while one of these exists.
+fn in_flight_statuses() -> Vec<&'static str> {
+    JobState::IN_FLIGHT
+        .iter()
+        .map(|state| state.as_str())
+        .collect()
+}
+
 pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
     let libraries = sqlx::query(
         r#"
@@ -17,10 +29,11 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
           AND NOT EXISTS (
             SELECT 1 FROM index_jobs
             WHERE library_id = libraries.id
-              AND status IN ('pending', 'running')
+              AND status = ANY($1)
           )
         "#,
     )
+    .bind(in_flight_statuses())
     .fetch_all(pool)
     .await?;
 
@@ -83,7 +96,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
             SELECT 1 FROM index_jobs
             WHERE library_id = libraries.id
               AND type = 'reading_status_push'
-              AND status IN ('pending', 'running')
+              AND status = ANY($1)
           )
           AND EXISTS (
             SELECT 1 FROM anilist_series_links
@@ -91,6 +104,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
           )
         "#,
     )
+    .bind(in_flight_statuses())
     .fetch_all(pool)
     .await?;
 
@@ -158,10 +172,11 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
             SELECT 1 FROM index_jobs
             WHERE library_id = libraries.id
               AND type = 'download_detection'
-              AND status IN ('pending', 'running')
+              AND status = ANY($1)
           )
         "#,
     )
+    .bind(in_flight_statuses())
     .fetch_all(pool)
     .await?;
 
@@ -231,8 +246,9 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     // One global job covers all libraries with a single RSS fetch.
     // Skip if a global job is already pending/running or finished within the configured interval.
     let already_active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status IN ('pending', 'running'))"
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status = ANY($1))"
     )
+    .bind(in_flight_statuses())
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -291,8 +307,9 @@ pub async fn check_and_schedule_telegram_sync_incremental(pool: &PgPool) -> Resu
     }
 
     let already_active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'telegram_sync_incremental' AND status IN ('pending', 'running'))"
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'telegram_sync_incremental' AND status = ANY($1))"
     )
+    .bind(in_flight_statuses())
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -343,7 +360,7 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
             SELECT 1 FROM index_jobs
             WHERE library_id = libraries.id
               AND type = 'metadata_refresh'
-              AND status IN ('pending', 'running')
+              AND status = ANY($1)
           )
           AND EXISTS (
             SELECT 1 FROM external_metadata_links
@@ -352,6 +369,7 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
           )
         "#,
     )
+    .bind(in_flight_statuses())
     .fetch_all(pool)
     .await?;
 
@@ -431,8 +449,9 @@ pub async fn check_and_schedule_ddl_search(pool: &PgPool) -> Result<()> {
 
     // A single global job covers every library.
     let already_active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'ddl_search' AND status IN ('pending', 'running'))"
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'ddl_search' AND status = ANY($1))"
     )
+    .bind(in_flight_statuses())
     .fetch_one(pool)
     .await?;
 
@@ -533,5 +552,81 @@ mod tests {
 
         check_and_schedule_ddl_search(&pool).await.unwrap();
         assert_eq!(ddl_search_job_count(&pool).await, 1);
+    }
+
+    async fn create_monitored_library(pool: &PgPool) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO libraries (id, name, root_path, monitor_enabled) \
+             VALUES ($1, $2, $3, TRUE)",
+        )
+        .bind(id)
+        .bind(format!("lib-{id}"))
+        .bind(format!("/libraries/lib-{id}"))
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn library_job_count(pool: &PgPool, library_id: Uuid) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM index_jobs WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    /// A scan in its analysis phases (`extracting_pages` / `generating_thumbnails`) is still in
+    /// flight: the auto-scan must not queue a second job on top of it.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn auto_scan_not_scheduled_while_a_job_is_in_any_active_phase(pool: sqlx::PgPool) {
+        for status in [
+            "extracting_pages",
+            "generating_thumbnails",
+            "running",
+            "pending",
+        ] {
+            let library_id = create_monitored_library(&pool).await;
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'rebuild', $3)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(library_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            check_and_schedule_auto_scans(&pool).await.unwrap();
+
+            assert_eq!(
+                library_job_count(&pool, library_id).await,
+                1,
+                "status={status}"
+            );
+            sqlx::query("UPDATE libraries SET monitor_enabled = FALSE WHERE id = $1")
+                .bind(library_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn auto_scan_scheduled_once_previous_job_is_terminal(pool: sqlx::PgPool) {
+        let library_id = create_monitored_library(&pool).await;
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'rebuild', 'success')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        check_and_schedule_auto_scans(&pool).await.unwrap();
+
+        assert_eq!(library_job_count(&pool, library_id).await, 2);
     }
 }

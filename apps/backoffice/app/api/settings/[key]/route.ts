@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, updateSetting } from "@/lib/api";
 import { ApiError } from "@/lib/api/errors";
+import { invalidateAfter } from "@/lib/cache";
 import { errorResponse, withRoute } from "@/lib/server/api-handler";
 
 export const GET = withRoute(async (
@@ -19,6 +20,7 @@ export async function POST(
     const { key } = await params;
     const { value } = await request.json();
     const data = await updateSetting(key, value);
+    invalidateAfter({ type: "settings.changed", key });
     return NextResponse.json(data);
   } catch (error) {
     // Forward an upstream validation error (status + detail) so the draft can

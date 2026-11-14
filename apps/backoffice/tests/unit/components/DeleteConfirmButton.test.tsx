@@ -9,6 +9,9 @@ const routerMock = vi.hoisted(() => ({
   prefetch: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
+vi.mock("@/app/components/ui/Toast", () => ({ toast: vi.fn(), Toaster: () => null }));
+
+import { toast } from "@/app/components/ui/Toast";
 
 import { DeleteConfirmButton } from "@/app/components/DeleteConfirmButton";
 
@@ -28,6 +31,7 @@ function renderButton(overrides: Partial<React.ComponentProps<typeof DeleteConfi
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 describe("DeleteConfirmButton", () => {
@@ -100,17 +104,19 @@ describe("DeleteConfirmButton", () => {
     expect(routerMock.refresh).toHaveBeenCalled();
   });
 
-  it("does not navigate when the deletion fails", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  it("keeps the dialog open and toasts the error when the deletion fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "Series is locked" }) }),
+    );
     renderButton();
 
     fireEvent.click(screen.getByRole("button", { name: "common.delete" }));
     const panel = screen.getByTestId("modal-panel");
     fireEvent.click(within(panel).getByRole("button", { name: "common.delete" }));
 
-    await vi.waitFor(() =>
-      expect(screen.queryByText("seriesDetail.delete")).not.toBeInTheDocument()
-    );
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith("Series is locked", "error"));
+    expect(screen.getByText("seriesDetail.delete")).toBeInTheDocument();
     expect(routerMock.push).not.toHaveBeenCalled();
     expect(routerMock.refresh).not.toHaveBeenCalled();
   });

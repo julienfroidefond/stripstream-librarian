@@ -16,9 +16,11 @@ pub struct SearchQuery {
     pub q: String,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<String>,
-    #[schema(value_type = Option<String>, example = "cbz")]
+    /// Book kind filter: `ebook`, `comic` or `bd`.
+    #[schema(value_type = Option<String>, example = "comic")]
     pub r#type: Option<String>,
-    #[schema(value_type = Option<String>, example = "cbz")]
+    /// Alias of `type`.
+    #[schema(value_type = Option<String>, example = "comic")]
     pub kind: Option<String>,
     #[schema(value_type = Option<usize>, example = 20)]
     pub limit: Option<usize>,
@@ -88,7 +90,7 @@ pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
             WHERE norm_text(authors_search_text(s.authors, NULL::text)) LIKE norm_text($1)
         )
         SELECT b.id, b.library_id, b.kind, b.title,
-            COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
+            COALESCE(NULLIF(b.authors, '{}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
             s.name AS series, b.volume, b.volume_type, b.language
         FROM candidate_ids m
         JOIN books b ON b.id = m.id
@@ -97,7 +99,7 @@ pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
             norm_text(b.title) LIKE norm_text($1)
             OR norm_text(s.name) LIKE norm_text($1)
             OR EXISTS (SELECT 1 FROM unnest(
-                COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
+                COALESCE(NULLIF(b.authors, '{}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
                 || COALESCE(s.authors, ARRAY[]::text[])
             ) AS a WHERE norm_text(a) LIKE norm_text($1))
         )
@@ -192,8 +194,8 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
     params(
         ("q" = String, Query, description = "Search query (books and series; case- and accent-insensitive, trigram-backed)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
-        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf, epub)"),
-        ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
+        ("type" = Option<String>, Query, description = "Filter by book kind: ebook, comic or bd"),
+        ("kind" = Option<String>, Query, description = "Filter by book kind (alias for type): ebook, comic or bd"),
         ("limit" = Option<usize>, Query, description = "Max results per type (max 100)"),
     ),
     responses(

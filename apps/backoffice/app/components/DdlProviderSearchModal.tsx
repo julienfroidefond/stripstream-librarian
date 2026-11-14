@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
@@ -101,6 +101,10 @@ export function DdlProviderSearchModal({
   const [searchInput, setSearchInput] = useState(defaultQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<DdlProviderSearchResultDto[]>([]);
+  // Only the latest search may write `results`: an older, slower answer (from
+  // another provider or query) is aborted and ignored.
+  const searchSeq = useRef(0);
+  const searchAbort = useRef<AbortController | null>(null);
   const [searched, setSearched] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [actingKeys, setActingKeys] = useState<Set<string>>(new Set());
@@ -152,29 +156,44 @@ export function DdlProviderSearchModal({
   const doSearch = useCallback(
     async (query: string, provider: string) => {
       if (!query.trim() || !provider) return;
+      const seq = ++searchSeq.current;
+      searchAbort.current?.abort();
+      const controller = new AbortController();
+      searchAbort.current = controller;
+      const isCurrent = () => seq === searchSeq.current;
+
       setIsSearching(true);
       setSearched(false);
       try {
-        const data = await browserApi.ddl.search(provider, {
-          query: query.trim(),
-          series_name: seriesName,
-          library_id: libraryId,
-          missing_volumes: missingVolumes,
-        });
-        setResults(data.results ?? []);
+        const data = await browserApi.ddl.search(
+          provider,
+          {
+            query: query.trim(),
+            series_name: seriesName,
+            library_id: libraryId,
+            missing_volumes: missingVolumes,
+          },
+          { signal: controller.signal }
+        );
+        if (!isCurrent()) return;
+        // Every row carries the provider it was found on, so a download always
+        // targets that provider even if the selector changed meanwhile.
+        const found = (data.results ?? []).map((r) => ({ ...r, provider: r.provider || provider }));
+        setResults(found);
         setStatuses((prev) => {
           const next = { ...prev };
-          for (const r of data.results ?? []) {
+          for (const r of found) {
             if (r.download_status) next[downloadKey(r.provider, r.external_id)] = r.download_status;
           }
           return next;
         });
         setSearched(true);
       } catch (error) {
+        if (!isCurrent()) return;
         toast(failureMessage(error), "error");
         setSearched(true);
       } finally {
-        setIsSearching(false);
+        if (isCurrent()) setIsSearching(false);
       }
     },
     [seriesName, libraryId, missingVolumes]
@@ -189,16 +208,36 @@ export function DdlProviderSearchModal({
   }
 
   function handleClose() {
+    // Drop any in-flight search: its answer must not land in a closed modal.
+    searchSeq.current++;
+    searchAbort.current?.abort();
+    setIsSearching(false);
     setIsOpen(false);
   }
 
+  function handleProviderChange(nextProvider: string) {
+    setProviderId(nextProvider);
+    // Results of the previous provider must not stay actionable.
+    setResults([]);
+    setSearched(false);
+    void doSearch(searchInput, nextProvider);
+  }
+
+  useEffect(
+    () => () => {
+      searchAbort.current?.abort();
+    },
+    []
+  );
+
   async function handleDownload(result: DdlProviderSearchResultDto) {
-    if (!providerId) return;
-    const key = downloadKey(providerId, result.external_id);
+    const resultProvider = result.provider || providerId;
+    if (!resultProvider) return;
+    const key = downloadKey(resultProvider, result.external_id);
     setActingKeys((prev) => new Set(prev).add(key));
     setStatuses((prev) => ({ ...prev, [key]: "queued" }));
     try {
-      await browserApi.ddl.startDownload(providerId, {
+      await browserApi.ddl.startDownload(resultProvider, {
         external_id: result.external_id,
         filename: result.filename,
         size: result.size,
@@ -225,8 +264,9 @@ export function DdlProviderSearchModal({
   }
 
   async function handleDismiss(result: DdlProviderSearchResultDto) {
-    if (!providerId || !result.download_id) return;
-    const key = downloadKey(providerId, result.external_id);
+    const resultProvider = result.provider || providerId;
+    if (!resultProvider || !result.download_id) return;
+    const key = downloadKey(resultProvider, result.external_id);
     setActingKeys((prev) => new Set(prev).add(key));
     try {
       await browserApi.ddl.dismissDownload(result.download_id);
@@ -267,10 +307,7 @@ export function DdlProviderSearchModal({
             <select
               id="download-provider-select"
               value={providerId ?? ""}
-              onChange={(e) => {
-                setProviderId(e.target.value);
-                doSearch(searchInput, e.target.value);
-              }}
+              onChange={(e) => handleProviderChange(e.target.value)}
               className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               {enabledProviders.map((p) => (

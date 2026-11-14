@@ -55,6 +55,13 @@ describe("createSessionToken / verifySessionToken", () => {
     await expect(createSessionToken()).rejects.toThrow("SESSION_SECRET");
     await expect(verifySessionToken("anything")).resolves.toBe(false);
   });
+
+  it("fails when SESSION_SECRET is shorter than 32 characters", async () => {
+    const token = await createSessionToken();
+    process.env.SESSION_SECRET = "x".repeat(31);
+    await expect(createSessionToken()).rejects.toThrow("SESSION_SECRET");
+    await expect(verifySessionToken(token)).resolves.toBe(false);
+  });
 });
 
 describe("getSession", () => {

@@ -94,6 +94,27 @@ describe("JobRow", () => {
     expect(screen.getByText("success")).toBeInTheDocument();
   });
 
+  it("renders a list job that has no current_file field (IndexJobResponse)", () => {
+    const { current_file: _omitted, ...job } = makeJob({ status: "running" });
+    expect(() =>
+      render(
+        <table>
+          <tbody>
+            <JobRow
+              job={job}
+              libraryName="My Library"
+              onCancel={vi.fn()}
+              onReplay={vi.fn()}
+              formatDate={(d) => d}
+              formatDuration={() => ""}
+            />
+          </tbody>
+        </table>
+      )
+    ).not.toThrow();
+    expect(screen.getByText("My Library")).toBeInTheDocument();
+  });
+
   it("falls back to the truncated library id or a dash", () => {
     const { rerender } = renderRow({ library_id: "library-xyz" }, { libraryName: undefined });
     expect(screen.getByText("library-")).toBeInTheDocument();

@@ -108,6 +108,7 @@ const en: Record<TranslationKey, string> = {
   "common.error": "Error",
   "common.unknownError": "Unknown error",
   "common.networkError": "Network error",
+  "common.deleteError": "Delete failed",
   "common.show": "Show",
   "common.perPage": "per page",
   "common.skipToContent": "Skip to content",
@@ -1069,7 +1070,7 @@ const en: Record<TranslationKey, string> = {
   "settings.alldebridConcurrency": "Concurrent AllDebrid downloads",
   "settings.alldebridConcurrencyHelp": "How many magnets are handled in parallel. A downloading magnet holds its slot until the transfer finishes.",
   "settings.alldebridStallTimeout": "Stalled magnet timeout (minutes)",
-  "settings.alldebridStallTimeoutHelp": "A magnet that stays at 0 bytes for this long is marked as failed (dead torrent or unreachable tracker). The magnet is not deleted.",
+  "settings.alldebridStallTimeoutHelp": "A magnet that stays at 0 bytes for this long is marked as failed (dead torrent or unreachable tracker). The magnet is not deleted. Also applies to qBittorrent torrents stalled without sources.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",
@@ -1202,6 +1203,7 @@ const en: Record<TranslationKey, string> = {
   "seriesDetail.mergeConfirm": "Merge",
   "seriesDetail.mergeSuccess": "Merge complete: {{books}} books, {{metadata}} metadata, {{downloads}} downloads moved.",
   "seriesDetail.mergeNoResults": "No series found",
+  "seriesDetail.mergeError": "Merge failed",
   "seriesDetail.create": "Add series",
   "seriesDetail.createTitle": "New series",
   "seriesDetail.createLibrary": "Library",
@@ -1384,6 +1386,7 @@ const en: Record<TranslationKey, string> = {
   "downloads.unblacklist": "Unhide",
   "downloads.noBlacklisted": "No hidden releases",
   "downloads.delete": "Delete",
+  "downloads.releaseChanged": "The release list changed in the meantime: nothing was removed, the list has been refreshed.",
   "downloads.cancel": "Cancel download",
   "downloads.confirmDelete": "Delete this download?",
   "downloads.confirmCancel": "Cancel this download? The torrent will also be removed from qBittorrent.",

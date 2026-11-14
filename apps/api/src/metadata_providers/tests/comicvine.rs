@@ -282,3 +282,68 @@ async fn get_series_books_requires_api_key() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("API key"));
 }
+
+fn issues_page(start: i64, count: i64, total: i64) -> serde_json::Value {
+    let results: Vec<serde_json::Value> = (start..start + count)
+        .map(|n| serde_json::json!({ "id": n, "name": format!("Issue {n}"), "issue_number": n.to_string() }))
+        .collect();
+    serde_json::json!({ "results": results, "number_of_total_results": total })
+}
+
+#[tokio::test]
+async fn get_series_books_paginates_past_100_issues() {
+    let mock_server = MockServer::start().await;
+    for (offset, start, count) in [("0", 1, 100), ("100", 101, 100), ("200", 201, 30)] {
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/api/issues/?$"))
+            .and(query_param("offset", offset))
+            .respond_with(ResponseTemplate::new(200).set_body_json(issues_page(start, count, 230)))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+    }
+
+    let books = get_series_books_impl("12345", &test_config(), &mock_server.uri())
+        .await
+        .unwrap();
+
+    assert_eq!(books.len(), 230);
+    assert_eq!(books[0].volume_number, Some(1));
+    assert_eq!(books[229].volume_number, Some(230));
+}
+
+#[tokio::test]
+async fn get_series_books_stops_when_total_is_reached() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/api/issues/?$"))
+        .and(query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(issues_page(1, 100, 100)))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let books = get_series_books_impl("12345", &test_config(), &mock_server.uri())
+        .await
+        .unwrap();
+    assert_eq!(books.len(), 100);
+}
+
+#[tokio::test]
+async fn get_series_books_page_count_is_bounded() {
+    let mock_server = MockServer::start().await;
+    // A misbehaving API that always returns a full page and no total.
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/api/issues/?$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "results": (0..100).map(|n| serde_json::json!({ "id": n })).collect::<Vec<_>>(),
+        })))
+        .expect(ISSUES_MAX_PAGES as u64)
+        .mount(&mock_server)
+        .await;
+
+    let books = get_series_books_impl("12345", &test_config(), &mock_server.uri())
+        .await
+        .unwrap();
+    assert_eq!(books.len(), 100 * ISSUES_MAX_PAGES);
+}

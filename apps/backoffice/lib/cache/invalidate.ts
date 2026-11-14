@@ -28,6 +28,9 @@ export type DomainWrite =
   | { type: "activeUser.changed" }
   | { type: "tokens.changed" }
   | { type: "users.changed" }
+  | { type: "user.deleted"; userId: string }
+  | { type: "settings.changed"; key?: string }
+  | { type: "ddl.changed" }
   | { type: "catalog.refreshRequested"; scope: "books" | "series" }
   | { type: "catalog.refreshRequested"; scope: "series-detail"; seriesId: string };
 
@@ -119,14 +122,14 @@ export function invalidationPlan(write: DomainWrite): InvalidationPlan {
         paths: [page("/genres"), page("/series")],
       };
     case "library.created":
-      return { tags: [], paths: [page("/libraries")] };
+      return { tags: [cacheTags.libraries()], paths: [page("/libraries")] };
     case "library.deleted":
       return {
-        tags: [cacheTags.series(), cacheTags.books(), cacheTags.stats()],
+        tags: [cacheTags.libraries(), cacheTags.series(), cacheTags.books(), cacheTags.stats()],
         paths: [page("/libraries"), page(`/libraries/${write.libraryId}`), page("/series"), page("/books")],
       };
     case "library.updated":
-      return { tags: [], paths: [page("/libraries"), page(`/libraries/${write.libraryId}`)] };
+      return { tags: [cacheTags.libraries()], paths: [page("/libraries"), page(`/libraries/${write.libraryId}`)] };
     case "readingLists.changed":
       // `revalidateTag` alone can leave the already-rendered grouped Series
       // page serving its stale fetch payload on the next request in dev: the
@@ -149,9 +152,20 @@ export function invalidationPlan(write: DomainWrite): InvalidationPlan {
     case "jobs.finished":
       return { tags: [cacheTags.books(), cacheTags.series(), cacheTags.stats()], paths: [] };
     case "tokens.changed":
-    case "users.changed":
-      // Tokens and readers are only listed on the settings page (uncached reads).
+      // Tokens are only listed on the settings page (uncached reads).
       return { tags: [], paths: [page("/settings")] };
+    case "users.changed":
+      // The reader list is also cached for the layout's reader selector.
+      return { tags: [cacheTags.users()], paths: [page("/settings")] };
+    case "user.deleted":
+      // The deleted reader may be the one selected in the layout.
+      return { tags: [cacheTags.users()], paths: [page("/settings"), { path: "/", type: "layout" }] };
+    case "settings.changed":
+      // Settings feed the acquisition readiness of the layout and the series
+      // detail (rename formats, providers): expire the tag, not every page.
+      return { tags: [cacheTags.settings()], paths: [page("/settings")] };
+    case "ddl.changed":
+      return { tags: [cacheTags.ddlProviders()], paths: [page("/settings")] };
     case "activeUser.changed":
       return { tags: [], paths: [{ path: "/", type: "layout" }] };
     case "catalog.refreshRequested":

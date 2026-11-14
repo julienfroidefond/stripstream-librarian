@@ -339,3 +339,85 @@ async fn refresh_link_accepts_discovery_source_alias(pool: sqlx::PgPool) {
         "a discovery source alias must resolve before the DB lookup: {err}"
     );
 }
+
+/// A refresh merges the fresh snapshot over the stored one: typed candidate
+/// fields are written in, and fields the provider no longer returns are kept.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refreshed_snapshot_is_enriched_and_merged_not_replaced(pool: sqlx::PgPool) {
+    let (lib_id, series_id) = seed_library_and_series(&pool).await;
+    let link_id = seed_link(&pool, lib_id, series_id).await;
+    sqlx::query("UPDATE external_metadata_links SET metadata_json = $2 WHERE id = $1")
+        .bind(link_id)
+        .bind(serde_json::json!({
+            "authors": ["Masashi Tanaka"],
+            "publishers": ["Pika"],
+            "start_year": 1992,
+            "status": "FINISHED",
+            "rating": 7.0,
+        }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let candidate = metadata_providers::SeriesCandidate {
+        external_id: "franchise:1".to_string(),
+        title: "Gon".to_string(),
+        authors: vec![],
+        description: Some("Un petit dinosaure".to_string()),
+        publishers: vec![],
+        start_year: None,
+        total_volumes: Some(7),
+        cover_url: Some("https://img/gon.jpg".to_string()),
+        external_url: None,
+        score: metadata_providers::scoring::Score::exact(),
+        // The raw provider blob no longer carries authors/publishers/status.
+        metadata_json: serde_json::json!({ "rating": 7.5 }),
+    };
+
+    store_refreshed_snapshot(&pool, link_id, &candidate)
+        .await
+        .unwrap();
+
+    let (stored, total): (serde_json::Value, Option<i32>) = sqlx::query_as(
+        "SELECT metadata_json, total_volumes_external FROM external_metadata_links WHERE id = $1",
+    )
+    .bind(link_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored["authors"], serde_json::json!(["Masashi Tanaka"]));
+    assert_eq!(stored["publishers"], serde_json::json!(["Pika"]));
+    assert_eq!(stored["start_year"], serde_json::json!(1992));
+    assert_eq!(stored["status"], serde_json::json!("FINISHED"));
+    assert_eq!(stored["rating"], serde_json::json!(7.5));
+    assert_eq!(
+        stored["description"],
+        serde_json::json!("Un petit dinosaure")
+    );
+    assert_eq!(
+        stored["cover_url"],
+        serde_json::json!("https://img/gon.jpg")
+    );
+    assert_eq!(total, Some(7));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refreshed_snapshot_on_missing_link_is_an_error(pool: sqlx::PgPool) {
+    let candidate = metadata_providers::SeriesCandidate {
+        external_id: "x".to_string(),
+        title: "x".to_string(),
+        authors: vec![],
+        description: None,
+        publishers: vec![],
+        start_year: None,
+        total_volumes: None,
+        cover_url: None,
+        external_url: None,
+        score: metadata_providers::scoring::Score::exact(),
+        metadata_json: serde_json::json!({}),
+    };
+    let err = store_refreshed_snapshot(&pool, Uuid::new_v4(), &candidate)
+        .await
+        .unwrap_err();
+    assert!(err.contains("not found"), "{err}");
+}

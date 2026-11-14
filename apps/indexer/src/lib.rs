@@ -3,6 +3,7 @@ pub mod api;
 pub mod batch;
 pub mod converter;
 pub mod job;
+pub mod lease;
 pub mod scanner;
 pub mod scheduler;
 pub mod utils;

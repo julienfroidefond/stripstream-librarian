@@ -18,6 +18,7 @@ use stripstream_core::series_identity;
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::progress::{ProgressSink, TorrentSink, TransferProgress};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
+use super::settings::DownloadSettings;
 use super::torrent_ledger::{
     self, ImportOutcome, RestartScope, TorrentStatus, TorrentTransitionError,
 };
@@ -68,13 +69,55 @@ pub struct TorrentDownloadDto {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct ImportedFile {
+    /// Lowest volume of the file (`0` when it has none). Kept for the clients
+    /// that read a single number; [`Self::volumes`] is the full list.
     pub(super) volume: i32,
+    /// Every volume the file covers: one for a single tome, all of them for a
+    /// multi-volume pack. Empty for a one-shot and for reports written before
+    /// this field existed.
+    #[serde(default)]
+    pub(super) volumes: Vec<i32>,
+    #[serde(default)]
     pub(super) source: String,
+    #[serde(default)]
     pub(super) destination: String,
     #[serde(default)]
     pub(super) already_existed: bool,
+}
+
+impl ImportedFile {
+    /// Build the report entry of a file covering `volumes` (empty for a
+    /// one-shot).
+    pub(super) fn new(
+        volumes: &[i32],
+        source: String,
+        destination: String,
+        already_existed: bool,
+    ) -> Self {
+        let mut volumes = volumes.to_vec();
+        volumes.sort_unstable();
+        volumes.dedup();
+        Self {
+            volume: volumes.first().copied().unwrap_or(0),
+            volumes,
+            source,
+            destination,
+            already_existed,
+        }
+    }
+
+    /// The volumes this file accounts for. A report without `volumes` (a
+    /// one-shot, or a row written before the field existed) falls back to the
+    /// single `volume`.
+    pub(super) fn covered_volumes(&self) -> Vec<i32> {
+        if self.volumes.is_empty() {
+            vec![self.volume]
+        } else {
+            self.volumes.clone()
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -169,13 +212,7 @@ pub async fn notify_torrent_done(
         body.hash, content_path
     );
 
-    let pool = state.pool.clone();
-    let library_root = state.library_root.clone();
-    tokio::spawn(async move {
-        if let Err(e) = process_torrent_import(pool, &library_root, torrent_id).await {
-            warn!("Torrent import {} failed: {:#}", torrent_id, e);
-        }
-    });
+    spawn_import(state.pool.clone(), state.library_root.clone(), torrent_id);
 
     Ok(Json(crate::responses::OkResponse::new()))
 }
@@ -252,13 +289,16 @@ pub async fn list_torrent_downloads(
 }
 
 /// Delete a torrent download entry. If the torrent is still downloading, also remove it from the
-/// matching backend (qBittorrent or AllDebrid).
+/// matching backend (qBittorrent or AllDebrid). A row whose import did not
+/// finish (`partial`, `no_files_imported`, `error`) kept its sources for a
+/// retry: deleting the row gives up on it, so those sources are removed too.
+/// A qBittorrent torrent Stripstream did not add is never removed.
 pub async fn delete_torrent_download(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     let row = sqlx::query(
-        "SELECT client, external_id, qb_hash, status FROM torrent_downloads WHERE id = $1",
+        "SELECT client, external_id, qb_hash, status, qb_owned FROM torrent_downloads WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -271,44 +311,54 @@ pub async fn delete_torrent_download(
     let client: String = row.get("client");
     let external_id: Option<String> = row.get("external_id");
     let qb_hash: Option<String> = row.get("qb_hash");
+    let qb_owned: bool = row.get("qb_owned");
     let status: String = row.get("status");
     let status = TorrentStatus::try_from(status.as_str()).ok();
 
-    // If downloading, cancel the transfer in its backend.
-    if status == Some(TorrentStatus::Downloading) {
-        if client == "alldebrid" {
-            if let Some(ref magnet_id) = external_id {
-                match super::alldebrid::load_alldebrid_client(&state.pool).await {
-                    Ok(alldebrid) => match alldebrid.delete_magnet(magnet_id).await {
-                        Ok(()) => info!("Deleted magnet {magnet_id} from AllDebrid"),
+    match status {
+        // Cancel the transfer in its backend.
+        Some(TorrentStatus::Downloading) => {
+            if client == "alldebrid" {
+                if let Some(ref magnet_id) = external_id {
+                    match super::alldebrid::load_alldebrid_client(&state.pool).await {
+                        Ok(alldebrid) => match alldebrid.delete_magnet(magnet_id).await {
+                            Ok(()) => info!("Deleted magnet {magnet_id} from AllDebrid"),
+                            Err(e) => {
+                                warn!(
+                                    "Failed to delete magnet {magnet_id} from AllDebrid: {}",
+                                    e.message
+                                )
+                            }
+                        },
                         Err(e) => {
-                            warn!(
-                                "Failed to delete magnet {magnet_id} from AllDebrid: {}",
-                                e.message
-                            )
+                            warn!("AllDebrid not available to delete magnet: {}", e.message)
                         }
-                    },
-                    Err(e) => warn!("AllDebrid not available to delete magnet: {}", e.message),
-                }
-            }
-        } else if let Some(ref hash) = qb_hash {
-            if let Ok((base_url, username, password)) = load_qbittorrent_config(&state.pool).await {
-                let client = build_http_client(Duration::from_secs(10)).ok();
-                if let Some(client) = client {
-                    if let Ok(sid) =
-                        qbittorrent_login(&client, &base_url, &username, &password).await
-                    {
-                        let _ = client
-                            .post(format!("{base_url}/api/v2/torrents/delete"))
-                            .header("Cookie", format!("SID={sid}"))
-                            .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
-                            .send()
-                            .await;
-                        info!("Deleted torrent {} from qBittorrent", hash);
                     }
                 }
+            } else {
+                cleanup_sources(
+                    &state.pool,
+                    id,
+                    &client,
+                    qb_hash.as_deref(),
+                    qb_owned,
+                    "[DELETE]",
+                )
+                .await;
             }
         }
+        Some(TorrentStatus::Partial | TorrentStatus::NoFilesImported | TorrentStatus::Error) => {
+            cleanup_sources(
+                &state.pool,
+                id,
+                &client,
+                qb_hash.as_deref(),
+                qb_owned,
+                "[DELETE]",
+            )
+            .await;
+        }
+        _ => {}
     }
 
     sqlx::query("DELETE FROM torrent_downloads WHERE id = $1")
@@ -321,6 +371,11 @@ pub async fn delete_torrent_download(
 }
 
 /// Retry a stuck import — re-launches the import directly.
+///
+/// The row is reserved (`importing`) before the task is spawned, so a second
+/// click while the import runs gets `409` instead of a concurrent import. A
+/// row without files to import is refused with `400` (or, for AllDebrid,
+/// re-armed in the debrid service) rather than accepted and failed silently.
 pub async fn retry_torrent_import(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -337,50 +392,96 @@ pub async fn retry_torrent_import(
     let status: String = row.get("status");
     let status = TorrentStatus::try_from(status.as_str())
         .map_err(|_| ApiError::internal("unknown torrent download status"))?;
+    if status == TorrentStatus::Importing {
+        return Err(ApiError::conflict("an import is already running"));
+    }
     if !status.is_retryable() {
         return Err(ApiError::bad_request("not in retryable state"));
     }
 
     let content_path: Option<String> = row.get("content_path");
     let client: String = row.get("client");
-    if let Some(ref cp) = content_path {
-        if !std::path::Path::new(cp).exists() {
-            if should_restart_missing_alldebrid_source(&client) {
-                let external_id: Option<String> = row.get("external_id");
-                let external_id = external_id
-                    .ok_or_else(|| ApiError::bad_request("AllDebrid magnet id is missing"))?;
-                let alldebrid = load_alldebrid_client(&state.pool).await?;
-                if let Err(e) = alldebrid.restart_magnet(&external_id).await {
-                    if !is_already_processing(&e.message) {
-                        return Err(e);
-                    }
+    let external_id: Option<String> = row.get("external_id");
+    match retry_plan(content_path.as_deref(), &client, |path| {
+        std::path::Path::new(path).exists()
+    }) {
+        RetryPlan::Import => {}
+        RetryPlan::RestartAlldebrid => {
+            let external_id = external_id
+                .ok_or_else(|| ApiError::bad_request("AllDebrid magnet id is missing"))?;
+            let alldebrid = load_alldebrid_client(&state.pool).await?;
+            if let Err(e) = alldebrid.restart_magnet(&external_id).await {
+                if !is_already_processing(&e.message) {
+                    return Err(e);
                 }
-                torrent_ledger::restart(&state.pool, id, RestartScope::Retryable).await?;
-                return Ok(Json(crate::responses::OkResponse::new()));
             }
-
+            torrent_ledger::restart(&state.pool, id, RestartScope::Retryable)
+                .await
+                .map_err(retry_transition_error)?;
+            return Ok(Json(crate::responses::OkResponse::new()));
+        }
+        RetryPlan::SourcesGone => {
             // Files already cleaned up — mark as error
             torrent_ledger::fail(
                 &state.pool,
                 id,
                 "Source files no longer available (already cleaned up)",
             )
-            .await?;
+            .await
+            .map_err(retry_transition_error)?;
             return Err(ApiError::bad_request("source files no longer available"));
+        }
+        RetryPlan::NothingToImport => {
+            return Err(ApiError::bad_request(
+                "the download never completed: there are no files to import",
+            ));
         }
     }
 
-    // Re-launch the import in a background task
-    let pool = state.pool.clone();
-    let library_root = state.library_root.clone();
-    tokio::spawn(async move {
-        if let Err(e) = process_torrent_import(pool, &library_root, id).await {
-            warn!("Retry import {id} failed: {e:#}");
-        }
-    });
+    // Reserve the row now: of two concurrent retries only one gets past here.
+    torrent_ledger::begin_import(&state.pool, id)
+        .await
+        .map_err(retry_transition_error)?;
+
+    spawn_reserved_import(state.pool.clone(), state.library_root.clone(), id);
 
     info!("Retry import {id} launched");
     Ok(Json(crate::responses::OkResponse::new()))
+}
+
+/// A transition refused because the row moved meanwhile (another retry, an
+/// import that just started) is a conflict for the caller.
+fn retry_transition_error(err: TorrentTransitionError) -> ApiError {
+    match err {
+        TorrentTransitionError::NotAllowed { .. } => ApiError::conflict(err.to_string()),
+        other => other.into(),
+    }
+}
+
+/// What a retry does, from what is known about the row's files.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum RetryPlan {
+    /// The files are there: import them.
+    Import,
+    /// AllDebrid row without local files: ask the debrid service again.
+    RestartAlldebrid,
+    /// The files were imported/cleaned up already: nothing left to retry.
+    SourcesGone,
+    /// The transfer never completed (no content path): nothing to import.
+    NothingToImport,
+}
+
+pub(super) fn retry_plan(
+    content_path: Option<&str>,
+    client: &str,
+    exists: impl Fn(&str) -> bool,
+) -> RetryPlan {
+    match content_path {
+        Some(path) if exists(path) => RetryPlan::Import,
+        _ if should_restart_missing_alldebrid_source(client) => RetryPlan::RestartAlldebrid,
+        Some(_) => RetryPlan::SourcesGone,
+        None => RetryPlan::NothingToImport,
+    }
 }
 
 fn should_restart_missing_alldebrid_source(client: &str) -> bool {
@@ -407,28 +508,116 @@ struct QbTorrentInfo {
     eta: i64,
 }
 
-/// Completed states in qBittorrent: torrent is fully downloaded and seeding.
+/// Completed states in qBittorrent: torrent is fully downloaded (seeding,
+/// queued for seeding, or stopped after completion — `pausedUP` before 5.0,
+/// `stoppedUP` since).
 pub(super) const QB_COMPLETED_STATES: &[&str] = &[
     "uploading",
     "stalledUP",
     "pausedUP",
+    "stoppedUP",
     "queuedUP",
     "checkingUP",
     "forcedUP",
 ];
 
-/// Failed/stalled states: torrent cannot make progress (no seeds, stalled download).
-const QB_FAILED_STATES: &[&str] = &["stalledDL", "pausedDL", "error", "missingFiles"];
+/// Download paused by the user (`pausedDL` before qBittorrent 5.0, `stoppedDL`
+/// since). Never a failure: the row waits for the user to resume it.
+const QB_PAUSED_STATES: &[&str] = &["pausedDL", "stoppedDL"];
+
+/// No peer is sending data. Transient by nature: the torrent only fails once
+/// it stayed there longer than the stall timeout.
+const QB_STALLED_STATES: &[&str] = &["stalledDL"];
+
+/// States qBittorrent cannot recover from without the user: the torrent fails
+/// immediately.
+const QB_FAILED_STATES: &[&str] = &["error", "missingFiles"];
+
+/// A tracked torrent absent from a successful `torrents/info` answer is only
+/// declared gone once its row is older than this: a torrent qBittorrent has
+/// just accepted may not be listed yet.
+const QB_MISSING_GRACE: chrono::Duration = chrono::Duration::minutes(2);
+
+/// A `completed` row whose import has not started after this long is resumed
+/// by the poller (the task spawned on completion died or never ran).
+const STALE_COMPLETED_GRACE: chrono::Duration = chrono::Duration::minutes(2);
+
+/// What the poller does with a torrent, from its qBittorrent state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum QbStateAction {
+    /// Fully downloaded: hand over to the import.
+    Completed,
+    /// Paused by the user: keep the row, never delete anything.
+    Paused,
+    /// No peer: fail only once the stall lasted longer than the timeout.
+    Stalled,
+    /// Unrecoverable: fail now.
+    Failed,
+    /// Downloading, fetching metadata, checking, queued…: just track progress.
+    InProgress,
+}
+
+pub(super) fn classify_qb_state(state: &str) -> QbStateAction {
+    if QB_COMPLETED_STATES.contains(&state) {
+        QbStateAction::Completed
+    } else if QB_PAUSED_STATES.contains(&state) {
+        QbStateAction::Paused
+    } else if QB_STALLED_STATES.contains(&state) {
+        QbStateAction::Stalled
+    } else if QB_FAILED_STATES.contains(&state) {
+        QbStateAction::Failed
+    } else {
+        QbStateAction::InProgress
+    }
+}
+
+/// Whether a torrent stalled since `stall_started` has exhausted `timeout`.
+pub(super) fn stall_expired(
+    stall_started: DateTime<Utc>,
+    now: DateTime<Utc>,
+    timeout: Duration,
+) -> bool {
+    let timeout = chrono::Duration::from_std(timeout).unwrap_or(chrono::Duration::MAX);
+    now - stall_started >= timeout
+}
+
+/// Tracked hashes that a successful `torrents/info` answer did not list.
+/// qBittorrent reports lowercase hex; the comparison ignores case so a hash
+/// stored from a magnet link in another case still matches.
+pub(super) fn missing_hashes<'a>(tracked: &'a [String], reported: &[&str]) -> Vec<&'a str> {
+    tracked
+        .iter()
+        .filter(|hash| !reported.iter().any(|r| r.eq_ignore_ascii_case(hash)))
+        .map(String::as_str)
+        .collect()
+}
+
+/// A `downloading` qBittorrent row the poller tracks.
+struct TrackedTorrent {
+    id: Uuid,
+    hash: String,
+    created_at: DateTime<Utc>,
+    qb_owned: bool,
+}
 
 pub async fn run_torrent_poller(
     pool: PgPool,
     library_root: stripstream_core::paths::LibraryRoot,
     interval_seconds: u64,
 ) {
+    // Imports interrupted by a restart were handed back to `completed` by
+    // `recovery::reset_stale_downloads`, synchronously, before this task was
+    // spawned: resetting `importing` rows here would race with imports the
+    // HTTP server or the AllDebrid poller reserve meanwhile. Resume every
+    // `completed` row right away; `begin_import` is atomic, so a row another
+    // task reserved first is skipped.
+    resume_stale_completed(&pool, &library_root, chrono::Duration::zero()).await;
+
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
     let active_wait = Duration::from_secs(3);
     let error_wait = Duration::from_secs(10);
     loop {
+        resume_stale_completed(&pool, &library_root, STALE_COMPLETED_GRACE).await;
         let wait = match poll_qbittorrent_downloads(&pool, &library_root).await {
             Ok(true) => active_wait,
             Ok(false) => idle_wait,
@@ -450,6 +639,32 @@ pub async fn run_torrent_poller(
             }
         };
         tokio::time::sleep(wait).await;
+    }
+}
+
+/// Start the import of every `completed` row (any client) that has waited at
+/// least `grace`. The import reservation is atomic, so a row whose import was
+/// started meanwhile is simply skipped by the spawned task.
+async fn resume_stale_completed(
+    pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    grace: chrono::Duration,
+) {
+    let ids = match torrent_ledger::stale_completed(pool, grace).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            warn!("[TORRENT_POLLER] Failed to list completed downloads: {e}");
+            return;
+        }
+    };
+    for id in ids {
+        match torrent_ledger::begin_import(pool, id).await {
+            Ok(()) => {
+                info!("[TORRENT_POLLER] Resuming the import of completed download {id}");
+                spawn_reserved_import(pool.clone(), library_root.clone(), id);
+            }
+            Err(e) => trace!("[TORRENT_POLLER] Completed download {id} not resumed: {e}"),
+        }
     }
 }
 
@@ -511,34 +726,27 @@ async fn poll_qbittorrent_downloads(
         }
     }
 
-    // Re-fetch rows to include newly resolved hashes
-    let rows = sqlx::query(
-        "SELECT id, qb_hash, created_at FROM torrent_downloads \
-         WHERE status = 'downloading' AND client = 'qbittorrent'",
+    // Re-fetch rows to include newly resolved hashes; keep those with a hash.
+    let tracked: Vec<TrackedTorrent> = sqlx::query(
+        "SELECT id, qb_hash, created_at, qb_owned FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent' AND qb_hash IS NOT NULL",
     )
     .fetch_all(pool)
-    .await?;
+    .await?
+    .into_iter()
+    .map(|r| TrackedTorrent {
+        id: r.get("id"),
+        hash: r.get("qb_hash"),
+        created_at: r.get("created_at"),
+        qb_owned: r.get("qb_owned"),
+    })
+    .collect();
 
-    // Filter to rows that have a resolved hash
-    let rows: Vec<_> = rows
-        .into_iter()
-        .filter(|r| {
-            let qb_hash: Option<String> = r.get("qb_hash");
-            qb_hash.is_some()
-        })
-        .collect();
-
-    if rows.is_empty() {
+    if tracked.is_empty() {
         return Ok(true);
     }
 
-    let hashes: Vec<String> = rows
-        .iter()
-        .map(|r| {
-            let h: String = r.get("qb_hash");
-            h
-        })
-        .collect();
+    let hashes: Vec<String> = tracked.iter().map(|t| t.hash.clone()).collect();
     let hashes_param = hashes.join("|");
 
     let resp = client
@@ -555,7 +763,31 @@ async fn poll_qbittorrent_downloads(
         ));
     }
 
+    // Only a fully decoded, successful answer may prove that a torrent is gone.
     let infos: Vec<QbTorrentInfo> = resp.json().await?;
+
+    let reported: Vec<&str> = infos.iter().map(|i| i.hash.as_str()).collect();
+    let now = Utc::now();
+    for hash in missing_hashes(&hashes, &reported) {
+        let Some(row) = tracked.iter().find(|t| t.hash == hash) else {
+            continue;
+        };
+        if now - row.created_at < QB_MISSING_GRACE {
+            continue;
+        }
+        warn!(
+            "[TORRENT_POLLER] Torrent {} ({}) is no longer listed by qBittorrent",
+            row.hash, row.id
+        );
+        let _ = torrent_ledger::fail(
+            pool,
+            row.id,
+            "Torrent no longer present in qBittorrent (removed outside Stripstream)",
+        )
+        .await;
+    }
+
+    let mut settings: Option<DownloadSettings> = None;
 
     for info in &infos {
         info!(
@@ -563,53 +795,66 @@ async fn poll_qbittorrent_downloads(
             info.hash, info.state, info.progress, info.name
         );
 
-        // Update progress for all active torrents
-        let row = rows.iter().find(|r| {
-            let h: String = r.get("qb_hash");
-            h == info.hash
-        });
-        if let Some(row) = row {
-            let tid: Uuid = row.get("id");
-            // qBittorrent reports its own fraction and ETA; the row stays at
-            // zero transferred bytes so this poll never clears the stall marker.
-            let snapshot = TransferProgress::from_reported(
-                0,
-                Some(info.total_size),
-                info.progress as f32,
-                info.dlspeed,
-                info.eta,
-            );
-            let _ = TorrentSink::new(pool.clone(), tid).report(&snapshot).await;
-        }
+        let Some(row) = tracked
+            .iter()
+            .find(|t| t.hash.eq_ignore_ascii_case(&info.hash))
+        else {
+            continue;
+        };
+        let tid = row.id;
+        let action = classify_qb_state(&info.state);
 
-        if QB_FAILED_STATES.contains(&info.state.as_str()) {
-            let Some(row) = rows.iter().find(|r| {
-                let h: String = r.get("qb_hash");
-                h == info.hash
-            }) else {
+        // qBittorrent reports its own fraction and ETA; the row stays at
+        // zero transferred bytes so this poll never clears the stall marker.
+        let snapshot = TransferProgress::from_reported(
+            0,
+            Some(info.total_size),
+            info.progress as f32,
+            info.dlspeed,
+            info.eta,
+        );
+        let sink = TorrentSink::new(pool.clone(), tid);
+
+        match action {
+            QbStateAction::Stalled => {
+                let stall_started =
+                    match torrent_ledger::arm_stall(pool, tid, &sink.update(&snapshot)).await {
+                        Ok(Some(started)) => started,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            warn!("[TORRENT_POLLER] Failed to arm the stall marker for {tid}: {e}");
+                            continue;
+                        }
+                    };
+                let timeout = match settings {
+                    Some(loaded) => loaded,
+                    None => *settings.insert(DownloadSettings::load(pool).await),
+                }
+                .magnet_stall_timeout;
+                if stall_expired(stall_started, now, timeout) {
+                    let msg = format!(
+                        "Torrent stalled in qBittorrent for {} min (state: {})",
+                        (now - stall_started).num_minutes(),
+                        info.state
+                    );
+                    fail_qb_torrent(pool, &client, &base_url, &sid, row, &msg).await;
+                }
                 continue;
-            };
-            let tid: Uuid = row.get("id");
-            let msg = format!("Torrent stalled in qBittorrent (state: {})", info.state);
-            warn!("[TORRENT_POLLER] Torrent {} failed: {}", info.hash, msg);
-            let _ = torrent_ledger::fail(pool, tid, &msg).await;
-
-            // Remove torrent from qBittorrent
-            let _ = client
-                .post(format!("{base_url}/api/v2/torrents/delete"))
-                .header("Cookie", format!("SID={sid}"))
-                .form(&[("hashes", info.hash.as_str()), ("deleteFiles", "true")])
-                .send()
-                .await;
-            info!(
-                "[TORRENT_POLLER] Removed failed torrent {} from qBittorrent",
-                info.hash
-            );
-            continue;
-        }
-
-        if !QB_COMPLETED_STATES.contains(&info.state.as_str()) {
-            continue;
+            }
+            QbStateAction::Failed => {
+                let _ = sink.report(&snapshot).await;
+                let msg = format!("Torrent failed in qBittorrent (state: {})", info.state);
+                fail_qb_torrent(pool, &client, &base_url, &sid, row, &msg).await;
+                continue;
+            }
+            QbStateAction::Paused | QbStateAction::InProgress => {
+                let _ = sink.report(&snapshot).await;
+                let _ = torrent_ledger::clear_stall(pool, tid).await;
+                continue;
+            }
+            QbStateAction::Completed => {
+                let _ = sink.report(&snapshot).await;
+            }
         }
 
         // content_path is available since qBittorrent 4.3.2; fall back to save_path + name.
@@ -649,29 +894,13 @@ async fn poll_qbittorrent_downloads(
             continue;
         };
 
-        let Some(row) = rows.iter().find(|r| {
-            let h: String = r.get("qb_hash");
-            h == info.hash
-        }) else {
-            continue;
-        };
-        let torrent_id: Uuid = row.get("id");
-
-        match torrent_ledger::mark_completed(pool, torrent_id, &content_path).await {
+        match torrent_ledger::mark_completed(pool, tid, &content_path).await {
             Ok(()) => {
                 info!(
                     "[TORRENT_POLLER] Torrent {} completed, content at {}, starting import",
                     info.hash, content_path
                 );
-                let pool_clone = pool.clone();
-                let library_root = library_root.clone();
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        process_torrent_import(pool_clone, &library_root, torrent_id).await
-                    {
-                        warn!("Torrent import {} failed: {:#}", torrent_id, e);
-                    }
-                });
+                spawn_import(pool.clone(), library_root.clone(), tid);
             }
             Err(TorrentTransitionError::Database(e)) => return Err(e.into()),
             Err(e) => info!(
@@ -693,19 +922,143 @@ async fn poll_qbittorrent_downloads(
     Ok(still_active > 0)
 }
 
+/// Fail a tracked torrent and, when Stripstream added it, remove it (and its
+/// partial files) from qBittorrent. An adopted torrent belongs to the user and
+/// stays untouched.
+async fn fail_qb_torrent(
+    pool: &PgPool,
+    client: &reqwest::Client,
+    base_url: &str,
+    sid: &str,
+    row: &TrackedTorrent,
+    message: &str,
+) {
+    warn!("[TORRENT_POLLER] Torrent {} failed: {}", row.hash, message);
+    if torrent_ledger::fail(pool, row.id, message).await.is_err() {
+        return;
+    }
+    if !row.qb_owned {
+        info!(
+            "[TORRENT_POLLER] Torrent {} was not added by Stripstream, leaving it in qBittorrent",
+            row.hash
+        );
+        return;
+    }
+    let _ = client
+        .post(format!("{base_url}/api/v2/torrents/delete"))
+        .header("Cookie", format!("SID={sid}"))
+        .form(&[("hashes", row.hash.as_str()), ("deleteFiles", "true")])
+        .send()
+        .await;
+    info!(
+        "[TORRENT_POLLER] Removed failed torrent {} from qBittorrent",
+        row.hash
+    );
+}
+
 // ─── Import processing ────────────────────────────────────────────────────────
 
+/// Reserve the row and run its import in a background task.
+pub(super) fn spawn_import(
+    pool: PgPool,
+    library_root: stripstream_core::paths::LibraryRoot,
+    torrent_id: Uuid,
+) {
+    tokio::spawn(async move {
+        if let Err(e) = process_torrent_import(pool, &library_root, torrent_id).await {
+            warn!("Torrent import {} failed: {:#}", torrent_id, e);
+        }
+    });
+}
+
+/// Run, in a background task, the import of a row the caller already
+/// reserved with [`torrent_ledger::begin_import`].
+fn spawn_reserved_import(
+    pool: PgPool,
+    library_root: stripstream_core::paths::LibraryRoot,
+    torrent_id: Uuid,
+) {
+    tokio::spawn(async move {
+        if let Err(e) = run_reserved_import(pool, &library_root, torrent_id).await {
+            warn!("Torrent import {} failed: {:#}", torrent_id, e);
+        }
+    });
+}
+
+/// Reserve the row for an import, then run it.
+///
+/// Fails without touching anything when another import already holds the row.
 pub(super) async fn process_torrent_import(
     pool: PgPool,
     library_root: &stripstream_core::paths::LibraryRoot,
     torrent_id: Uuid,
 ) -> anyhow::Result<()> {
+    torrent_ledger::begin_import(&pool, torrent_id).await?;
+    run_reserved_import(pool, library_root, torrent_id).await
+}
+
+/// Import a row that is `importing` and owned by the caller.
+///
+/// Whatever happens, the row leaves `importing`: an error outside the import
+/// pipeline itself fails the row instead of leaving it reserved forever.
+pub(super) async fn run_reserved_import(
+    pool: PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    torrent_id: Uuid,
+) -> anyhow::Result<()> {
+    let result = import_reserved(&pool, library_root, torrent_id).await;
+    if let Err(e) = &result {
+        let message = format!("Import aborted: {e:#}");
+        if let Err(db) = torrent_ledger::abandon_import(&pool, torrent_id, &message).await {
+            warn!("Torrent import {torrent_id}: failed to release the row: {db}");
+        }
+    }
+    result
+}
+
+/// Every volume the import reports cover: the files of this run plus the ones
+/// a previous run of the same row already imported (a retry only sees the
+/// files the first run left behind).
+fn merge_imported_files(
+    previous: Vec<ImportedFile>,
+    current: &[ImportedFile],
+) -> Vec<ImportedFile> {
+    let mut merged: Vec<ImportedFile> = previous
+        .into_iter()
+        .filter(|old| !current.iter().any(|new| new.destination == old.destination))
+        .collect();
+    merged.extend(current.iter().cloned());
+    merged
+}
+
+/// The files a previous import of the row reported, if any.
+fn previous_imported_files(report: Option<serde_json::Value>) -> Vec<ImportedFile> {
+    report
+        .and_then(|mut value| value.get_mut("imported").map(serde_json::Value::take))
+        .and_then(|imported| serde_json::from_value(imported).ok())
+        .unwrap_or_default()
+}
+
+/// Volumes covered by `files`, one entry per (file, volume).
+pub(super) fn covered_volumes(files: &[ImportedFile]) -> Vec<i32> {
+    files
+        .iter()
+        .flat_map(ImportedFile::covered_volumes)
+        .collect()
+}
+
+async fn import_reserved(
+    pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    torrent_id: Uuid,
+) -> anyhow::Result<()> {
     let row = sqlx::query(
-        "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.client, td.replace_existing, l.name AS library_name \
+        "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, \
+         td.client, td.replace_existing, td.qb_owned, td.imported_files, l.name AS library_name \
          FROM torrent_downloads td LEFT JOIN libraries l ON l.id = td.library_id WHERE td.id = $1",
     )
     .bind(torrent_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     let library_id: Uuid = row.get("library_id");
@@ -716,13 +1069,13 @@ pub(super) async fn process_torrent_import(
     let qb_hash: Option<String> = row.get("qb_hash");
     let client: String = row.get("client");
     let replace_existing: bool = row.get("replace_existing");
+    let qb_owned: bool = row.get("qb_owned");
+    let previous = previous_imported_files(row.get("imported_files"));
     let content_path =
         content_path.ok_or_else(|| anyhow::anyhow!("content_path not set on torrent_download"))?;
 
-    torrent_ledger::begin_import(&pool, torrent_id).await?;
-
     match do_import(
-        &pool,
+        pool,
         library_root,
         library_id,
         &series_name,
@@ -736,19 +1089,21 @@ pub(super) async fn process_torrent_import(
             let imported = &result.imported;
             let skipped = &result.skipped;
 
-            let imported_volumes: Vec<i32> = imported.iter().map(|file| file.volume).collect();
+            // A retry only sees what the previous run left behind: the volumes
+            // that run already imported still count toward the outcome.
+            let all_imported = merge_imported_files(previous, imported);
             let outcome: ImportOutcome = torrent_ledger::import_outcome(
-                &imported_volumes,
+                &covered_volumes(&all_imported),
                 &expected_volumes,
                 replace_existing,
             );
 
             let json = serde_json::json!({
-                "imported": imported,
+                "imported": all_imported,
                 "skipped": skipped,
                 "total_source_files": result.total_source_files,
             });
-            torrent_ledger::finish_import(&pool, torrent_id, outcome, &json).await?;
+            torrent_ledger::finish_import(pool, torrent_id, outcome, &json).await?;
 
             // Queue a scan job so the indexer picks up the new files
             let scan_job_id = Uuid::new_v4();
@@ -757,7 +1112,7 @@ pub(super) async fn process_torrent_import(
             )
             .bind(scan_job_id)
             .bind(library_id)
-            .execute(&pool)
+            .execute(pool)
             .await?;
 
             // Insert events for each imported file
@@ -767,7 +1122,7 @@ pub(super) async fn process_torrent_import(
                         .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or(""),
-                    "volumes": [imp.volume],
+                    "volumes": imp.covered_volumes(),
                 });
                 let _ = sqlx::query(
                     "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, detail) \
@@ -776,7 +1131,7 @@ pub(super) async fn process_torrent_import(
                 .bind(scan_job_id)
                 .bind(&imp.destination)
                 .bind(detail)
-                .execute(&pool)
+                .execute(pool)
                 .await;
             }
 
@@ -794,12 +1149,12 @@ pub(super) async fn process_torrent_import(
                 .bind(scan_job_id)
                 .bind(&skip.filename)
                 .bind(detail)
-                .execute(&pool)
+                .execute(pool)
                 .await;
             }
 
             // Refresh metadata for this series if it has an approved metadata link
-            let link_row = match series_identity::find_id(&pool, library_id, &series_name).await? {
+            let link_row = match series_identity::find_id(pool, library_id, &series_name).await? {
                 Some(series_id) => {
                     sqlx::query(
                         "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \
@@ -807,7 +1162,7 @@ pub(super) async fn process_torrent_import(
                          ORDER BY eml.is_primary DESC, eml.approved_at ASC NULLS LAST, eml.id ASC LIMIT 1",
                     )
                     .bind(series_id)
-                    .fetch_optional(&pool)
+                    .fetch_optional(pool)
                     .await?
                 }
                 None => None,
@@ -839,53 +1194,25 @@ pub(super) async fn process_torrent_import(
 
             // Prune imported volumes from the availability releases. The module
             // derives the counter from the distinct volumes actually removed.
-            prune_imported_volumes(&pool, library_id, &series_name, imported).await;
+            prune_imported_volumes(pool, library_id, &series_name, imported).await;
 
-            // Clean up: remove the sl-{id} category directory and all its contents
-            let downloads_root = remap_downloads_path("/downloads");
-            let category_dir = remap_downloads_path(&format!("/downloads/sl-{torrent_id}"));
-            let category_p = std::path::Path::new(&category_dir);
-            let downloads_p = std::path::Path::new(&downloads_root);
-            if category_p.is_dir()
-                && category_p != downloads_p
-                && category_p.starts_with(downloads_p)
-            {
-                match std::fs::remove_dir_all(category_p) {
-                    Ok(()) => info!("[IMPORT] Cleaned up category directory: {}", category_dir),
-                    Err(e) => warn!("[IMPORT] Failed to clean up {}: {}", category_dir, e),
-                }
-            }
-
-            // Remove torrent and category from qBittorrent (AllDebrid magnets are
-            // already deleted by its poller once the files are fetched).
-            if client == "qbittorrent" {
-                if let Some(ref hash) = qb_hash {
-                    if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await
-                    {
-                        if let Ok(client) = build_http_client(Duration::from_secs(10)) {
-                            if let Ok(sid) =
-                                qbittorrent_login(&client, &base_url, &username, &password).await
-                            {
-                                let _ = client
-                                    .post(format!("{base_url}/api/v2/torrents/delete"))
-                                    .header("Cookie", format!("SID={sid}"))
-                                    .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
-                                    .send()
-                                    .await;
-                                info!("[IMPORT] Removed torrent {} from qBittorrent", hash);
-
-                                // Remove the sl-{id} category
-                                let cat = format!("sl-{torrent_id}");
-                                let _ = client
-                                    .post(format!("{base_url}/api/v2/torrents/removeCategories"))
-                                    .header("Cookie", format!("SID={sid}"))
-                                    .form(&[("categories", cat.as_str())])
-                                    .send()
-                                    .await;
-                            }
-                        }
-                    }
-                }
+            // Clean up the sources only once everything landed: a partial or
+            // empty import keeps them so the retry button has files to work on.
+            if should_clean_sources(outcome) {
+                cleanup_sources(
+                    pool,
+                    torrent_id,
+                    &client,
+                    qb_hash.as_deref(),
+                    qb_owned,
+                    "[IMPORT]",
+                )
+                .await;
+            } else {
+                info!(
+                    "[IMPORT] Torrent import {torrent_id} ended as {:?}: keeping its sources for a retry",
+                    outcome
+                );
             }
 
             let new_count = imported.iter().filter(|f| !f.already_existed).count();
@@ -893,7 +1220,7 @@ pub(super) async fn process_torrent_import(
             let volumes: Vec<i32> = imported
                 .iter()
                 .filter(|f| !f.already_existed)
-                .map(|f| f.volume)
+                .flat_map(ImportedFile::covered_volumes)
                 .collect();
             notifications::notify(
                 pool.clone(),
@@ -922,7 +1249,7 @@ pub(super) async fn process_torrent_import(
         Err(e) => {
             let msg = format!("{e:#}");
             warn!("Torrent import {} error: {}", torrent_id, msg);
-            torrent_ledger::fail(&pool, torrent_id, &msg).await?;
+            torrent_ledger::fail(pool, torrent_id, &msg).await?;
 
             notifications::notify(
                 pool.clone(),
@@ -938,6 +1265,227 @@ pub(super) async fn process_torrent_import(
     Ok(())
 }
 
+/// Only a complete import consumes its sources: `partial` and
+/// `no_files_imported` offer a retry, which needs them.
+pub(super) fn should_clean_sources(outcome: ImportOutcome) -> bool {
+    outcome == ImportOutcome::Imported
+}
+
+/// The staging directory of a download (`/downloads/sl-{id}`, remapped), when
+/// it is a real directory strictly inside the downloads root.
+fn staging_dir(torrent_id: Uuid) -> Option<std::path::PathBuf> {
+    let downloads_root = remap_downloads_path("/downloads");
+    let category_dir = remap_downloads_path(&format!("/downloads/sl-{torrent_id}"));
+    let category_p = std::path::PathBuf::from(category_dir);
+    let downloads_p = std::path::Path::new(&downloads_root);
+    (category_p.is_dir() && category_p != downloads_p && category_p.starts_with(downloads_p))
+        .then_some(category_p)
+}
+
+/// Remove what a download left behind: its `sl-{id}` staging directory and,
+/// for a torrent Stripstream added itself, the qBittorrent torrent (with its
+/// files) and its category. AllDebrid magnets are deleted by their poller as
+/// soon as the local copy is complete.
+async fn cleanup_sources(
+    pool: &PgPool,
+    torrent_id: Uuid,
+    client: &str,
+    qb_hash: Option<&str>,
+    qb_owned: bool,
+    log_prefix: &str,
+) {
+    release_sources(
+        pool,
+        staging_dir(torrent_id),
+        torrent_id,
+        client,
+        qb_hash,
+        qb_owned,
+        log_prefix,
+    )
+    .await;
+}
+
+/// What qBittorrent leaves for the staging directory once the torrent was
+/// dealt with.
+#[derive(Debug, PartialEq, Eq)]
+enum StagingVerdict {
+    /// Nothing in qBittorrent writes there any more: the directory may go.
+    Remove,
+    /// The torrent could not be removed (or its state is unknown), or the
+    /// directory holds the data of a torrent Stripstream does not own.
+    Keep,
+}
+
+/// [`cleanup_sources`] with the staging directory resolved.
+///
+/// The torrent goes first: removing `sl-{id}` while qBittorrent still seeds
+/// (or downloads) into it would leave a torrent pointing at missing files. The
+/// directory is only removed once the torrent is gone — deleted by us, or no
+/// longer known to qBittorrent — and never when it holds the data of a torrent
+/// the user added (`qb_owned = FALSE`).
+async fn release_sources(
+    pool: &PgPool,
+    staging: Option<std::path::PathBuf>,
+    torrent_id: Uuid,
+    client: &str,
+    qb_hash: Option<&str>,
+    qb_owned: bool,
+    log_prefix: &str,
+) {
+    let verdict = if client == "qbittorrent" {
+        release_qb_torrent(
+            pool,
+            staging.as_deref(),
+            torrent_id,
+            qb_hash,
+            qb_owned,
+            log_prefix,
+        )
+        .await
+    } else {
+        StagingVerdict::Remove
+    };
+
+    let Some(dir) = staging else {
+        return;
+    };
+    if verdict == StagingVerdict::Keep {
+        info!(
+            "{log_prefix} Keeping category directory {} (torrent not removed)",
+            dir.display()
+        );
+        return;
+    }
+    match tokio::fs::remove_dir_all(&dir).await {
+        Ok(()) => info!(
+            "{log_prefix} Cleaned up category directory: {}",
+            dir.display()
+        ),
+        Err(e) => warn!("{log_prefix} Failed to clean up {}: {}", dir.display(), e),
+    }
+}
+
+/// Remove the qBittorrent side of a download and tell whether its staging
+/// directory may follow. Any doubt (qBittorrent unreachable, delete refused)
+/// keeps the directory.
+async fn release_qb_torrent(
+    pool: &PgPool,
+    staging: Option<&FsPath>,
+    torrent_id: Uuid,
+    qb_hash: Option<&str>,
+    qb_owned: bool,
+    log_prefix: &str,
+) -> StagingVerdict {
+    let Ok((base_url, username, password)) = load_qbittorrent_config(pool).await else {
+        warn!("{log_prefix} qBittorrent unavailable, cannot release torrent {torrent_id}");
+        return StagingVerdict::Keep;
+    };
+    let Ok(http) = build_http_client(Duration::from_secs(10)) else {
+        return StagingVerdict::Keep;
+    };
+    let Ok(sid) = qbittorrent_login(&http, &base_url, &username, &password).await else {
+        warn!("{log_prefix} qBittorrent login failed, cannot release torrent {torrent_id}");
+        return StagingVerdict::Keep;
+    };
+
+    let cat = format!("sl-{torrent_id}");
+    // A hash never resolved may still be found under our unique category —
+    // such a torrent is necessarily ours.
+    let (hash, owned) = match qb_hash {
+        Some(hash) => (Some(hash.to_string()), qb_owned),
+        None => (
+            resolve_hash_by_category(&http, &base_url, &sid, &cat).await,
+            true,
+        ),
+    };
+
+    let verdict = match hash {
+        None => StagingVerdict::Remove,
+        Some(hash) if owned => {
+            let deleted = http
+                .post(format!("{base_url}/api/v2/torrents/delete"))
+                .header("Cookie", format!("SID={sid}"))
+                .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
+                .send()
+                .await;
+            match deleted {
+                Ok(resp) if resp.status().is_success() => {
+                    info!("{log_prefix} Removed torrent {hash} from qBittorrent");
+                    StagingVerdict::Remove
+                }
+                Ok(resp) => {
+                    warn!(
+                        "{log_prefix} qBittorrent refused to remove torrent {hash}: {}",
+                        resp.status()
+                    );
+                    StagingVerdict::Keep
+                }
+                Err(e) => {
+                    warn!("{log_prefix} Failed to remove torrent {hash}: {e}");
+                    StagingVerdict::Keep
+                }
+            }
+        }
+        Some(hash) => {
+            info!(
+                "{log_prefix} Torrent {hash} was not added by Stripstream, leaving it in qBittorrent"
+            );
+            adopted_staging_verdict(&http, &base_url, &sid, &hash, staging).await
+        }
+    };
+
+    if verdict == StagingVerdict::Remove {
+        let _ = http
+            .post(format!("{base_url}/api/v2/torrents/removeCategories"))
+            .header("Cookie", format!("SID={sid}"))
+            .form(&[("categories", cat.as_str())])
+            .send()
+            .await;
+    }
+    verdict
+}
+
+/// Whether the staging directory may go while an adopted torrent stays in
+/// qBittorrent: only when that torrent is gone, or stores nothing inside it.
+async fn adopted_staging_verdict(
+    http: &reqwest::Client,
+    base_url: &str,
+    sid: &str,
+    hash: &str,
+    staging: Option<&FsPath>,
+) -> StagingVerdict {
+    let Some(staging) = staging else {
+        return StagingVerdict::Remove;
+    };
+    let resp = http
+        .get(format!("{base_url}/api/v2/torrents/info"))
+        .query(&[("hashes", hash)])
+        .header("Cookie", format!("SID={sid}"))
+        .send()
+        .await;
+    let infos: Vec<QbTorrentInfo> = match resp {
+        Ok(resp) if resp.status().is_success() => match resp.json().await {
+            Ok(infos) => infos,
+            Err(_) => return StagingVerdict::Keep,
+        },
+        _ => return StagingVerdict::Keep,
+    };
+    let Some(info) = infos.iter().find(|i| i.hash.eq_ignore_ascii_case(hash)) else {
+        return StagingVerdict::Remove;
+    };
+    let inside = [info.save_path.as_deref(), info.content_path.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|p| !p.is_empty())
+        .any(|p| FsPath::new(&remap_downloads_path(p)).starts_with(staging));
+    if inside {
+        StagingVerdict::Keep
+    } else {
+        StagingVerdict::Remove
+    }
+}
+
 /// Remove the volumes imported by a torrent from the series' availability
 /// releases. Volumes are deduplicated and the counter only moves for volumes
 /// that were actually present in a release match list.
@@ -947,7 +1495,7 @@ pub(super) async fn prune_imported_volumes(
     series_name: &str,
     imported: &[ImportedFile],
 ) {
-    let imported_volumes: Vec<i32> = imported.iter().map(|file| file.volume).collect();
+    let imported_volumes = covered_volumes(imported);
     if imported_volumes.is_empty() {
         return;
     }
@@ -970,6 +1518,10 @@ use super::import_pipeline::{do_import, remap_downloads_path};
 
 // do_import, filesystem helpers, naming helpers, format dedup, and path remapping
 // are now in super::import_pipeline
+
+#[cfg(test)]
+#[path = "tests/torrent_poller.rs"]
+mod poller_tests;
 
 #[cfg(test)]
 mod content_path_tests {

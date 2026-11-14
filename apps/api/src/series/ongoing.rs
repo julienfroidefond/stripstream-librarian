@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::{helpers, OngoingQuery, SeriesItem, SeriesMetadata};
 use crate::books::files::current_book_file_join;
+use crate::users::genre_restrictions::ensure_series_visible;
 use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
 // ─── Ongoing series / books ──────────────────────────────────────────────────
@@ -200,7 +201,7 @@ pub async fn ongoing_books(
                 b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors,
                 s.name AS series, b.series_id, b.volume, b.volume_type,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
-                b.summary, b.publish_date, bf.size_bytes,
+                b.summary, b.isbn, b.publish_date, bf.size_bytes,
                 COALESCE(up.status, 'unread') AS reading_status,
                 up.current_page AS reading_current_page,
                 up.last_read_at AS reading_last_read_at,
@@ -233,7 +234,7 @@ pub async fn ongoing_books(
               )
         )
         SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type,
-               language, page_count, thumbnail_path, updated_at, summary, publish_date, size_bytes,
+               language, page_count, thumbnail_path, updated_at, summary, isbn, publish_date, size_bytes,
                reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
@@ -275,6 +276,7 @@ pub async fn ongoing_books(
                 reading_last_read_at: row.get("reading_last_read_at"),
                 file_size: row.get("size_bytes"),
                 summary: row.get("summary"),
+                isbn: row.get("isbn"),
                 publish_date: row.get("publish_date"),
             }
         })
@@ -304,8 +306,10 @@ pub async fn ongoing_books(
 )]
 pub async fn get_series_metadata(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<SeriesMetadata>, ApiError> {
+    ensure_series_visible(&state.pool, user.map(|u| u.0.user_id), series_id).await?;
     // Fetch series row (contains metadata directly)
     let series_row = sqlx::query(
         "SELECT name, authors, genres, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
@@ -484,9 +488,9 @@ pub async fn get_series_by_id(
 #[allow(deprecated)]
 pub async fn get_series_metadata_by_id(
     state: State<AppState>,
-    _user: Option<Extension<AuthUser>>,
+    user: Option<Extension<AuthUser>>,
     Path(series_id): Path<Uuid>,
 ) -> Result<Json<SeriesMetadata>, ApiError> {
     let library_id = helpers::resolve_library_id(&state.pool, series_id).await?;
-    get_series_metadata(state, Path((library_id, series_id))).await
+    get_series_metadata(state, user, Path((library_id, series_id))).await
 }

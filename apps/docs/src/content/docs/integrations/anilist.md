@@ -45,6 +45,8 @@ Dans les paramètres de chaque bibliothèque (icône ⚙️), section **État de
 
 Le pull tire votre progression depuis AniList et met à jour les statuts de lecture locaux. Les séries que vous avez "en cours" ou "terminées" sur AniList sont mises à jour dans Stripstream.
 
+Le pull ne fait **qu'avancer** la progression : un livre déjà lu localement n'est jamais remis en « non lu », même si AniList indique une progression plus faible (par exemple une série suivie par chapitres, avec 0 volume).
+
 **Déclenchement** : bouton **Pull depuis AniList** dans **Paramètres → onglet Statut de lecture**.
 
 Le rapport détaille par série : matched, updated, skipped, errors.

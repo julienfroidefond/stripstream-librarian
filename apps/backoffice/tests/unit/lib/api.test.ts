@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const cookieStore = vi.hoisted(() => ({ get: vi.fn() }));
+const cookieStore = vi.hoisted(() => ({ get: vi.fn(), delete: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => cookieStore,
@@ -28,6 +28,7 @@ beforeEach(() => {
   process.env.API_BASE_URL = "http://api:7080/";
   process.env.API_BOOTSTRAP_TOKEN = "bootstrap-token";
   cookieStore.get.mockReset();
+  cookieStore.delete.mockReset();
   cookieStore.get.mockReturnValue(undefined);
   fetchMock = vi.fn().mockResolvedValue(makeResponse({ ok: true }));
   vi.stubGlobal("fetch", fetchMock);
@@ -108,6 +109,41 @@ describe("apiFetch", () => {
     const init = lastFetchInit();
     expect(init.cache).toBe("no-store");
     expect(init.next).toBeUndefined();
+  });
+
+  it("drops a stale reader cookie and replays a read in admin mode", async () => {
+    cookieStore.get.mockReturnValue({ value: "user-gone" });
+    fetchMock
+      .mockResolvedValueOnce(makeResponse({ error: "X-As-User references an unknown user" }, 400))
+      .mockResolvedValueOnce(makeResponse([{ id: "lib" }]));
+
+    await expect(apiFetch("/libraries")).resolves.toEqual([{ id: "lib" }]);
+
+    expect(cookieStore.delete).toHaveBeenCalledWith("as_user_id");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retry = fetchMock.mock.calls[1][1] as FetchInit;
+    expect((retry.headers as Headers).get("X-As-User")).toBeNull();
+  });
+
+  it("drops a stale reader cookie but does not replay a write", async () => {
+    cookieStore.get.mockReturnValue({ value: "user-gone" });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({ error: "X-As-User references an unknown user" }, 400),
+    );
+
+    await expect(apiFetch("/books/1/progress", { method: "PATCH", body: "{}" })).rejects.toMatchObject({
+      status: 400,
+      detail: "X-As-User references an unknown user",
+    });
+    expect(cookieStore.delete).toHaveBeenCalledWith("as_user_id");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the cookie on an unrelated 400", async () => {
+    cookieStore.get.mockReturnValue({ value: "user-42" });
+    fetchMock.mockResolvedValueOnce(makeResponse({ error: "bad input" }, 400));
+    await expect(apiFetch("/libraries")).rejects.toMatchObject({ status: 400 });
+    expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 
   it("does not inject X-As-User without the cookie", async () => {

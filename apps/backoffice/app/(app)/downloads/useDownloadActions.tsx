@@ -17,6 +17,7 @@ import { browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
 import {
   createDownloadActionStore,
+  isStaleReleaseError,
   needsConfirmation,
   type DownloadAction,
   type DownloadActionContext,
@@ -106,14 +107,25 @@ export function DownloadActionsProvider({
   // The store is created once and outlives every render, so it reads the
   // callbacks through refs instead of capturing the first ones.
   const refreshRef = useRef(onRefresh);
+  const tRef = useRef(t);
   useEffect(() => {
     refreshRef.current = onRefresh;
-  }, [onRefresh]);
+    tRef.current = t;
+  }, [onRefresh, t]);
 
   const [store] = useState<DownloadActionStore>(() =>
     createDownloadActionStore({
       onRefresh: (action, id) => refreshRef.current(action, id),
-      onError: (error) => toast(browserFailureMessage(error), "error"),
+      onError: (error, action, id) => {
+        // One exception to "no refresh on failure": a stale release index
+        // (409) means the list on screen is outdated; nothing was removed.
+        if (isStaleReleaseError(error, action)) {
+          toast(tRef.current("downloads.releaseChanged"), "error");
+          refreshRef.current(action, id);
+          return;
+        }
+        toast(browserFailureMessage(error), "error");
+      },
     }),
   );
   useEffect(() => () => store.dispose(), [store]);

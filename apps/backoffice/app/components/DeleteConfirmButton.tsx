@@ -3,9 +3,9 @@
 import { useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { Button, Icon, Modal } from "./ui";
+import { Button, Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
-import { browserFetchVoid } from "@/lib/api/browser";
+import { browserErrorMessage, browserFetchVoid } from "@/lib/api/browser";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 const DEFAULT_REDIRECT = "/series";
@@ -27,15 +27,16 @@ export function DeleteConfirmButton({ endpoint, redirectTo = DEFAULT_REDIRECT, t
 
   async function handleDelete() {
     setDeleting(true);
-    setShowConfirm(false);
     try {
       await browserFetchVoid(endpoint, { method: "DELETE" });
+      setShowConfirm(false);
       // Navigate first, then refresh so the destination route is the one re-fetched.
       // `redirectTo` is assembled dynamically; cast required by statically-typed routes.
       router.push(redirectTo as Route);
       router.refresh();
-    } catch {
-      // A rejected delete keeps the current route and row.
+    } catch (error) {
+      // A rejected delete keeps the current route, row and dialog open.
+      toast(browserErrorMessage(error, t("common.deleteError")), "error");
     } finally {
       setDeleting(false);
     }
@@ -72,7 +73,8 @@ export function DeleteConfirmButton({ endpoint, redirectTo = DEFAULT_REDIRECT, t
           <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
             {t("common.cancel")}
           </Button>
-          <Button variant="destructive" size="sm" onClick={handleDelete}>
+          <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+            {deleting && <Icon name="spinner" size="sm" className="animate-spin" />}
             {t(labelKey)}
           </Button>
         </div>

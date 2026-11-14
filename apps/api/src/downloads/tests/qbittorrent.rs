@@ -152,3 +152,191 @@ async fn refuses_non_http_schemes_and_non_routable_hosts() {
         );
     }
 }
+
+// ─── add_torrent against a fake qBittorrent ─────────────────────────────────
+
+/// A fake qBittorrent whose `torrents/info?hashes=…` reports `existing`.
+async fn fake_qbittorrent_for_add(
+    pool: &sqlx::PgPool,
+    existing: serde_json::Value,
+) -> wiremock::MockServer {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/auth/login"))
+        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/torrents/info"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(existing))
+        .mount(&server)
+        .await;
+    for endpoint in ["createCategory", "add", "delete"] {
+        Mock::given(method("POST"))
+            .and(path(format!("/api/v2/torrents/{endpoint}")))
+            .respond_with(ResponseTemplate::new(200).set_body_string("Ok."))
+            .mount(&server)
+            .await;
+    }
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({
+        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
+    }))
+    .execute(pool)
+    .await
+    .unwrap();
+    server
+}
+
+async fn seed_add_library(pool: &sqlx::PgPool) -> Uuid {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+        .bind(library_id)
+        .bind(format!("lib_{library_id}"))
+        .bind(format!("/libraries/{library_id}"))
+        .execute(pool)
+        .await
+        .unwrap();
+    library_id
+}
+
+async fn requests_to(server: &wiremock::MockServer, endpoint: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|r| r.url.path() == format!("/api/v2/torrents/{endpoint}"))
+        .count()
+}
+
+const HASH: &str = "0123456789abcdef0123456789abcdef01234567";
+
+fn add_request(library_id: Uuid) -> QBittorrentAddRequest {
+    QBittorrentAddRequest {
+        url: format!("magnet:?xt=urn:btih:{HASH}&dn=Amulet"),
+        library_id: Some(library_id),
+        series_name: Some("Amulet".into()),
+        expected_volumes: Some(vec![1]),
+        replace_existing: false,
+    }
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_magnet_already_in_qbittorrent_under_another_category_is_adopted(pool: sqlx::PgPool) {
+    let library_id = seed_add_library(&pool).await;
+    let server = fake_qbittorrent_for_add(
+        &pool,
+        serde_json::json!([{
+            "hash": HASH, "category": "manga", "state": "downloading",
+            "progress": 0.3, "save_path": "/downloads/manga", "content_path": "/downloads/manga/Amulet"
+        }]),
+    )
+    .await;
+
+    let resp = add_torrent(
+        State(crate::state::test_state(pool.clone())),
+        Json(add_request(library_id)),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(resp.success, "{}", resp.message);
+    let id = resp.torrent_download_id.expect("tracked");
+
+    let (hash, owned): (Option<String>, bool) =
+        sqlx::query_as("SELECT qb_hash, qb_owned FROM torrent_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(hash.as_deref(), Some(HASH));
+    assert!(!owned, "a torrent the user added must never be claimed");
+    assert_eq!(
+        requests_to(&server, "add").await,
+        0,
+        "the existing torrent is not re-added"
+    );
+    assert_eq!(requests_to(&server, "delete").await, 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_new_magnet_is_owned(pool: sqlx::PgPool) {
+    let library_id = seed_add_library(&pool).await;
+    let server = fake_qbittorrent_for_add(&pool, serde_json::json!([])).await;
+
+    let resp = add_torrent(
+        State(crate::state::test_state(pool.clone())),
+        Json(add_request(library_id)),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(resp.success, "{}", resp.message);
+    let id = resp.torrent_download_id.expect("tracked");
+
+    let (hash, owned): (Option<String>, bool) =
+        sqlx::query_as("SELECT qb_hash, qb_owned FROM torrent_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(hash.as_deref(), Some(HASH));
+    assert!(owned);
+    assert_eq!(requests_to(&server, "add").await, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_unanswered_existence_check_refuses_the_add(pool: sqlx::PgPool) {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+
+    let library_id = seed_add_library(&pool).await;
+    let server = wiremock::MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/auth/login"))
+        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/torrents/info"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/torrents/createCategory"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({
+        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
+    }))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let resp = add_torrent(
+        State(crate::state::test_state(pool.clone())),
+        Json(add_request(library_id)),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(!resp.success);
+    assert_eq!(requests_to(&server, "add").await, 0);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM torrent_downloads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}

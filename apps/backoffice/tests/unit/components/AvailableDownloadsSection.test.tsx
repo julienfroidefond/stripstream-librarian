@@ -127,4 +127,57 @@ describe("AvailableDownloadsSection — DDL releases", () => {
     expect(await screen.findByText("Prowlarr")).toBeInTheDocument();
     expect(screen.queryByText("fourtoutici")).not.toBeInTheDocument();
   });
+
+  it("sends the release title with its index and disables the row while removing", async () => {
+    let release!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+
+    render(
+      <DownloadActionsProvider onRefresh={() => {}}>
+        <AvailableDownloadsSection
+          latestFound={latestFound(ddlRelease() as never)}
+          telegramAvailable={[]}
+        />
+      </DownloadActionsProvider>
+    );
+
+    expandSeries("Astérix");
+    fireEvent.click(await screen.findByTitle("downloads.delete"));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/available-downloads/entry-1?release=0&title=Ast%C3%A9rix%20-%20T41.pdf",
+        expect.objectContaining({ method: "DELETE" })
+      )
+    );
+    expect(screen.getByTitle("downloads.blacklist")).toBeDisabled();
+    expect(screen.getByTitle("ddlProviders.download")).toBeDisabled();
+    release(ok());
+  });
+
+  it("refreshes the list when the API reports the release changed (409)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "release changed" }),
+      text: async () => "",
+    });
+    const onRefresh = vi.fn();
+
+    render(
+      <DownloadActionsProvider onRefresh={onRefresh}>
+        <AvailableDownloadsSection
+          latestFound={latestFound(ddlRelease() as never)}
+          telegramAvailable={[]}
+        />
+      </DownloadActionsProvider>
+    );
+
+    expandSeries("Astérix");
+    fireEvent.click(await screen.findByTitle("downloads.blacklist"));
+
+    await waitFor(() =>
+      expect(onRefresh).toHaveBeenCalledWith({ target: "release", verb: "dismiss" }, "entry-1-0")
+    );
+  });
 });

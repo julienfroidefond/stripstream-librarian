@@ -266,6 +266,17 @@ describe("loadSeriesDetail", () => {
     expect(model.degraded).toEqual([]);
   });
 
+  it("takes the read count from the whole series, not the current page", async () => {
+    // Page 2 holds one read book, but 4 of the 5 books of the series are read.
+    api.fetchSeriesById.mockResolvedValue({ ...series, books_read_count: 4 });
+
+    const result = await loadSeriesDetail("ser-1", defaultOptions);
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.model.booksReadCount).toBe(4);
+  });
+
   it("resolves the metadata, links, ratings and collection sections once", async () => {
     const result = await loadSeriesDetail("ser-1", defaultOptions);
 

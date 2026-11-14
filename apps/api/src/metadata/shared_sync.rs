@@ -18,7 +18,9 @@ pub(crate) struct MatchedBook<'a> {
 #[derive(Debug, Clone)]
 pub(crate) struct LocalBookForMatching {
     pub id: Uuid,
-    pub volume: i32,
+    /// Volume number stored on the book. `None` when unknown: a position in the
+    /// series listing is never turned into a tome number.
+    pub volume: Option<i32>,
     pub title: String,
     pub isbn: Option<String>,
     pub volume_type: String,
@@ -100,21 +102,18 @@ pub(crate) async fn fetch_local_books(
     .fetch_all(pool)
     .await?;
 
-    let with_pos = rows
-        .iter()
-        .enumerate()
+    Ok(rows
+        .into_iter()
         .map(
-            |(idx, (id, vol, title, isbn, volume_type))| LocalBookForMatching {
-                id: *id,
-                volume: vol.unwrap_or((idx + 1) as i32),
-                title: title.clone(),
-                isbn: isbn.clone(),
-                volume_type: volume_type.clone(),
+            |(id, volume, title, isbn, volume_type)| LocalBookForMatching {
+                id,
+                volume,
+                title,
+                isbn,
+                volume_type,
             },
         )
-        .collect();
-
-    Ok(with_pos)
+        .collect())
 }
 
 /// Match external books to local books using volume number then title containment.
@@ -143,6 +142,21 @@ fn normalize_isbn(value: &str) -> String {
         .collect()
 }
 
+/// Minimum length of a normalized title for the title-containment fallback:
+/// shorter (or empty) titles would match almost anything.
+const MIN_TITLE_MATCH_LEN: usize = 3;
+
+/// True when one normalized title appears as a contiguous word sequence in the
+/// other. Empty or too-short titles never match.
+fn titles_contain_each_other(ext_title: &str, local_title: &str) -> bool {
+    let ext = parsers::normalize_title(ext_title);
+    let local = parsers::normalize_title(local_title);
+    if ext.chars().count() < MIN_TITLE_MATCH_LEN || local.chars().count() < MIN_TITLE_MATCH_LEN {
+        return false;
+    }
+    parsers::title_matches_series(&local, &ext) || parsers::title_matches_series(&ext, &local)
+}
+
 fn match_books_with_policy<'a>(
     ext_books: &'a [BookCandidate],
     local_books: &[LocalBookForMatching],
@@ -152,8 +166,7 @@ fn match_books_with_policy<'a>(
 
     ext_books
         .iter()
-        .enumerate()
-        .map(|(ext_idx, book)| {
+        .map(|book| {
             let is_vol_zero = book.volume_number == Some(0);
             let is_oneshot = allow_oneshots
                 && book
@@ -161,25 +174,24 @@ fn match_books_with_policy<'a>(
                     .get("oneshot")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-            let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
-
-            // Strategy 1: Match by volume number (skip vol 0 — T0 = HS in providers)
-            let mut local_id: Option<Uuid> = if is_vol_zero || is_oneshot {
-                None
-            } else {
-                local_books
+            // Strategy 1: Match by volume number (skip vol 0 — T0 = HS in
+            // providers). An external book without a volume number never
+            // matches by volume: its position in the provider list is not a tome.
+            let mut local_id: Option<Uuid> = match book.volume_number {
+                Some(ext_vol) if !is_vol_zero && !is_oneshot => local_books
                     .iter()
                     .find(|book| {
-                        book.volume == ext_vol
+                        book.volume == Some(ext_vol)
                             && !matched_ids.contains(&book.id)
                             && (allow_oneshots || book.volume_type != "oneshot")
                     })
-                    .map(|book| book.id)
+                    .map(|book| book.id),
+                _ => None,
             };
 
-            // Strategy 2: Title containment (case-insensitive)
+            // Strategy 2: Title containment on normalized titles (case, accents
+            // and punctuation folded, whole words only).
             if !is_vol_zero && !is_oneshot && local_id.is_none() {
-                let ext_lower = book.title.to_lowercase();
                 local_id = local_books
                     .iter()
                     .find(|local| {
@@ -188,8 +200,7 @@ fn match_books_with_policy<'a>(
                         {
                             return false;
                         }
-                        let local_lower = local.title.to_lowercase();
-                        local_lower.contains(&ext_lower) || ext_lower.contains(&local_lower)
+                        titles_contain_each_other(&book.title, &local.title)
                     })
                     .map(|local| local.id);
             }
@@ -446,7 +457,7 @@ mod tests {
     ) -> LocalBookForMatching {
         LocalBookForMatching {
             id,
-            volume,
+            volume: Some(volume),
             title: title.to_string(),
             isbn: isbn.map(str::to_string),
             volume_type: volume_type.to_string(),
@@ -495,6 +506,71 @@ mod tests {
         let external_books = [ext];
         let matched = match_books_for_new_provider(&external_books, &books);
         assert_eq!(matched[0].local_book_id, Some(oneshot));
+    }
+
+    #[test]
+    fn empty_external_title_never_matches_by_title() {
+        let ext = external("", None, None, false);
+        let books = vec![local(Uuid::new_v4(), 1, "Tome 1", None, "regular")];
+        let external_books = [ext];
+        let matched = match_books(&external_books, &books);
+        assert_eq!(matched[0].local_book_id, None);
+    }
+
+    #[test]
+    fn too_short_titles_never_match_by_title() {
+        let books = vec![local(Uuid::new_v4(), 5, "Le grand voyage", None, "regular")];
+        for title in ["  ", "-", "Le", "!?"] {
+            let external_books = [external(title, None, None, false)];
+            let matched = match_books(&external_books, &books);
+            assert_eq!(matched[0].local_book_id, None, "title {title:?}");
+        }
+    }
+
+    #[test]
+    fn missing_external_volume_is_not_invented_from_position() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let books = vec![
+            local(first, 1, "Premier album", None, "regular"),
+            local(second, 2, "Second album", None, "regular"),
+        ];
+        // No volume numbers and unrelated titles: previously matched by index.
+        let external_books = [
+            external("Hors serie special", None, None, false),
+            external("Artbook officiel", None, None, false),
+        ];
+        let matched = match_books(&external_books, &books);
+        assert!(matched.iter().all(|m| m.local_book_id.is_none()));
+    }
+
+    #[test]
+    fn local_book_without_volume_only_matches_by_title() {
+        let id = Uuid::new_v4();
+        let mut book = local(id, 0, "La Serpe d'Or", None, "regular");
+        book.volume = None;
+        let books = vec![book];
+
+        let by_volume = [external("Autre titre", Some(1), None, false)];
+        assert_eq!(match_books(&by_volume, &books)[0].local_book_id, None);
+
+        let by_title = [external("la serpe d’or", Some(2), None, false)];
+        assert_eq!(match_books(&by_title, &books)[0].local_book_id, Some(id));
+    }
+
+    #[test]
+    fn title_containment_requires_whole_words() {
+        let id = Uuid::new_v4();
+        let books = vec![local(id, 12, "Saga Tome 12", None, "regular")];
+        let external_books = [external("Saga Tome 1", None, None, false)];
+        assert_eq!(match_books(&external_books, &books)[0].local_book_id, None);
+
+        let books = vec![local(id, 12, "Astérix - La Serpe d'Or", None, "regular")];
+        let external_books = [external("La serpe d'or", None, None, false)];
+        assert_eq!(
+            match_books(&external_books, &books)[0].local_book_id,
+            Some(id)
+        );
     }
 
     fn ext_row(

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { invalidateAfter } from "@/lib/cache";
 import { withRoute } from "@/lib/server/api-handler";
 
 export const GET = withRoute(
@@ -17,6 +18,7 @@ export const POST = withRoute(
       method: "POST",
       body: JSON.stringify(body),
     });
+    invalidateAfter({ type: "ddl.changed" });
     return NextResponse.json(data);
   },
   {

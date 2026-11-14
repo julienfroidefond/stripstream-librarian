@@ -502,3 +502,173 @@ fn unknown_volume_type_falls_back_to_regular_template() {
     let result = render_rename_filename(&templates(), "Frieren", &book, 10, "cbz");
     assert_eq!(result, Some("Frieren - T02 - Mystère.cbz".to_string()));
 }
+
+// -- execute_rename_plan (DB + disk) --
+
+mod execute {
+    use super::super::{execute_rename_plan, PlannedRename};
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    async fn insert_book_file(pool: &PgPool, lib_id: Uuid, abs_path: &str) -> (Uuid, Uuid) {
+        let book_id = Uuid::new_v4();
+        let file_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, kind, title, format) VALUES ($1, $2, 'bd', 't', 'cbz')",
+        )
+        .bind(book_id)
+        .bind(lib_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+             VALUES ($1, $2, 'cbz', $3, 1, NOW(), 'fp')",
+        )
+        .bind(file_id)
+        .bind(book_id)
+        .bind(abs_path)
+        .execute(pool)
+        .await
+        .unwrap();
+        (book_id, file_id)
+    }
+
+    async fn insert_library(pool: &PgPool) -> Uuid {
+        let lib_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'L', '/libraries/l')")
+            .bind(lib_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        lib_id
+    }
+
+    async fn abs_path(pool: &PgPool, file_id: Uuid) -> String {
+        sqlx::query_scalar("SELECT abs_path FROM book_files WHERE id = $1")
+            .bind(file_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    fn plan(book_id: Uuid, file_id: Uuid, old: &str, new: &str, db_new: &str) -> PlannedRename {
+        PlannedRename {
+            book_id,
+            file_id,
+            db_new: db_new.to_string(),
+            physical_old: old.to_string(),
+            physical_new: new.to_string(),
+            volume: None,
+            volume_type: "regular".to_string(),
+        }
+    }
+
+    fn dir_entries(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn swap_two_files_keeps_both(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("A.cbz");
+        let b = dir.path().join("B.cbz");
+        std::fs::write(&a, "content-a").unwrap();
+        std::fs::write(&b, "content-b").unwrap();
+        let (a_s, b_s) = (
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+        );
+
+        let lib = insert_library(&pool).await;
+        let (book_a, file_a) = insert_book_file(&pool, lib, "/libraries/l/A.cbz").await;
+        let (book_b, file_b) = insert_book_file(&pool, lib, "/libraries/l/B.cbz").await;
+
+        let renamed = execute_rename_plan(
+            &pool,
+            vec![
+                plan(book_a, file_a, &a_s, &b_s, "/libraries/l/B.cbz"),
+                plan(book_b, file_b, &b_s, &a_s, "/libraries/l/A.cbz"),
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(renamed, 2);
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "content-b");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "content-a");
+        assert_eq!(dir_entries(dir.path()), vec!["A.cbz", "B.cbz"]);
+        assert_eq!(abs_path(&pool, file_a).await, "/libraries/l/B.cbz");
+        assert_eq!(abs_path(&pool, file_b).await, "/libraries/l/A.cbz");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn sql_error_rolls_back_every_disk_rename(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("A.cbz");
+        let b = dir.path().join("B.cbz");
+        let c = dir.path().join("C.cbz");
+        std::fs::write(&a, "content-a").unwrap();
+        std::fs::write(&b, "content-b").unwrap();
+        let (a_s, b_s, c_s) = (
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+            c.to_string_lossy().to_string(),
+        );
+
+        let lib = insert_library(&pool).await;
+        let (book_a, file_a) = insert_book_file(&pool, lib, "/libraries/l/A.cbz").await;
+        let (book_b, file_b) = insert_book_file(&pool, lib, "/libraries/l/B.cbz").await;
+        // A book outside the batch already owns the database path given to B.
+        insert_book_file(&pool, lib, "/libraries/l/taken.cbz").await;
+
+        let err = execute_rename_plan(
+            &pool,
+            vec![
+                plan(book_a, file_a, &a_s, &b_s, "/libraries/l/B.cbz"),
+                plan(book_b, file_b, &b_s, &c_s, "/libraries/l/taken.cbz"),
+            ],
+        )
+        .await;
+
+        assert!(err.is_err());
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "content-a");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "content-b");
+        assert_eq!(dir_entries(dir.path()), vec!["A.cbz", "B.cbz"]);
+        assert_eq!(abs_path(&pool, file_a).await, "/libraries/l/A.cbz");
+        assert_eq!(abs_path(&pool, file_b).await, "/libraries/l/B.cbz");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn existing_target_outside_batch_is_rejected(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("A.cbz");
+        let other = dir.path().join("Other.cbz");
+        std::fs::write(&a, "content-a").unwrap();
+        std::fs::write(&other, "other").unwrap();
+
+        let lib = insert_library(&pool).await;
+        let (book_a, file_a) = insert_book_file(&pool, lib, "/libraries/l/A.cbz").await;
+
+        let err = execute_rename_plan(
+            &pool,
+            vec![plan(
+                book_a,
+                file_a,
+                &a.to_string_lossy(),
+                &other.to_string_lossy(),
+                "/libraries/l/Other.cbz",
+            )],
+        )
+        .await;
+
+        assert!(err.is_err());
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "content-a");
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "other");
+    }
+}

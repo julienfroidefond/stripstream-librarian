@@ -1007,3 +1007,156 @@ async fn finish_detection_job_classifies_partial_and_empty_runs(pool: sqlx::PgPo
         .unwrap();
     assert_eq!(stored, "success");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn failed_download_without_expected_volumes_is_counted(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'L', '/libraries/l')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Blake')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for volumes in ["{}", "{2}"] {
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status) \
+             VALUES ($1, $2, 'Blake', $3::integer[], 'error')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .bind(volumes)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let failed = failed_downloads_by_series(&pool, &[library_id])
+        .await
+        .unwrap();
+    let entry = failed
+        .get(&(library_id, series_id))
+        .expect("series counted");
+    assert_eq!(
+        entry.count, 2,
+        "a download without expected volumes still failed"
+    );
+    assert_eq!(entry.volumes, vec![2]);
+}
+
+async fn seed_available(pool: &sqlx::PgPool) -> Uuid {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'L', '/libraries/l')")
+        .bind(library_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Blake')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, $3, 2, $4, NOW())",
+    )
+    .bind(id)
+    .bind(library_id)
+    .bind(series_id)
+    .bind(serde_json::json!([
+        {"title": "Blake T01", "indexer": "idx", "matched_missing_volumes": [1]},
+        {"title": "Blake T02", "indexer": "idx", "matched_missing_volumes": [2]}
+    ]))
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
+async fn release_titles(pool: &sqlx::PgPool, id: Uuid) -> Vec<String> {
+    let releases: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT available_releases FROM available_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+    releases
+        .and_then(|r| r.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn removing_a_release_with_a_stale_title_is_a_conflict(pool: sqlx::PgPool) {
+    let id = seed_available(&pool).await;
+
+    let err = remove_available_release(&pool, id, 0, Some("Blake T02"), true)
+        .await
+        .unwrap_err();
+    assert_eq!(err.status, axum::http::StatusCode::CONFLICT);
+    assert_eq!(
+        release_titles(&pool, id).await,
+        vec!["Blake T01", "Blake T02"]
+    );
+    let blacklisted: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM release_blacklist")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(blacklisted, 0, "a refused removal blacklists nothing");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn removing_a_release_checks_the_title_and_blacklists(pool: sqlx::PgPool) {
+    let id = seed_available(&pool).await;
+
+    remove_available_release(&pool, id, 1, Some("Blake T02"), true)
+        .await
+        .unwrap();
+    assert_eq!(release_titles(&pool, id).await, vec!["Blake T01"]);
+    let blacklisted: Vec<String> = sqlx::query_scalar("SELECT title FROM release_blacklist")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(blacklisted, vec!["Blake T02"]);
+
+    // Without a title the index alone decides (older clients); the last
+    // release removes the whole entry.
+    remove_available_release(&pool, id, 0, None, false)
+        .await
+        .unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM available_downloads WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+
+    let err = remove_available_release(&pool, id, 0, None, false)
+        .await
+        .unwrap_err();
+    assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn concurrent_release_removals_never_drop_an_unseen_release(pool: sqlx::PgPool) {
+    let id = seed_available(&pool).await;
+
+    // Both callers saw "Blake T01" at index 0. The second one must not remove
+    // "Blake T02", which shifted into index 0 meanwhile.
+    let (a, b) = tokio::join!(
+        remove_available_release(&pool, id, 0, Some("Blake T01"), false),
+        remove_available_release(&pool, id, 0, Some("Blake T01"), false),
+    );
+    assert_eq!([a.is_ok(), b.is_ok()].iter().filter(|ok| **ok).count(), 1);
+    assert_eq!(release_titles(&pool, id).await, vec!["Blake T02"]);
+}

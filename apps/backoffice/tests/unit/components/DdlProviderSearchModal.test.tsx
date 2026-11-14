@@ -162,4 +162,49 @@ describe("DdlProviderSearchModal", () => {
       )
     );
   });
+
+  it("clears results on provider change and ignores a stale answer", async () => {
+    let releaseFirst: (value: unknown) => void = () => {};
+    const ANNAS_RESULT = { ...RESULT, provider: "annas", external_id: "annas-1", filename: "Annas file.cbz" };
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/ddl-providers") return ok([ENABLED_A, ENABLED_B]);
+      if (url === "/api/ddl-providers/fourtoutici/search") {
+        // Slow first provider: answers after the user switched.
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      if (url === "/api/ddl-providers/annas/search") {
+        return ok({ provider: "annas", query: "x", results: [ANNAS_RESULT] });
+      }
+      if (url === "/api/ddl-provider-downloads") return ok([]);
+      if (url.includes("/downloads")) return ok({ id: "dl-1", status: "queued" });
+      return ok({});
+    });
+    renderModal();
+
+    fireEvent.click(await screen.findByRole("button", { name: "open" }));
+    const selector = await screen.findByRole("combobox");
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/ddl-providers/fourtoutici/search", expect.anything())
+    );
+
+    fireEvent.change(selector, { target: { value: "annas" } });
+    expect(await screen.findByText("Annas file.cbz")).toBeInTheDocument();
+
+    // The stale fourtoutici answer arrives last and must be ignored.
+    releaseFirst(ok({ provider: "fourtoutici", query: "x", results: [RESULT] }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText(RESULT.filename)).not.toBeInTheDocument();
+    expect(screen.getByText("Annas file.cbz")).toBeInTheDocument();
+
+    // The download targets the provider the row was found on.
+    fireEvent.click(screen.getByTitle("ddlProviders.download"));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ddl-providers/annas/downloads",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+  });
 });

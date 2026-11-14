@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 
+use crate::zip::read_entry_bounded;
 use crate::{is_image_name, ArchiveIndexCache};
 
 // ============================================================
@@ -47,11 +47,10 @@ pub fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
 
     // 1. Find OPF path from META-INF/container.xml
     let opf_path = {
-        let mut entry = archive
+        let entry = archive
             .by_name("META-INF/container.xml")
             .context("missing META-INF/container.xml — not a valid EPUB")?;
-        let mut buf = Vec::new();
-        entry.read_to_end(&mut buf)?;
+        let buf = read_entry_bounded(entry, "META-INF/container.xml")?;
         let xml = String::from_utf8_lossy(&buf);
         let re = RE_EPUB_ROOTFILE.get_or_init(|| {
             regex::Regex::new(r#"<(?:\w+:)?rootfile[^>]+full-path="([^"]+)""#).unwrap()
@@ -69,11 +68,10 @@ pub fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
 
     // 2. Parse OPF manifest + spine
     let (manifest, spine_idrefs) = {
-        let mut entry = archive
+        let entry = archive
             .by_name(&opf_path)
             .with_context(|| format!("missing OPF file: {}", opf_path))?;
-        let mut buf = Vec::new();
-        entry.read_to_end(&mut buf)?;
+        let buf = read_entry_bounded(entry, &opf_path)?;
         let xml = String::from_utf8_lossy(&buf);
         parse_epub_opf(&xml, &opf_dir)?
     };
@@ -104,13 +102,10 @@ pub fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
 
         // Read XHTML/SVG content — entry is dropped at end of match arm, releasing archive borrow
         let content = match archive.by_name(&item.href) {
-            Ok(mut entry) => {
-                let mut buf = Vec::new();
-                match entry.read_to_end(&mut buf) {
-                    Ok(_) => String::from_utf8_lossy(&buf).to_string(),
-                    Err(_) => continue,
-                }
-            }
+            Ok(entry) => match read_entry_bounded(entry, &item.href) {
+                Ok(buf) => String::from_utf8_lossy(&buf).to_string(),
+                Err(_) => continue,
+            },
             Err(_) => continue,
         };
 
@@ -242,10 +237,11 @@ pub fn analyze_epub(path: &Path) -> Result<(i32, Vec<u8>)> {
     let mut archive = zip::ZipArchive::new(file)?;
 
     for img_path in &images {
-        if let Ok(mut entry) = archive.by_name(img_path) {
-            let mut buf = Vec::new();
-            if entry.read_to_end(&mut buf).is_ok() && !buf.is_empty() {
-                return Ok((count, buf));
+        if let Ok(entry) = archive.by_name(img_path) {
+            if let Ok(buf) = read_entry_bounded(entry, img_path) {
+                if !buf.is_empty() {
+                    return Ok((count, buf));
+                }
             }
         }
     }
@@ -270,12 +266,10 @@ pub fn extract_epub_page(path: &Path, page_number: u32) -> Result<Vec<u8>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open epub: {}", path.display()))?;
     let mut archive = zip::ZipArchive::new(file)?;
-    let mut entry = archive
+    let entry = archive
         .by_name(img_path)
         .with_context(|| format!("image '{}' not found in epub", img_path))?;
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf)?;
-    Ok(buf)
+    read_entry_bounded(entry, img_path)
 }
 
 // --- EPUB path/encoding helpers ---

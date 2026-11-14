@@ -6,6 +6,7 @@ import { TokenUserSelect } from "@/app/components/TokenUserSelect";
 import { UsernameEdit } from "@/app/components/UsernameEdit";
 import { UserGenreRestrictions } from "@/app/components/UserGenreRestrictions";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { clearActiveUserIf } from "@/lib/auth/activeUser";
 
 export async function TokensTab({ createdToken }: { createdToken?: string }) {
   const { t } = await getServerTranslations();
@@ -60,7 +61,9 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     "use server";
     const id = formData.get("id") as string;
     await deleteUser(id);
-    invalidateAfter({ type: "users.changed" });
+    // Deleting the selected reader would leave every request failing on X-As-User.
+    await clearActiveUserIf(id);
+    invalidateAfter({ type: "user.deleted", userId: id });
   }
 
   async function renameUserAction(formData: FormData) {

@@ -20,6 +20,8 @@ const api = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => api);
 const { invalidateAfter } = vi.hoisted(() => ({ invalidateAfter: vi.fn() }));
 vi.mock("@/lib/cache", () => ({ invalidateAfter }));
+const { clearActiveUserIf } = vi.hoisted(() => ({ clearActiveUserIf: vi.fn() }));
+vi.mock("@/lib/auth/activeUser", () => ({ clearActiveUserIf }));
 vi.mock("@/lib/i18n/server", () => ({
   getServerTranslations: async () => ({ t: (key: string) => key, locale: "en", setLocale: vi.fn() }),
 }));
@@ -123,6 +125,8 @@ describe("TokensTab", () => {
     expect(redirect).toHaveBeenCalledWith(expect.stringContaining("/settings?tab=tokens&created="));
     expect(invalidateAfter).toHaveBeenCalledWith({ type: "tokens.changed" });
     expect(invalidateAfter).toHaveBeenCalledWith({ type: "users.changed" });
+    expect(clearActiveUserIf).toHaveBeenCalledWith("t1");
+    expect(invalidateAfter).toHaveBeenCalledWith({ type: "user.deleted", userId: "t1" });
   });
 
   it("skips actions with missing required fields", async () => {
