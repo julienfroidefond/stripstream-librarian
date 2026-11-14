@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcDonutChart } from "@/app/components/DashboardCharts";
 import { CurrentlyReadingList, RecentlyReadList } from "@/app/components/ReadingUserFilter";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { formatBytes, formatNumber } from "@/lib/format";
-import { CHART_COLORS, CHART_PALETTE } from "@/lib/chart-colors";
+import { formatBytes, formatNumber } from "@/lib/utils/format";
+import { CHART_COLORS, CHART_PALETTE } from "@/lib/ui/chartColors";
 import { StatCard } from "./StatCard";
 
 function HorizontalBar({ label, value, max, subLabel, color = "var(--color-primary)" }: { label: string; value: number; max: number; subLabel?: string; color?: string }) {

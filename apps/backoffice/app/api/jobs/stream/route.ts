@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-import { pollingStream } from "@/lib/api-stream";
+import { pollingStream } from "@/lib/server/api-stream";
 
 const ACTIVE_STATUSES = new Set([
   "running",

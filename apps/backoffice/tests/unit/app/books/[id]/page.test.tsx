@@ -21,11 +21,11 @@ const toolbar = vi.hoisted(() => ({ props: null as Record<string, unknown> | nul
 
 vi.mock("@/lib/api", () => api);
 
-vi.mock("@/lib/acquisitionReadiness.server", () => ({
+vi.mock("@/lib/acquisition/readiness.server", () => ({
   loadAcquisitionReadiness: async () => readiness,
 }));
 
-vi.mock("@/lib/activeUser", () => ({
+vi.mock("@/lib/auth/activeUser", () => ({
   getActiveUser: async () => ({ userId: "u1", hasActiveUser: true }),
 }));
 

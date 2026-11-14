@@ -7,7 +7,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import {
   DEFAULT_TELEGRAM_EVENTS,
   type TelegramSettings,
-} from "@/lib/settingsSections";
+} from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 

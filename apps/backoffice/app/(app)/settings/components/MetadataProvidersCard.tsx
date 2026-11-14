@@ -6,7 +6,7 @@ import { ProviderIcon } from "@/app/components/ProviderIcon";
 import type { MetadataProviderDto } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
-import type { MetadataProvidersSettings } from "@/lib/settingsSections";
+import type { MetadataProvidersSettings } from "@/lib/settings/sections";
 import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
 export const METADATA_LANGUAGES = [

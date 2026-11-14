@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
+import { createSessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);

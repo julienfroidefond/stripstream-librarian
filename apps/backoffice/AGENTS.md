@@ -29,8 +29,20 @@ lib/
 │   ├── client.ts       # `apiFetch` / `config` (serveur uniquement)
 │   ├── browser/        # Transport + fonctions typées pour les Client Components
 │   └── ...             # libraries, jobs, books, series, metadata, downloads, ...
-└── api-handler.ts      # `withRoute` pour les route handlers
+├── server/             # Infra des route handlers : `api-handler.ts` (`withRoute`), `api-stream.ts` (SSE par polling)
+├── auth/               # `session.ts` (JWT de session), `activeUser.ts` (lecteur sélectionné, cookie)
+├── cache/              # Tags et invalidation (`invalidateAfter`, ADR 0021)
+├── i18n/               # Dictionnaires + contextes client/serveur
+├── hooks/              # Hooks React génériques (useEventSource, useIsMounted, usePopin, useMarkRead)
+├── ui/                 # Constantes d'UI : couleurs de graphes, motion, routes de navigation
+├── utils/              # Helpers purs transverses : format, searchParams, search
+├── pwa/                # Splash screens iOS (`splash.ts` + `splash-screens.json`)
+└── <domaine>/          # Logique métier par domaine : acquisition, catalog, downloads, genres, jobs,
+                        # libraries, metadata, readingLists, series, settings
 ```
+
+Ne pas recréer de fichier à la racine de `lib/` : le ranger dans le domaine concerné, ou dans
+`utils/` / `hooks/` / `ui/` s'il est transverse.
 
 ## Client API (lib/api/)
 
@@ -42,7 +54,7 @@ les types DTO vivent dans le fichier du domaine concerné :
 Ajouter les nouveaux endpoints et types dans le module du domaine concerné ; le barrel les
 réexporte automatiquement.
 
-`lib/api-handler.ts` expose `withRoute(handler, options)`, enveloppe standard des route handlers
+`lib/server/api-handler.ts` expose `withRoute(handler, options)`, enveloppe standard des route handlers
 `app/api/**` (extraction du message d'erreur, statut 500 par défaut, options `fallback` / `status` /
 `statusFromError` / `onError`). L'utiliser pour tout nouveau handler.
 
@@ -71,9 +83,9 @@ traduit ; les actions volontairement « best-effort » peuvent rester silencieus
 
 ## Readiness d'acquisition
 
-`lib/acquisitionReadiness.ts` centralise la décision « cette source est-elle utilisable ? »
+`lib/acquisition/readiness.ts` centralise la décision « cette source est-elle utilisable ? »
 (`downloads`, `prowlarr`, `qbittorrent`, `alldebrid`, `telegram`, `ddl`). Le module est pur ;
-`lib/acquisitionReadiness.server.ts` charge l'instantané (settings, statut Telegram, fournisseurs
+`lib/acquisition/readiness.server.ts` charge l'instantané (settings, statut Telegram, fournisseurs
 DDL) et le mémoïse pour le rendu. Le layout expose la valeur via `AcquisitionReadinessProvider` et
 les pages la passent aux toolbars : ne pas refetcher les settings pour décider d'afficher une
 action d'acquisition.
@@ -123,7 +135,7 @@ Le module est pur (pas de React, pas d'appel API) pour rester importable par les
 Components. Les fetchers de rapports sont dans `lib/jobs/serverReports.ts` : la page serveur les
 injecte via `loaders` ; `JobResultCards` choisit la carte à partir de `descriptor.resultCard.kind`.
 
-`lib/useJobStream.ts` est la seule porte des flux SSE jobs, construits sur `lib/useEventSource.ts`
+`lib/jobs/useJobStream.ts` est la seule porte des flux SSE jobs, construits sur `lib/hooks/useEventSource.ts`
 (qui détient la reconnexion, le watchdog et la pause d'onglet). `useJobStream(id)` alimente la
 progression d'un job et se ferme dès son statut terminal ; `useJobsStream` alimente la liste.
 Aucun composant ne doit instancier `EventSource` directement.
@@ -131,7 +143,7 @@ Aucun composant ne doit instancier `EventSource` directement.
 ## Brouillon de paramètres (Settings draft)
 
 La page `/settings` édite plusieurs sections `app_settings` en parallèle. Le module
-`lib/settingsDraft.ts` porte l'état et la politique d'écriture, sans dépendance React :
+`lib/settings/draft.ts` porte l'état et la politique d'écriture, sans dépendance React :
 
 - il garde la valeur courante et la dernière valeur acquittée par le serveur pour chaque clé ;
 - `patch` fusionne les champs d'un objet, `set` remplace une section scalaire ;
@@ -143,7 +155,7 @@ La page `/settings` édite plusieurs sections `app_settings` en parallèle. Le m
 - en lecture seule (`readOnly`, quand les réglages stockés n'ont pas pu être lus), il ignore les
   éditions et `save` rend `readonly` sans écrire : des défauts n'écrasent jamais une config non lue.
 
-`lib/settingsSections.ts` possède les valeurs par défaut et la validation de chaque section. Les
+`lib/settings/sections.ts` possède les valeurs par défaut et la validation de chaque section. Les
 défauts sont fusionnés avec les valeurs stockées (les champs `null`/`undefined` retombent sur le
 défaut), ce qui permet à une première sauvegarde d'envoyer une section complète et à une
 sauvegarde sans modification d'être ignorée.
@@ -161,7 +173,7 @@ dédiés. Les tests de cartes utilisent `tests/unit/helpers/settingsDraft.tsx`
 
 ## Écritures de téléchargements (Download actions)
 
-`lib/downloadActions.ts` est la seule porte d'écriture des lignes d'acquisition (relancer,
+`lib/downloads/actions.ts` est la seule porte d'écriture des lignes d'acquisition (relancer,
 démarrer, supprimer, masquer). Le module est pur, sans React :
 
 - il porte le vocabulaire (`DownloadTarget` : `torrent`, `alldebrid`, `ddl`, `telegram`, plus
@@ -206,7 +218,7 @@ un module pur : `lib/series/editForm.ts` (`seriesEditDefaults`) et `lib/librarie
 
 ## Filtres de catalogue
 
-`lib/catalogFilters.ts` (pur) possède les tables d'options des selects de `LiveSearchForm`
+`lib/catalog/filters.ts` (pur) possède les tables d'options des selects de `LiveSearchForm`
 (`seriesStatusLabels`/`seriesStatusOptions`, `readingStatusOptions`, `libraryOptions`,
 `missingBooksOptions`, `metadataOptions`, `sortOptions(t, kind)`) et la règle
 `hasActiveFilters(values, fields)`. Une page construit `filterValues` / `filterFields` une fois,
@@ -278,10 +290,10 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
 - Les tests de route handlers utilisent `// @vitest-environment node` et `tests/unit/app/api/helpers.ts` (`createApiMock()`, `jsonRequest()`, `routeCtx()` retournant `{ params: Promise<any> }`).
 - Pour les composants à `fetch` global, stubber `vi.stubGlobal("fetch", fetchMock)` et router par `url`/`method` ; préférer `fireEvent.change`/`fireEvent.blur` pour les champs `{var}` ou number contrôlés.
 - `lib/api/**` est couvert par `tests/unit/lib/api-*.test.ts` ; le transport navigateur par
-  `tests/unit/lib/browserApi.test.ts`, `lib/api-handler.ts` par
-  `tests/unit/lib/api-handler.test.ts`.
+  `tests/unit/lib/browserApi.test.ts`, `lib/server/api-handler.ts` par
+  `tests/unit/lib/server/api-handler.test.ts`.
 - Le test de `lib/i18n/context` appelle `vi.unmock("@/lib/i18n/context")` pour rétablir le vrai provider (le setup le mocke globalement).
-- Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
+- Les tests de `lib/auth/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
 - Importer explicitement `describe`/`it`/`expect`/`vi` depuis `vitest` (pas de globals).
 - La CI GitHub Actions (`.github/workflows/ci-web.yml` sur PR, `deploy.yml` avant le build
   d'image sur `main`) lance `npm ci`, `tsc --noEmit`, `npm run lint` et `npm run test:unit` sur

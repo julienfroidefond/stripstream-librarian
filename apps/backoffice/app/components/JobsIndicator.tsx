@@ -8,9 +8,9 @@ import { useTranslation } from "@/lib/i18n/context";
 import { refreshAfterJobAction } from "../actions/cache";
 import { Badge } from "./ui/Badge";
 import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
-import { isActiveJobStatus, isRunningJobStatus } from "@/lib/jobStatus";
-import { useEventSource } from "@/lib/useEventSource";
-import { usePopin } from "@/lib/usePopin";
+import { isActiveJobStatus, isRunningJobStatus } from "@/lib/jobs/status";
+import { useEventSource } from "@/lib/hooks/useEventSource";
+import { usePopin } from "@/lib/hooks/usePopin";
 
 interface Job {
   id: string;

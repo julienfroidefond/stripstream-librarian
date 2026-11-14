@@ -4,7 +4,7 @@ import { memo, type ReactNode } from "react";
 import Link from "next/link";
 
 import { BookDto, ReadingStatus } from "../../lib/api";
-import { formatBytes } from "../../lib/format";
+import { formatBytes } from "../../lib/utils/format";
 import { useTranslation } from "@/lib/i18n/context";
 import { JacketGrid } from "./motion/JacketGrid";
 import { BookCardActions } from "./CardActions";

@@ -12,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { useIsMounted } from "@/lib/useIsMounted";
+import { useIsMounted } from "@/lib/hooks/useIsMounted";
 import { iconActionClassName } from "./iconAction";
 
 interface MenuContext {

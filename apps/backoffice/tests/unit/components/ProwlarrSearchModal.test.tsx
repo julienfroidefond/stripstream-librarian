@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AcquisitionReadinessProvider } from "@/app/components/AcquisitionReadinessProvider";
 import { ProwlarrSearchModal } from "@/app/components/ProwlarrSearchModal";
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 
 const fetchMock = vi.fn();
 

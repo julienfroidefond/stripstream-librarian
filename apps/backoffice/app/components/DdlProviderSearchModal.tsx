@@ -5,7 +5,7 @@ import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
-import { stripLeadingArticle } from "../../lib/volumeRanges";
+import { stripLeadingArticle } from "../../lib/series/volumeRanges";
 import type { TranslationKey } from "../../lib/i18n/fr";
 import type {
   DdlProviderDto,

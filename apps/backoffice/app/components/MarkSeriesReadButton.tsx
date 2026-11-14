@@ -2,7 +2,7 @@
 
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi } from "@/lib/api/browser";
-import { inlineReadClassName, markReadClassName, overlayReadClassName, useMarkRead } from "@/hooks/useMarkRead";
+import { inlineReadClassName, markReadClassName, overlayReadClassName, useMarkRead } from "@/lib/hooks/useMarkRead";
 import { MarkReadButton } from "./MarkReadButton";
 
 interface MarkSeriesReadButtonProps {

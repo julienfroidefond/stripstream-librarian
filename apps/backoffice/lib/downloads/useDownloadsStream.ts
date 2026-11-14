@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { useEventSource } from "@/lib/useEventSource";
+import { useEventSource } from "@/lib/hooks/useEventSource";
 import {
   DOWNLOADS_STREAM_URL,
   type DownloadsStreamPayload,

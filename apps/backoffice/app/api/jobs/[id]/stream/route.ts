@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { config } from "@/lib/api";
-import { isTerminalJobStatus } from "@/lib/jobStatus";
+import { isTerminalJobStatus } from "@/lib/jobs/status";
 
 export async function GET(
   request: NextRequest,

@@ -1,6 +1,6 @@
 import { fetchAuthors, AuthorsPageDto } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
+import { paramString, paramStringOr, paramInt } from "@/lib/utils/searchParams";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { OffsetPagination } from "@/app/components/ui";
 import Link from "next/link";

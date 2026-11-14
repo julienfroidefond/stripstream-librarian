@@ -1,5 +1,5 @@
 import { fetchLibraries, apiFetch } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { Icon } from "@/app/components/ui";
 import { DiscoveryGrid } from "./components/DiscoveryGrid";

@@ -8,7 +8,7 @@ import {
 } from "./BookCard";
 import { BookDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
-import type { ViewMode } from "@/lib/viewMode";
+import type { ViewMode } from "@/lib/catalog/viewMode";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { Button, Icon } from "./ui";
 

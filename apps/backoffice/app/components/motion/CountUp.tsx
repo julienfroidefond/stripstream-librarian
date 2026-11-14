@@ -3,8 +3,8 @@
 import { animate, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { formatBytes, formatNumber } from "@/lib/format";
-import { EASE_PROJECTION } from "@/lib/motion";
+import { formatBytes, formatNumber } from "@/lib/utils/format";
+import { EASE_PROJECTION } from "@/lib/ui/motion";
 
 interface CountUpProps {
   /** Final value the counter lands on. */

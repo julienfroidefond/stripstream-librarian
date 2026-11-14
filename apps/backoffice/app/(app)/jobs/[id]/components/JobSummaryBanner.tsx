@@ -1,6 +1,6 @@
 import type { MetadataBatchReportDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusPushReportDto, DownloadDetectionReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobStatus";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobs/status";
 
 interface JobSummaryBannerProps {
   job: {

@@ -9,10 +9,10 @@ import { NavIcon } from "./ui";
 import type { IconName } from "./ui/Icon";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi } from "@/lib/api/browser";
-import { useIsMounted } from "@/lib/useIsMounted";
-import type { NavHref } from "@/lib/navigation";
+import { useIsMounted } from "@/lib/hooks/useIsMounted";
+import type { NavHref } from "@/lib/ui/navigation";
 import type { UserDto } from "@/lib/api";
-import { DURATION, EASE_OUT, EASE_PROJECTION, springSnap } from "@/lib/motion";
+import { DURATION, EASE_OUT, EASE_PROJECTION, springSnap } from "@/lib/ui/motion";
 
 type NavItem = {
   href: NavHref;

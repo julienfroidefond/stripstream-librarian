@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobStatus";
+import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobs/status";
 
 interface JobTimelineCardProps {
   job: {

@@ -16,7 +16,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 
 export const dynamic = "force-dynamic";
 

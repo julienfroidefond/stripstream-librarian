@@ -9,7 +9,7 @@ import { browserApi } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
 import type { SettingsPageModel } from "@/lib/settings/page";
-import type { CacheSettings, DownloadsEnabledSettings, ImageProcessingSettings, LimitsSettings, ThumbnailSettings } from "@/lib/settingsSections";
+import type { CacheSettings, DownloadsEnabledSettings, ImageProcessingSettings, LimitsSettings, ThumbnailSettings } from "@/lib/settings/sections";
 import { SettingsDraftProvider, useSettingsReadOnly, useSettingsSection, useSettingsSaving } from "./SettingsDraftProvider";
 import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
 import { StatusMappingsCard } from "./components/StatusMappingsCard";

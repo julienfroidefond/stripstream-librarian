@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { apiFetch } from "@/lib/api";
 import { ApiError } from "@/lib/api/errors";
 import type { OrphanDeleteResultDto, OrphanSeriesPageDto } from "@/lib/api";
-import { withRoute } from "@/lib/api-handler";
+import { withRoute } from "@/lib/server/api-handler";
 import { invalidateAfter } from "@/lib/cache";
 
 const PAGE_SIZE = 200;

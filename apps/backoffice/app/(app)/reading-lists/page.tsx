@@ -1,5 +1,5 @@
 import { fetchReadingLists } from "@/lib/api";
-import { getActiveUser } from "@/lib/activeUser";
+import { getActiveUser } from "@/lib/auth/activeUser";
 import { ReadingListsClient } from "./ReadingListsClient";
 
 export const dynamic = "force-dynamic";

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcAreaChart, RcMultiLineChart } from "@/app/components/DashboardCharts";
-import { CHART_COLORS, CHART_PALETTE } from "@/lib/chart-colors";
+import { CHART_COLORS, CHART_PALETTE } from "@/lib/ui/chartColors";
 import { browserApi } from "@/lib/api/browser";
 import type {
   StatsResponse,

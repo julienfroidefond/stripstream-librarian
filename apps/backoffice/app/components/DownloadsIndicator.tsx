@@ -4,15 +4,15 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
-import { formatEta, formatSpeed, formatVolumes } from "@/lib/format";
-import { showsDownloadProgress } from "@/lib/download";
+import { formatEta, formatSpeed, formatVolumes } from "@/lib/utils/format";
+import { showsDownloadProgress } from "@/lib/downloads/file";
 import {
   downloadStatusClass,
   downloadStatusLabel,
   indicatorDownloads,
   useDownloadsStream,
 } from "@/lib/downloads";
-import { usePopin } from "@/lib/usePopin";
+import { usePopin } from "@/lib/hooks/usePopin";
 
 // Icons
 const DownloadIcon = ({ className }: { className?: string }) => (

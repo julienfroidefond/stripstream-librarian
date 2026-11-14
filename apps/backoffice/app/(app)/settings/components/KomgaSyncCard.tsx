@@ -6,7 +6,7 @@ import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
 import { useTranslation } from "@/lib/i18n/context";
-import type { KomgaSettings } from "@/lib/settingsSections";
+import type { KomgaSettings } from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 
 async function loadKomgaReports(): Promise<KomgaSyncReportSummary[] | null> {

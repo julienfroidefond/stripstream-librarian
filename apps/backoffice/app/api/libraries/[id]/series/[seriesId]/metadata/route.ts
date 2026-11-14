@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchSeriesMetadata } from "@/lib/api";
-import { withRoute } from "@/lib/api-handler";
+import { withRoute } from "@/lib/server/api-handler";
 
 export const GET = withRoute(async (
   _request: NextRequest,

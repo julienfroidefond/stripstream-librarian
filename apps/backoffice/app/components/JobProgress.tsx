@@ -1,9 +1,9 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n/context";
-import { useJobStream } from "@/lib/useJobStream";
+import { useJobStream } from "@/lib/jobs/useJobStream";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
-import { isPhase2Status } from "@/lib/jobStatus";
+import { isPhase2Status } from "@/lib/jobs/status";
 
 interface JobProgressProps {
   jobId: string;

@@ -6,8 +6,8 @@ import { OffsetPagination } from "@/app/components/ui";
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
-import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { getActiveUser } from "@/lib/auth/activeUser";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 
 export const dynamic = "force-dynamic";
 

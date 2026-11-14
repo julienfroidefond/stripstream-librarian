@@ -2,7 +2,7 @@ import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, SeriesHit
 import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
-import { hasActiveFilters, libraryOptions, metadataOptions, readingStatusOptions, sortOptions } from "@/lib/catalogFilters";
+import { hasActiveFilters, libraryOptions, metadataOptions, readingStatusOptions, sortOptions } from "@/lib/catalog/filters";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { OffsetPagination } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
@@ -10,9 +10,9 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
-import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
-import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { getActiveUser } from "@/lib/auth/activeUser";
+import { paramString, paramStringOr, paramInt } from "@/lib/utils/searchParams";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 
 export const dynamic = "force-dynamic";
 

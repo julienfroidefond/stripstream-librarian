@@ -5,8 +5,8 @@ import { SettingsCard, SettingsRow, Button, FormInput, Icon } from "@/app/compon
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { useTranslation } from "@/lib/i18n/context";
-import { useIsMounted } from "@/lib/useIsMounted";
-import type { AnilistSettings } from "@/lib/settingsSections";
+import { useIsMounted } from "@/lib/hooks/useIsMounted";
+import type { AnilistSettings } from "@/lib/settings/sections";
 import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
 export function AnilistTab({ users }: { users: UserDto[] }) {

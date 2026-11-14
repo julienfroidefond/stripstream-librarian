@@ -17,8 +17,8 @@ import {
   createSettingsDraft,
   type SettingsDraft,
   type SettingsDraftSaveResult,
-} from "@/lib/settingsDraft";
-import { seedSettingsSections, validateSettingsSection } from "@/lib/settingsSections";
+} from "@/lib/settings/draft";
+import { seedSettingsSections, validateSettingsSection } from "@/lib/settings/sections";
 
 /**
  * Browser write for one `app_settings` section.

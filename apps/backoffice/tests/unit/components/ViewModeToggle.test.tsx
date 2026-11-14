@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
-import { VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 
 describe("ViewModeToggle", () => {
   it("offers to switch to the list when currently in grid mode", () => {

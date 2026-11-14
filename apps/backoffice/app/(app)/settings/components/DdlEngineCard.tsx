@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Icon, Tooltip } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
-import type { LimitsSettings } from "@/lib/settingsSections";
+import type { LimitsSettings } from "@/lib/settings/sections";
 import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { getBookFileDownloadUrl } from "@/lib/api";
-import { fetchSharedFile, isIosStandalone } from "@/lib/download";
+import { fetchSharedFile, isIosStandalone } from "@/lib/downloads/file";
 import { useTranslation } from "@/lib/i18n/context";
 import { ActionsMenuItem, Icon, toast } from "./ui";
 

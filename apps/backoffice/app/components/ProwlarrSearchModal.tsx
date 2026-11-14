@@ -6,9 +6,9 @@ import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { DownloadClientProvider, DownloadClientButton } from "./DownloadClientButton";
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 import { useAcquisitionReadiness } from "./AcquisitionReadinessProvider";
-import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
+import { compressVolumes, stripLeadingArticle } from "@/lib/series/volumeRanges";
 
 interface MissingBookItem {
   title: string | null;

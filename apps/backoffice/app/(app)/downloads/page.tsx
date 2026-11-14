@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { fetchTorrentDownloads, TorrentDownloadDto, LatestFoundPerLibraryDto, TelegramAvailableGroupDto, TelegramDownloadItemDto, DdlProviderDownloadDto, apiFetch, fetchTelegramAvailable, fetchTelegramDownloads, fetchDdlProviderDownloads } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { DownloadsPage } from "./DownloadsPage";
-import { readDownloadClientSetting } from "@/lib/downloadClient";
+import { readDownloadClientSetting } from "@/lib/downloads/client";
 
 export const dynamic = "force-dynamic";
 

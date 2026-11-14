@@ -8,7 +8,7 @@ import {
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import type { LibraryDto, TelegramMonitorStatus, TelegramSourceDto } from "@/lib/api";
-import type { LimitsSettings } from "@/lib/settingsSections";
+import type { LimitsSettings } from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 
 interface ChannelSuggestion {

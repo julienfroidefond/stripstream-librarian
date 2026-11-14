@@ -6,13 +6,13 @@ import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
 import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
-import { hasActiveFilters, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalogFilters";
+import { hasActiveFilters, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalog/filters";
 import { notFound } from "next/navigation";
 import { LibrarySubPageHeader } from "@/app/components/LibrarySubPageHeader";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
-import { paramString, paramInt, paramBool } from "@/lib/searchParams";
-import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { getActiveUser } from "@/lib/auth/activeUser";
+import { paramString, paramInt, paramBool } from "@/lib/utils/searchParams";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 
 export const dynamic = "force-dynamic";
 

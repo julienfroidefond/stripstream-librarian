@@ -8,7 +8,7 @@ import {
   Legend,
 } from "recharts";
 
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { CHART_COLORS } from "@/lib/ui/chartColors";
 
 // ---------------------------------------------------------------------------
 // Donut

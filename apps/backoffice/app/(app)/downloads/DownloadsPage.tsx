@@ -31,13 +31,13 @@ import {
 } from "@/lib/downloads";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
 import { browserApi } from "@/lib/api/browser";
-import type { DownloadAction } from "@/lib/downloadActions";
+import type { DownloadAction } from "@/lib/downloads/actions";
 import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { DownloadActionsProvider, useDownloadActions } from "./useDownloadActions";
 import { useTranslation } from "@/lib/i18n/context";
-import { compressVolumes } from "@/lib/volumeRanges";
-import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
-import { isTelegramDownloadRetryable, showsDownloadProgress } from "@/lib/download";
+import { compressVolumes } from "@/lib/series/volumeRanges";
+import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/utils/format";
+import { isTelegramDownloadRetryable, showsDownloadProgress } from "@/lib/downloads/file";
 
 interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
