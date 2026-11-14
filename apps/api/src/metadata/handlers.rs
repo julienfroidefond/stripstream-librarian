@@ -64,6 +64,35 @@ pub struct MetadataMatchRequest {
     pub title: String,
     pub metadata_json: serde_json::Value,
     pub total_volumes: Option<i32>,
+    /// Typed candidate fields, merged into `metadata_json` server-side (a
+    /// non-empty value wins over the blob, an empty one never erases it).
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    #[serde(default)]
+    pub publishers: Vec<String>,
+    #[serde(default)]
+    pub start_year: Option<i32>,
+    #[serde(default)]
+    pub cover_url: Option<String>,
+}
+
+impl MetadataMatchRequest {
+    /// The `metadata_json` to store: the request blob enriched with the typed
+    /// candidate fields (same normalization as batch and refresh).
+    pub(crate) fn stored_metadata_json(&self) -> serde_json::Value {
+        metadata_providers::series_metadata::enrich_series_metadata_json(
+            &self.metadata_json,
+            metadata_providers::series_metadata::CandidateSeriesFields {
+                description: self.description.as_deref(),
+                authors: &self.authors,
+                publishers: &self.publishers,
+                start_year: self.start_year,
+                cover_url: self.cover_url.as_deref(),
+            },
+        )
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -299,6 +328,7 @@ pub async fn create_metadata_match(
         .await?
         .id;
 
+    let metadata_json = body.stored_metadata_json();
     let link_id = links::propose(
         &state.pool,
         &links::LinkCandidate {
@@ -308,7 +338,7 @@ pub async fn create_metadata_match(
             external_id: &body.external_id,
             external_url: body.external_url.as_deref(),
             confidence: body.confidence,
-            metadata_json: &body.metadata_json,
+            metadata_json: &metadata_json,
             total_volumes: body.total_volumes,
         },
     )

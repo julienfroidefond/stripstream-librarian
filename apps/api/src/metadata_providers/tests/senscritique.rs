@@ -724,3 +724,90 @@ fn similarity_subseries() {
     let s = crate::metadata_providers::scoring::title_similarity("Boruto", "Naruto");
     assert!(s < 0.5, "different series: got {s}");
 }
+
+// ─── GraphQL variables & groupProducts pagination ───────────────────
+
+#[test]
+fn search_keywords_travel_as_variables_not_in_the_query() {
+    let hostile = r#"Blacksad\" ) { __schema { types { name } } } #"#;
+    let body = search_autocomplete_body(hostile);
+
+    let query = body["query"].as_str().unwrap();
+    assert!(!query.contains("Blacksad"));
+    assert!(!query.contains("__schema"));
+    assert!(query.contains("keywords: $keywords"));
+    assert_eq!(body["variables"]["keywords"], hostile);
+
+    // Round-trips through JSON unchanged (backslashes and quotes included).
+    let wire = serde_json::to_string(&body).unwrap();
+    let back: serde_json::Value = serde_json::from_str(&wire).unwrap();
+    assert_eq!(back["variables"]["keywords"], hostile);
+}
+
+#[test]
+fn group_products_body_uses_variables() {
+    let body = group_products_body(2430, "id title", 200);
+    let query = body["query"].as_str().unwrap();
+    assert!(query.contains("franchiseId: $franchiseId"));
+    assert!(query.contains("offset: $offset"));
+    assert!(query.contains("items { id title }"));
+    assert!(!query.contains("2430"));
+    assert_eq!(body["variables"]["franchiseId"], 2430);
+    assert_eq!(body["variables"]["offset"], 200);
+    assert_eq!(body["variables"]["limit"], GROUP_PRODUCTS_PAGE_SIZE);
+}
+
+fn group_products_page(ids: std::ops::Range<i64>) -> serde_json::Value {
+    let items: Vec<serde_json::Value> = ids
+        .map(|id| serde_json::json!({ "id": id, "title": format!("Tome {id}") }))
+        .collect();
+    serde_json::json!({ "data": { "groupProducts": { "items": items } } })
+}
+
+#[tokio::test]
+async fn group_products_paginates_until_a_short_page() {
+    use wiremock::matchers::body_partial_json;
+
+    let server = MockServer::start().await;
+    let size = GROUP_PRODUCTS_PAGE_SIZE as i64;
+    for (offset, ids) in [
+        (0, 0..size),
+        (size, size..2 * size),
+        (2 * size, 2 * size..2 * size + 5),
+    ] {
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                serde_json::json!({ "variables": { "offset": offset } }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(group_products_page(ids)))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let client = build_client().unwrap();
+    let items = fetch_group_products(&client, &server.uri(), 2430, "id title")
+        .await
+        .unwrap();
+    assert_eq!(items.len(), 2 * GROUP_PRODUCTS_PAGE_SIZE + 5);
+}
+
+#[tokio::test]
+async fn group_products_stops_on_a_page_with_nothing_new() {
+    let server = MockServer::start().await;
+    // A server ignoring `offset`: every page is the same full page.
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(group_products_page(0..GROUP_PRODUCTS_PAGE_SIZE as i64)),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let client = build_client().unwrap();
+    let items = fetch_group_products(&client, &server.uri(), 2430, "id")
+        .await
+        .unwrap();
+    assert_eq!(items.len(), GROUP_PRODUCTS_PAGE_SIZE);
+}

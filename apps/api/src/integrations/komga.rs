@@ -79,6 +79,81 @@ pub struct KomgaSyncReportSummary {
     pub created_at: DateTime<Utc>,
 }
 
+// ─── Matching ────────────────────────────────────────────────────────────────
+
+/// A local book as seen by the Komga matcher.
+#[derive(Debug, Clone)]
+pub(crate) struct LocalBook {
+    pub id: Uuid,
+    pub title: String,
+    pub series: String,
+}
+
+/// Outcome of matching Komga read books against the local catalogue.
+#[derive(Debug, Default)]
+pub(crate) struct KomgaMatches {
+    /// `(book id, display label)` of every local book to mark read.
+    pub matched_entries: Vec<(Uuid, String)>,
+    /// Komga books that matched nothing, or matched ambiguously.
+    pub unmatched: Vec<String>,
+}
+
+/// Match Komga `(series_title, title)` pairs against local books.
+///
+/// Both the series and the book title are compared after normalization
+/// (case, accents and punctuation folded by `parsers::normalize_title`). A Komga
+/// book never matches a local book of another series: there is no title-only
+/// fallback. When several local books share the same normalized series and
+/// title (e.g. the same series in two libraries), the match is ambiguous and
+/// nothing is marked.
+pub(crate) fn match_komga_books(
+    local_books: &[LocalBook],
+    komga_books: &[(String, String)],
+) -> KomgaMatches {
+    let mut index: HashMap<(String, String), Vec<&LocalBook>> = HashMap::new();
+    for book in local_books {
+        index
+            .entry((
+                parsers::normalize_title(&book.series),
+                parsers::normalize_title(&book.title),
+            ))
+            .or_default()
+            .push(book);
+    }
+
+    let mut result = KomgaMatches::default();
+    for (series_title, title) in komga_books {
+        let key = (
+            parsers::normalize_title(series_title),
+            parsers::normalize_title(title),
+        );
+        let label = if series_title.is_empty() {
+            title.clone()
+        } else {
+            format!("{series_title} - {title}")
+        };
+        match index.get(&key).map(Vec::as_slice) {
+            Some([book]) if !key.1.is_empty() => {
+                let display = if book.series.is_empty() {
+                    book.title.clone()
+                } else {
+                    format!("{} - {}", book.series, book.title)
+                };
+                result.matched_entries.push((book.id, display));
+            }
+            Some(candidates) if candidates.len() > 1 => {
+                tracing::warn!(
+                    "[KOMGA] ambiguous match for '{label}': {} local books, skipped",
+                    candidates.len()
+                );
+                result.unmatched.push(label);
+            }
+            _ => result.unmatched.push(label),
+        }
+    }
+    result
+}
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// Sync read books from a Komga server
@@ -154,68 +229,29 @@ pub async fn sync_komga_read_books(
 
     let total_komga_read = komga_books.len() as i64;
 
-    // Build local lookup maps. The series name lives in `series` (the legacy
+    // Build the local lookup. The series name lives in `series` (the legacy
     // `books.series` text column was dropped in migration 0071).
     let rows = sqlx::query(
-        "SELECT b.id, b.title, COALESCE(s.name, '') AS series, \
-                LOWER(b.title) AS title_lower, LOWER(COALESCE(s.name, '')) AS series_lower \
+        "SELECT b.id, b.title, COALESCE(s.name, '') AS series \
          FROM books b \
          LEFT JOIN series s ON s.id = b.series_id",
     )
     .fetch_all(&state.pool)
     .await?;
 
-    type BookEntry = (Uuid, String, String);
-    // Primary: (series_lower, title_lower) -> Vec<(Uuid, title, series)>
-    let mut primary_map: HashMap<(String, String), Vec<BookEntry>> = HashMap::new();
-    // Secondary: title_lower -> Vec<(Uuid, title, series)>
-    let mut secondary_map: HashMap<String, Vec<BookEntry>> = HashMap::new();
+    let local_books: Vec<LocalBook> = rows
+        .iter()
+        .map(|row| LocalBook {
+            id: row.get("id"),
+            title: row.get("title"),
+            series: row.get("series"),
+        })
+        .collect();
 
-    for row in &rows {
-        let id: Uuid = row.get("id");
-        let title: String = row.get("title");
-        let series: String = row.get("series");
-        let title_lower: String = row.get("title_lower");
-        let series_lower: String = row.get("series_lower");
-        let entry = (id, title, series);
-
-        primary_map
-            .entry((series_lower, title_lower.clone()))
-            .or_default()
-            .push(entry.clone());
-        secondary_map.entry(title_lower).or_default().push(entry);
-    }
-
-    // Match Komga books to local books
-    let mut matched_entries: Vec<(Uuid, String)> = Vec::new(); // (id, display_title)
-    let mut unmatched: Vec<String> = Vec::new();
-
-    for (series_title, title) in &komga_books {
-        let title_lower = title.to_lowercase();
-        let series_lower = series_title.to_lowercase();
-
-        let found =
-            if let Some(entries) = primary_map.get(&(series_lower.clone(), title_lower.clone())) {
-                Some(entries)
-            } else {
-                secondary_map.get(&title_lower)
-            };
-
-        if let Some(entries) = found {
-            for (id, local_title, local_series) in entries {
-                let display = if local_series.is_empty() {
-                    local_title.clone()
-                } else {
-                    format!("{local_series} - {local_title}")
-                };
-                matched_entries.push((*id, display));
-            }
-        } else if series_title.is_empty() {
-            unmatched.push(title.clone());
-        } else {
-            unmatched.push(format!("{series_title} - {title}"));
-        }
-    }
+    let KomgaMatches {
+        mut matched_entries,
+        unmatched,
+    } = match_komga_books(&local_books, &komga_books);
 
     // Deduplicate by ID
     matched_entries.sort_by_key(|entry| entry.0);

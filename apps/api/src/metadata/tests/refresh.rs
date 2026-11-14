@@ -23,7 +23,9 @@ fn report_dto_serializes() {
 
 #[test]
 fn series_refresh_result_serializes_updated() {
+    let series_id = Uuid::new_v4();
     let result = SeriesRefreshResult {
+        series_id: Some(series_id),
         series_name: "Blacksad".to_string(),
         provider: "google_books".to_string(),
         status: "updated".to_string(),
@@ -37,6 +39,7 @@ fn series_refresh_result_serializes_updated() {
     };
     let json = serde_json::to_value(&result).unwrap();
     assert_eq!(json["series_name"], "Blacksad");
+    assert_eq!(json["series_id"], series_id.to_string());
     assert_eq!(json["status"], "updated");
     assert_eq!(json["series_changes"][0]["field"], "title");
     // error field should be absent (skip_serializing_if = None)
@@ -46,6 +49,7 @@ fn series_refresh_result_serializes_updated() {
 #[test]
 fn series_refresh_result_serializes_error() {
     let result = SeriesRefreshResult {
+        series_id: None,
         series_name: "Test".to_string(),
         provider: "anilist".to_string(),
         status: "error".to_string(),
@@ -56,6 +60,7 @@ fn series_refresh_result_serializes_error() {
     let json = serde_json::to_value(&result).unwrap();
     assert_eq!(json["status"], "error");
     assert_eq!(json["error"], "provider timeout");
+    assert!(json.get("series_id").is_none());
 }
 
 #[test]

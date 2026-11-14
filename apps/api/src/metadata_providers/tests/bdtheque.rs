@@ -320,3 +320,48 @@ fn zero_vote_aggregate_rating_is_ignored() {
     let doc = scraper::Html::parse_document(html);
     assert_eq!(parse_aggregate_rating(&doc), None);
 }
+
+#[tokio::test]
+async fn tomes_pagination_stops_on_a_repeated_page() {
+    let server = MockServer::start().await;
+    // A site ignoring the page index: every page returns the same tome.
+    Mock::given(method("GET"))
+        .and(path_regex(r"/ajax/series/tomes/22444/\d+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<div class="card"><h5>1 - Erin</h5><small>ISBN : 9782344039403</small></div>"#,
+        ))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let books = get_series_books_impl("22444/les-geants", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(books.len(), 1);
+}
+
+#[tokio::test]
+async fn tomes_pagination_is_bounded() {
+    let server = MockServer::start().await;
+    // Endless distinct pages: each page echoes a different tome number.
+    struct DistinctPage;
+    impl wiremock::Respond for DistinctPage {
+        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+            let page = request.url.path().rsplit('/').next().unwrap_or("0");
+            ResponseTemplate::new(200).set_body_string(format!(
+                r#"<div class="card"><h5>{page} - Tome</h5><small>ISBN : 978{page}</small></div>"#
+            ))
+        }
+    }
+    Mock::given(method("GET"))
+        .and(path_regex(r"/ajax/series/tomes/22444/\d+$"))
+        .respond_with(DistinctPage)
+        .expect(TOMES_MAX_PAGES as u64)
+        .mount(&server)
+        .await;
+
+    let books = get_series_books_impl("22444/les-geants", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(books.len(), TOMES_MAX_PAGES as usize);
+}

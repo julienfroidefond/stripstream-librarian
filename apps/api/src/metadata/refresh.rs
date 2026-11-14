@@ -30,6 +30,9 @@ use super::refresh_sync::{BookDiff, FieldDiff};
 /// Per-series change report
 #[derive(Serialize, Clone)]
 pub(crate) struct SeriesRefreshResult {
+    /// Local series id, so the job report can link to the series page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) series_id: Option<Uuid>,
     pub(crate) series_name: String,
     pub(crate) provider: String,
     pub(crate) status: String, // "updated", "unchanged", "error"
@@ -389,7 +392,7 @@ async fn process_metadata_refresh_inner(
     let query = if include_all {
         // Refresh ALL series regardless of status
         r#"
-        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id
+        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id, eml.series_id
         FROM external_metadata_links eml
         JOIN series sm
             ON sm.id = eml.series_id
@@ -400,7 +403,7 @@ async fn process_metadata_refresh_inner(
     } else {
         // Only ongoing series (not ended/cancelled)
         r#"
-        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id
+        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id, eml.series_id
         FROM external_metadata_links eml
         JOIN series sm
             ON sm.id = eml.series_id
@@ -410,7 +413,7 @@ async fn process_metadata_refresh_inner(
         ORDER BY sm.name
         "#
     };
-    let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(query)
+    let links: Vec<(Uuid, String, String, String, Uuid)> = sqlx::query_as(query)
         .bind(library_id)
         .fetch_all(pool)
         .await
@@ -428,7 +431,7 @@ async fn process_metadata_refresh_inner(
     let mut all_results: Vec<SeriesRefreshResult> = Vec::new();
 
     let mut sc_rate_limited = false;
-    for (link_id, series_name, provider_name, external_id) in &links {
+    for (link_id, series_name, provider_name, external_id, series_id) in &links {
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
             cancel_job(pool, job_id).await.map_err(|e| e.to_string())?;
@@ -440,6 +443,7 @@ async fn process_metadata_refresh_inner(
             warn!("[METADATA_REFRESH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
             errors += 1;
             all_results.push(SeriesRefreshResult {
+                series_id: Some(*series_id),
                 series_name: series_name.clone(),
                 provider: provider_name.clone(),
                 status: "error".to_string(),
@@ -480,6 +484,7 @@ async fn process_metadata_refresh_inner(
                 }
                 errors += 1;
                 all_results.push(SeriesRefreshResult {
+                    series_id: Some(*series_id),
                     series_name: series_name.clone(),
                     provider: provider_name.clone(),
                     status: "error".to_string(),

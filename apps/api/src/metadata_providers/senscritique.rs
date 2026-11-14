@@ -64,24 +64,7 @@ type FranchiseHit = (SeriesCandidate, Option<f64>, usize);
 async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCandidate>, String> {
     let client = build_client()?;
 
-    let gql = serde_json::json!({
-        "query": format!(
-            r#"{{ searchAutocomplete(keywords: "{}", universe: "comicBook", limit: 20) {{
-                items {{
-                    product {{
-                        id title url category synopsis
-                        medias {{ picture }}
-                        authors {{ name }}
-                        pencillers {{ name }}
-                        dateRelease rating yearOfProduction
-                        franchises {{ id label }}
-                    }}
-                }}
-            }} }}"#,
-            query.replace('"', "\\\"")
-        ),
-    });
-
+    let gql = search_autocomplete_body(query);
     let data = graphql_request(&client, &gql).await?;
 
     let items = data
@@ -288,20 +271,15 @@ async fn fetch_franchise_editions(
     latest_dates: &HashMap<i64, String>,
     search_query: &str,
 ) -> Vec<SeriesCandidate> {
-    let gql = serde_json::json!({
-        "query": format!(
-            r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
-                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} pencillers {{ name }} synopsis isbn }}
-            }} }}"#
-        ),
-    });
-
-    let items = match graphql_request(client, &gql).await {
-        Ok(data) => data
-            .pointer("/data/groupProducts/items")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default(),
+    let items = match fetch_group_products(
+        client,
+        GRAPHQL_URL,
+        franchise_id,
+        "id title url dateRelease medias { picture } authors { name } pencillers { name } synopsis isbn",
+    )
+    .await
+    {
+        Ok(items) => items,
         Err(_) => {
             // Fallback: return base candidate without edition info
             return vec![base_candidate.clone()];
@@ -495,27 +473,13 @@ async fn fetch_franchise_books(
     franchise_id: i64,
     edition_filter: Option<&str>,
 ) -> Result<Vec<BookCandidate>, String> {
-    let gql = serde_json::json!({
-        "query": format!(
-            r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
-                items {{
-                    id title url dateRelease rating
-                    medias {{ picture }}
-                    authors {{ name }}
-                    pencillers {{ name }}
-                    synopsis
-                    isbn
-                }}
-            }} }}"#
-        ),
-    });
-
-    let data = graphql_request(client, &gql).await?;
-
-    let items = data
-        .pointer("/data/groupProducts/items")
-        .and_then(|v| v.as_array())
-        .ok_or("SensCritique: missing groupProducts items")?;
+    let items = fetch_group_products(
+        client,
+        GRAPHQL_URL,
+        franchise_id,
+        "id title url dateRelease rating medias { picture } authors { name } pencillers { name } synopsis isbn",
+    )
+    .await?;
 
     // If edition filter is set, only keep products matching that edition
     let filtered_items: Vec<&serde_json::Value> = if let Some(edition) = edition_filter {
@@ -973,6 +937,96 @@ fn infer_status_from_date(date_str: &str) -> &'static str {
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
+
+/// `searchAutocomplete` request body. The user's keywords travel as a GraphQL
+/// variable, never interpolated into the query text.
+fn search_autocomplete_body(keywords: &str) -> serde_json::Value {
+    serde_json::json!({
+        "query": r#"query SearchSeries($keywords: String!) {
+            searchAutocomplete(keywords: $keywords, universe: "comicBook", limit: 20) {
+                items {
+                    product {
+                        id title url category synopsis
+                        medias { picture }
+                        authors { name }
+                        pencillers { name }
+                        dateRelease rating yearOfProduction
+                        franchises { id label }
+                    }
+                }
+            }
+        }"#,
+        "variables": { "keywords": keywords },
+    })
+}
+
+/// Page size of `groupProducts` requests.
+const GROUP_PRODUCTS_PAGE_SIZE: usize = 100;
+/// Safety bound on the number of `groupProducts` pages fetched per franchise.
+const GROUP_PRODUCTS_MAX_PAGES: usize = 20;
+
+/// `groupProducts` request body for one page; `fields` is the static item
+/// selection, every value travels as a GraphQL variable.
+fn group_products_body(franchise_id: i64, fields: &str, offset: usize) -> serde_json::Value {
+    serde_json::json!({
+        "query": format!(
+            "query GroupProducts($franchiseId: Int!, $limit: Int!, $offset: Int!) {{ \
+             groupProducts(franchiseId: $franchiseId, universe: \"comicBook\", limit: $limit, offset: $offset) {{ \
+             items {{ {fields} }} }} }}"
+        ),
+        "variables": {
+            "franchiseId": franchise_id,
+            "limit": GROUP_PRODUCTS_PAGE_SIZE,
+            "offset": offset,
+        },
+    })
+}
+
+/// Fetch every product of a franchise, page by page. Products are de-duplicated
+/// by id (the API does not guarantee a stable order between calls) and the loop
+/// stops on a short page, a page bringing nothing new, or the page bound.
+async fn fetch_group_products(
+    client: &reqwest::Client,
+    url: &str,
+    franchise_id: i64,
+    fields: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for page in 0..GROUP_PRODUCTS_MAX_PAGES {
+        let body = group_products_body(franchise_id, fields, page * GROUP_PRODUCTS_PAGE_SIZE);
+        let data = graphql_request_url(client, url, &body).await?;
+        let page_items = data
+            .pointer("/data/groupProducts/items")
+            .and_then(|v| v.as_array())
+            .ok_or("SensCritique: missing groupProducts items")?;
+
+        let page_len = page_items.len();
+        let mut new_items = 0;
+        for item in page_items {
+            let key = item
+                .get("id")
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| item.to_string());
+            if seen.insert(key) {
+                items.push(item.clone());
+                new_items += 1;
+            }
+        }
+
+        if page_len < GROUP_PRODUCTS_PAGE_SIZE || new_items == 0 {
+            break;
+        }
+        if page + 1 == GROUP_PRODUCTS_MAX_PAGES {
+            tracing::warn!(
+                "[SENSCRITIQUE] franchise {franchise_id}: stopped after {GROUP_PRODUCTS_MAX_PAGES} pages"
+            );
+        }
+    }
+
+    Ok(items)
+}
 
 async fn graphql_request(
     client: &reqwest::Client,

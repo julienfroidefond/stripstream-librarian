@@ -362,6 +362,10 @@ pub(super) async fn auto_apply(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
 
+    // Store the provider blob enriched with the typed series fields, so the
+    // series sync finds authors/publishers/start_year/cover_url for every provider.
+    let metadata_json = candidate.stored_metadata_json();
+
     // Approve the link; the first approved link of a series becomes primary.
     let link_id = links::approve(
         pool,
@@ -372,7 +376,7 @@ pub(super) async fn auto_apply(
             external_id: &candidate.external_id,
             external_url: candidate.external_url.as_deref(),
             confidence: Some(candidate.score.value()),
-            metadata_json: &candidate.metadata_json,
+            metadata_json: &metadata_json,
             total_volumes: candidate.total_volumes,
         },
         links::OnConflict::Replace,

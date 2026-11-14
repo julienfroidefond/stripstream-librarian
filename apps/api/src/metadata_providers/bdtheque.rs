@@ -383,19 +383,36 @@ async fn get_series_books_impl(
     let c = scraping::shared_client(20, "BDTheque")?;
     let id = series_id(external_id).ok_or("invalid BDTheque series ID")?;
     let mut books = Vec::new();
-    let mut page = 0u32;
-    loop {
+    let mut previous_ids: Option<Vec<String>> = None;
+    for page in 0..TOMES_MAX_PAGES {
         let url = format!("{base}/ajax/series/tomes/{id}/{page}");
         let body = scraping::get_html(&c, &url, "BDTheque").await?;
         let page_books = parse_tomes_page(&body, &id);
         if page_books.is_empty() {
             break;
         }
+        // A site that ignores the page index keeps serving the same page:
+        // stop instead of looping (and duplicating books) until the bound.
+        let ids: Vec<String> = page_books
+            .iter()
+            .map(|book| book.external_book_id.clone())
+            .collect();
+        if previous_ids.as_ref() == Some(&ids) {
+            break;
+        }
+        previous_ids = Some(ids);
         books.extend(page_books);
-        page += 1;
+        if page + 1 == TOMES_MAX_PAGES {
+            tracing::warn!(
+                "[BDTHEQUE] series {id}: stopped after {TOMES_MAX_PAGES} pages of tomes"
+            );
+        }
     }
     Ok(books)
 }
+
+/// Safety bound on the number of tome pages fetched for one series.
+const TOMES_MAX_PAGES: u32 = 50;
 
 fn parse_tomes_page(body: &str, id: &str) -> Vec<BookCandidate> {
     let doc = Html::parse_document(body);

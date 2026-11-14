@@ -24,6 +24,8 @@ Dans **Paramètres → onglet Statut de lecture** :
 
 Cliquez sur **Synchroniser les livres lus** pour lancer l'import. Stripstream récupère tous vos livres marqués lus dans Komga et met à jour leur statut de lecture dans votre bibliothèque locale.
 
+Un livre Komga n'est rapproché d'un livre local que si **la série et le titre correspondent** (comparaison insensible à la casse, aux accents et à la ponctuation). S'il y a plusieurs candidats possibles, rien n'est marqué et le livre apparaît parmi les non-rapprochés du rapport.
+
 ---
 
 ## Rapport de synchronisation

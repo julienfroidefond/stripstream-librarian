@@ -221,32 +221,89 @@ async fn sync_reports_unmatched_books(pool: sqlx::PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn sync_falls_back_to_title_match_when_series_differs(pool: sqlx::PgPool) {
+async fn sync_never_matches_a_book_of_another_series(pool: sqlx::PgPool) {
     let lib = create_library(&pool, "komga_fallback").await;
     let series = create_series(&pool, lib, "Astérix").await;
-    let book = create_book(&pool, lib, series, "Le Gaulois").await;
+    let book = create_book(&pool, lib, series, "Tome 1").await;
     let user = create_user(&pool, "komga_fallback_user").await;
 
     let server = MockServer::start().await;
-    // Komga reports a different series title, but the book title matches.
+    // Komga reports another series with the same book title: no title-only fallback.
+    mount_komga_page(&server, 0, komga_page(&[("Naruto", "Tome 1")], 0, 1)).await;
+
+    let report = sync(&pool, &server.uri(), user).await.unwrap();
+
+    assert_eq!(report.matched, 0);
+    assert_eq!(report.unmatched, vec!["Naruto - Tome 1".to_string()]);
+    assert_eq!(reading_status(&pool, book, user).await, None);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn sync_matches_series_despite_case_accents_and_punctuation(pool: sqlx::PgPool) {
+    let lib = create_library(&pool, "komga_norm").await;
+    let series = create_series(&pool, lib, "Astérix le Gaulois").await;
+    let book = create_book(&pool, lib, series, "Tome 1 : La Serpe d'Or").await;
+    let user = create_user(&pool, "komga_norm_user").await;
+
+    let server = MockServer::start().await;
     mount_komga_page(
         &server,
         0,
-        komga_page(&[("Unknown Series", "Le Gaulois")], 0, 1),
+        komga_page(&[("ASTERIX - le gaulois", "tome 1 la serpe d’or")], 0, 1),
     )
     .await;
 
     let report = sync(&pool, &server.uri(), user).await.unwrap();
 
     assert_eq!(report.matched, 1);
-    // The display label uses the local series name, not Komga's.
-    assert_eq!(
-        report.matched_books,
-        vec!["Astérix - Le Gaulois".to_string()]
-    );
     assert_eq!(
         reading_status(&pool, book, user).await.as_deref(),
         Some("read")
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn sync_skips_ambiguous_matches(pool: sqlx::PgPool) {
+    let lib_a = create_library(&pool, "komga_amb_a").await;
+    let lib_b = create_library(&pool, "komga_amb_b").await;
+    let series_a = create_series(&pool, lib_a, "Blacksad").await;
+    let series_b = create_series(&pool, lib_b, "Blacksad").await;
+    let book_a = create_book(&pool, lib_a, series_a, "Tome 1").await;
+    let book_b = create_book(&pool, lib_b, series_b, "Tome 1").await;
+    let user = create_user(&pool, "komga_amb_user").await;
+
+    let server = MockServer::start().await;
+    mount_komga_page(&server, 0, komga_page(&[("Blacksad", "Tome 1")], 0, 1)).await;
+
+    let report = sync(&pool, &server.uri(), user).await.unwrap();
+
+    assert_eq!(report.matched, 0);
+    assert_eq!(report.unmatched, vec!["Blacksad - Tome 1".to_string()]);
+    assert_eq!(reading_status(&pool, book_a, user).await, None);
+    assert_eq!(reading_status(&pool, book_b, user).await, None);
+}
+
+#[test]
+fn match_komga_books_requires_same_normalized_series() {
+    let id = Uuid::new_v4();
+    let local = vec![LocalBook {
+        id,
+        title: "Tome 1".to_string(),
+        series: "Les Légendaires".to_string(),
+    }];
+    let komga = vec![
+        ("les legendaires".to_string(), "TOME 1".to_string()),
+        ("Other".to_string(), "Tome 1".to_string()),
+        (String::new(), "Tome 1".to_string()),
+    ];
+
+    let result = match_komga_books(&local, &komga);
+
+    assert_eq!(result.matched_entries.len(), 1);
+    assert_eq!(result.matched_entries[0].0, id);
+    assert_eq!(
+        result.unmatched,
+        vec!["Other - Tome 1".to_string(), "Tome 1".to_string()]
     );
 }
 

@@ -7,6 +7,7 @@ pub mod open_library;
 pub(crate) mod scoring;
 mod scraping;
 pub mod senscritique;
+pub mod series_metadata;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
