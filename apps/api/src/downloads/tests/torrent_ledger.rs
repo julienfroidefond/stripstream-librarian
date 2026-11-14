@@ -62,16 +62,17 @@ fn only_volume_coverage_makes_an_import_partial() {
 #[test]
 fn retry_accepts_every_unfinished_import() {
     for status in [
-        TorrentStatus::Importing,
+        TorrentStatus::Completed,
         TorrentStatus::Error,
         TorrentStatus::NoFilesImported,
         TorrentStatus::Partial,
     ] {
         assert!(status.is_retryable(), "{status} must be retryable");
     }
+    // `importing` is owned by a running import: a retry would race it.
     for status in [
         TorrentStatus::Downloading,
-        TorrentStatus::Completed,
+        TorrentStatus::Importing,
         TorrentStatus::Imported,
     ] {
         assert!(!status.is_retryable(), "{status} must not be retryable");
@@ -386,4 +387,197 @@ async fn an_import_missing_a_tome_lands_in_partial(pool: PgPool) {
         .as_str()
         .expect("the imported volume must be reported");
     assert_eq!(std::fs::read(destination).unwrap(), b"fake");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn begin_import_is_an_exclusive_reservation(pool: PgPool) {
+    let id = seed_row(&pool, TorrentStatus::Completed).await;
+
+    let (first, second) = tokio::join!(begin_import(&pool, id), begin_import(&pool, id));
+    let results = [first, second];
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "exactly one concurrent caller reserves the row"
+    );
+    assert!(results.iter().any(|r| matches!(
+        r,
+        Err(TorrentTransitionError::NotAllowed {
+            from: TorrentStatus::Importing,
+            ..
+        })
+    )));
+
+    // A row already importing is never reserved again.
+    assert!(begin_import(&pool, id).await.is_err());
+    assert_eq!(status_of(&pool, id).await, TorrentStatus::Importing);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn interrupted_imports_are_handed_back_and_listed_for_resume(pool: PgPool) {
+    let interrupted = seed_row(&pool, TorrentStatus::Importing).await;
+    let finished = seed_row(&pool, TorrentStatus::Imported).await;
+    sqlx::query("UPDATE torrent_downloads SET content_path = '/downloads/x' WHERE id = $1")
+        .bind(interrupted)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A completed row without content path cannot be resumed.
+    seed_row(&pool, TorrentStatus::Completed).await;
+
+    assert_eq!(recover_interrupted_imports(&pool).await.unwrap(), 1);
+    assert_eq!(
+        status_of(&pool, interrupted).await,
+        TorrentStatus::Completed
+    );
+    assert_eq!(status_of(&pool, finished).await, TorrentStatus::Imported);
+
+    let resumable = stale_completed(&pool, chrono::Duration::zero())
+        .await
+        .unwrap();
+    assert_eq!(
+        resumable,
+        vec![interrupted],
+        "a row without files is not resumable"
+    );
+    assert!(stale_completed(&pool, chrono::Duration::hours(1))
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn abandon_import_only_releases_a_reserved_row(pool: PgPool) {
+    let importing = seed_row(&pool, TorrentStatus::Importing).await;
+    let partial = seed_row(&pool, TorrentStatus::Partial).await;
+
+    assert!(abandon_import(&pool, importing, "boom").await.unwrap());
+    assert_eq!(status_of(&pool, importing).await, TorrentStatus::Error);
+    assert!(!abandon_import(&pool, partial, "boom").await.unwrap());
+    assert_eq!(status_of(&pool, partial).await, TorrentStatus::Partial);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn clear_stall_forgets_the_marker(pool: PgPool) {
+    let id = seed_row(&pool, TorrentStatus::Downloading).await;
+    sqlx::query("UPDATE torrent_downloads SET stall_started_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    clear_stall(&pool, id).await.unwrap();
+
+    let stall: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT stall_started_at FROM torrent_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(stall.is_none());
+}
+
+/// Seed a library rooted in a temp dir and a `completed` row whose content is
+/// `downloads_dir`.
+async fn seed_import(
+    pool: &PgPool,
+    library_dir: &std::path::Path,
+    downloads_dir: &std::path::Path,
+    expected: &[i32],
+) -> Uuid {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+        .bind(library_id)
+        .bind(format!("lib_{library_id}"))
+        .bind(library_dir.to_string_lossy().into_owned())
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO torrent_downloads \
+         (id, library_id, series_name, expected_volumes, content_path, client, status) \
+         VALUES ($1, $2, 'Amulet', $3, $4, 'alldebrid', 'completed')",
+    )
+    .bind(id)
+    .bind(library_id)
+    .bind(expected)
+    .bind(downloads_dir.to_string_lossy().into_owned())
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
+async fn report_of(pool: &PgPool, id: Uuid) -> serde_json::Value {
+    sqlx::query_scalar("SELECT imported_files FROM torrent_downloads WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// A multi-volume pack covers every tome it contains: the import is complete
+/// and the report lists all of them.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_multi_volume_pack_covers_every_tome(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let library_dir = root.path().join("lib");
+    let downloads_dir = root.path().join("dl");
+    std::fs::create_dir_all(&library_dir).unwrap();
+    std::fs::create_dir_all(&downloads_dir).unwrap();
+    std::fs::write(downloads_dir.join("Amulet T01-T03.cbz"), b"pack").unwrap();
+    let id = seed_import(&pool, &library_dir, &downloads_dir, &[1, 2, 3]).await;
+
+    let library_root =
+        stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT);
+    super::super::torrent_import::process_torrent_import(pool.clone(), &library_root, id)
+        .await
+        .unwrap();
+
+    assert_eq!(status_of(&pool, id).await, TorrentStatus::Imported);
+    let report = report_of(&pool, id).await;
+    assert_eq!(
+        report["imported"][0]["volumes"],
+        serde_json::json!([1, 2, 3])
+    );
+    assert_eq!(report["imported"][0]["volume"], 1);
+}
+
+/// A retry after a partial import counts the volumes the first run already
+/// moved into the library: once the missing tome arrives, the row is complete.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_retry_completes_a_partial_import(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let library_dir = root.path().join("lib");
+    let downloads_dir = root.path().join("dl");
+    std::fs::create_dir_all(&library_dir).unwrap();
+    std::fs::create_dir_all(&downloads_dir).unwrap();
+    std::fs::write(downloads_dir.join("Amulet - 01.cbz"), b"one").unwrap();
+    let id = seed_import(&pool, &library_dir, &downloads_dir, &[1, 2]).await;
+    let library_root =
+        stripstream_core::paths::LibraryRoot::new(stripstream_core::paths::LIBRARIES_DB_ROOT);
+
+    super::super::torrent_import::process_torrent_import(pool.clone(), &library_root, id)
+        .await
+        .unwrap();
+    assert_eq!(status_of(&pool, id).await, TorrentStatus::Partial);
+    assert!(downloads_dir.exists(), "a partial import keeps its sources");
+
+    std::fs::write(downloads_dir.join("Amulet - 02.cbz"), b"two").unwrap();
+    super::super::torrent_import::process_torrent_import(pool.clone(), &library_root, id)
+        .await
+        .unwrap();
+
+    assert_eq!(status_of(&pool, id).await, TorrentStatus::Imported);
+    let report = report_of(&pool, id).await;
+    let mut volumes: Vec<i64> = report["imported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["volume"].as_i64().unwrap())
+        .collect();
+    volumes.sort_unstable();
+    assert_eq!(volumes, vec![1, 2]);
 }

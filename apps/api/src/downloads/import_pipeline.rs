@@ -293,12 +293,12 @@ pub(super) async fn do_import(
                 "[IMPORT] Already exists '{}' → '{}', counting as imported",
                 filename, dest
             );
-            imported.push(ImportedFile {
-                volume: matched.iter().min().copied().unwrap_or(0),
-                source: source_path.clone(),
-                destination: library_root.resolve(&dest)?.to_db().to_string(),
-                already_existed: true,
-            });
+            imported.push(ImportedFile::new(
+                &matched,
+                source_path.clone(),
+                library_root.resolve(&dest)?.to_db().to_string(),
+                true,
+            ));
             continue;
         }
 
@@ -312,12 +312,12 @@ pub(super) async fn do_import(
             filename, matched, dest
         );
 
-        imported.push(ImportedFile {
-            volume: matched.iter().min().copied().unwrap_or(0),
-            source: source_path.clone(),
-            destination: library_root.resolve(&dest)?.to_db().to_string(),
-            already_existed: false,
-        });
+        imported.push(ImportedFile::new(
+            &matched,
+            source_path.clone(),
+            library_root.resolve(&dest)?.to_db().to_string(),
+            false,
+        ));
     }
 
     // Sanity check: warn if many source files collapsed into few volumes
@@ -325,8 +325,10 @@ pub(super) async fn do_import(
     let source_count = collect_book_files(&physical_content)
         .map(|f| f.len())
         .unwrap_or(0);
-    let unique_volumes: std::collections::HashSet<i32> =
-        imported.iter().map(|f| f.volume).collect();
+    let unique_volumes: std::collections::HashSet<i32> = imported
+        .iter()
+        .flat_map(ImportedFile::covered_volumes)
+        .collect();
     if source_count > 5 && !unique_volumes.is_empty() && source_count > unique_volumes.len() * 3 {
         warn!(
             "[IMPORT] Suspicious: {} source files mapped to only {} unique volumes ({:?}). \

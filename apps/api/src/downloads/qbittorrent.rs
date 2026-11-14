@@ -350,6 +350,10 @@ pub async fn add_torrent(
 
         // Try to resolve hash: first from magnet, then by category in qBittorrent
         let mut qb_hash = extract_magnet_hash(&body.url);
+        // Set when the hash belongs to a torrent that was already in
+        // qBittorrent under another category (added by the user, not by this
+        // request): Stripstream must never delete it afterwards.
+        let mut adopted_existing = false;
         if qb_hash.is_none() {
             if let Some(ref cat) = category {
                 // Magnet links take time to be resolved by qBittorrent.
@@ -408,6 +412,7 @@ pub async fn add_torrent(
                                         if let Some(h) = t.get("hash").and_then(|h| h.as_str()) {
                                             if h.to_lowercase() == magnet_lower {
                                                 qb_hash = Some(h.to_string());
+                                                adopted_existing = true;
                                                 // Get the real content_path from the existing torrent
                                                 let existing_content = t
                                                     .get("content_path")
@@ -454,6 +459,7 @@ pub async fn add_torrent(
                                                             .send()
                                                             .await;
                                                         qb_hash = None;
+                                                        adopted_existing = false;
                                                         break;
                                                     }
 
@@ -468,8 +474,8 @@ pub async fn add_torrent(
                                                     let cp = existing_content.clone();
 
                                                     sqlx::query(
-                                                        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, content_path, status, replace_existing, progress) \
-                                                         VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, 1)",
+                                                        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, content_path, status, replace_existing, progress, qb_owned) \
+                                                         VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, 1, FALSE)",
                                                     )
                                                     .bind(tid)
                                                     .bind(lib_id)
@@ -480,7 +486,10 @@ pub async fn add_torrent(
                                                     .bind(replace)
                                                     .execute(&state.pool)
                                                     .await
-                                                    .ok();
+                                                    .map_err(|e| {
+                                                        tracing::error!("[QBITTORRENT] Failed to insert torrent_downloads row: {e}");
+                                                        ApiError::from(e)
+                                                    })?;
 
                                                     tracing::info!("[QBITTORRENT] Duplicate torrent already completed, launching import immediately for {tid}");
 
@@ -510,8 +519,8 @@ pub async fn add_torrent(
 
         let id = download_id.unwrap();
         sqlx::query(
-            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, replace_existing) \
-             VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, replace_existing, qb_owned) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(id)
         .bind(library_id)
@@ -519,6 +528,7 @@ pub async fn add_torrent(
         .bind(expected_volumes)
         .bind(qb_hash.as_deref())
         .bind(body.replace_existing)
+        .bind(!adopted_existing)
         .execute(&state.pool)
         .await
         .map_err(|e| {

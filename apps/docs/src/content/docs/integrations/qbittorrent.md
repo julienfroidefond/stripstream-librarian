@@ -42,12 +42,18 @@ Vous pouvez suivre la progression en temps réel sur la page Téléchargements.
 
 Si un import échoue, vous pouvez le **relancer** depuis la page Téléchargements. Stripstream vérifie que les fichiers source existent toujours avant de retenter.
 
+**Torrent bloqué ou en pause** : un torrent mis en pause dans qBittorrent n'est jamais considéré comme en échec. Un torrent bloqué faute de sources (`stalledDL`) n'est passé en erreur qu'après le délai de blocage configuré (réglage AllDebrid **Délai avant échec d'un magnet bloqué**, 30 min par défaut, qui s'applique aussi à qBittorrent) ; le délai repart de zéro dès que le téléchargement reprend. Un torrent supprimé à la main dans qBittorrent passe en erreur au lieu de rester « en cours ».
+
+**Import partiel** : quand tous les volumes n'ont pas pu être importés (`partial`, `no_files_imported`), les fichiers source et le torrent sont conservés pour qu'un nouvel essai puisse compléter l'import. Ils sont nettoyés quand l'import est complet ou quand vous supprimez la ligne.
+
+**Torrent déjà présent** : si le torrent existait déjà dans qBittorrent (ajouté par vous, hors de la catégorie Stripstream), Stripstream importe ses fichiers mais ne supprime jamais le torrent lui-même.
+
 :::note[Détails techniques]
 **Détection des doublons** : si un torrent est déjà présent dans qBittorrent (détection par hash magnet), Stripstream lit le `content_path` réel et lance directement l'import si le torrent est déjà complété.
 
 **Pipeline d'import** : extraction des volumes depuis les noms de fichiers (supporte `Tome_01` avec underscore) ; matching de série via `norm_text()` ; nommage des fichiers depuis le livre de référence existant ; déduplication par format (cbz > cbr > pdf > epub) ; one-shots importés tels quels (sans numéro de volume).
 
-**Statuts de téléchargement** : `importing`, `imported`, `partial`, `no_files_imported`, `failed`.
+**Statuts de téléchargement** : `importing`, `imported`, `partial`, `no_files_imported`, `failed`. Les états qBittorrent 5.x `stoppedUP` (terminé) et `stoppedDL` (en pause) sont reconnus. Un retry sur une ligne déjà en cours d'import est refusé (409).
 
 **Cleanup** : suppression du torrent et de son répertoire de téléchargement après import réussi. Les anciens répertoires `sl-*` temporaires sont nettoyés.
 

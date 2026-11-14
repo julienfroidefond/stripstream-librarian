@@ -55,14 +55,23 @@ impl TorrentStatus {
 
     /// A row whose import the UI may launch again.
     ///
-    /// `importing` is included because a crashed process leaves the row there;
-    /// `imported` is not, because there is nothing left to fetch.
+    /// `importing` is not: an import is running and a second one would race it
+    /// on the same files (a crashed process is recovered at startup by
+    /// [`recover_interrupted_imports`]). `completed` is, because a failure
+    /// between the end of the transfer and the start of the import leaves the
+    /// row there. `imported` is not, because there is nothing left to fetch.
     pub(super) fn is_retryable(self) -> bool {
-        matches!(
-            self,
-            Self::Importing | Self::Error | Self::NoFilesImported | Self::Partial
-        )
+        Self::RETRYABLE.contains(&self)
     }
+
+    /// The statuses [`Self::is_retryable`] accepts, and the ones an import may
+    /// start from.
+    pub(super) const RETRYABLE: [Self; 4] = [
+        Self::Completed,
+        Self::Error,
+        Self::NoFilesImported,
+        Self::Partial,
+    ];
 }
 
 impl fmt::Display for TorrentStatus {
@@ -212,12 +221,7 @@ impl RestartScope {
     fn allowed_from(self) -> &'static [TorrentStatus] {
         match self {
             Self::Failed => &[TorrentStatus::Error],
-            Self::Retryable => &[
-                TorrentStatus::Importing,
-                TorrentStatus::Error,
-                TorrentStatus::NoFilesImported,
-                TorrentStatus::Partial,
-            ],
+            Self::Retryable => &TorrentStatus::RETRYABLE,
         }
     }
 }
@@ -301,15 +305,13 @@ pub(super) async fn mark_completed(
     expect_transition(pool, id, "complete", result.rows_affected()).await
 }
 
-/// The import pipeline took ownership of the row.
+/// Reserve the row for one import.
+///
+/// The guarded `UPDATE` is the reservation: `importing` is not a source
+/// status, so of two concurrent callers exactly one wins and the other gets
+/// [`TorrentTransitionError::NotAllowed`] with `from: Importing`.
 pub(super) async fn begin_import(pool: &PgPool, id: Uuid) -> Result<(), TorrentTransitionError> {
-    let from = [
-        TorrentStatus::Completed,
-        TorrentStatus::Importing,
-        TorrentStatus::Error,
-        TorrentStatus::NoFilesImported,
-        TorrentStatus::Partial,
-    ];
+    let from = TorrentStatus::RETRYABLE;
     let result = sqlx::query(
         "UPDATE torrent_downloads SET status = 'importing', updated_at = NOW() \
          WHERE id = $1 AND status = ANY($2)",
@@ -373,6 +375,54 @@ pub(super) async fn fail(
     .await?;
 
     expect_transition(pool, id, "fail", result.rows_affected()).await
+}
+
+/// Give up an import that failed outside the import pipeline itself (a
+/// database error after the reservation, for instance).
+///
+/// Only a row still `importing` is touched: an import that already stored its
+/// outcome keeps it.
+pub(super) async fn abandon_import(pool: &PgPool, id: Uuid, message: &str) -> sqlx::Result<bool> {
+    let result = sqlx::query(
+        "UPDATE torrent_downloads SET status = 'error', error_message = $2, updated_at = NOW() \
+         WHERE id = $1 AND status = 'importing'",
+    )
+    .bind(id)
+    .bind(message)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Hand the imports interrupted by a previous process back to the resume
+/// path: an `importing` row has no owner once the process that reserved it is
+/// gone. Call once at startup, before anything can start a new import.
+pub(super) async fn recover_interrupted_imports(pool: &PgPool) -> sqlx::Result<u64> {
+    let result = sqlx::query(
+        "UPDATE torrent_downloads SET status = 'completed', updated_at = NOW() \
+         WHERE status = 'importing'",
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// `completed` rows whose import never started: the transfer finished at
+/// least `grace` ago (so the task spawned right after the completion had its
+/// chance) and the files are known.
+pub(super) async fn stale_completed(
+    pool: &PgPool,
+    grace: chrono::Duration,
+) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar(
+        "SELECT id FROM torrent_downloads \
+         WHERE status = 'completed' AND content_path IS NOT NULL \
+           AND updated_at < NOW() - make_interval(secs => $1) \
+         ORDER BY updated_at",
+    )
+    .bind(grace.num_seconds() as f64)
+    .fetch_all(pool)
+    .await
 }
 
 /// Re-arm the transfer in the backend and reset its progress.
@@ -459,6 +509,19 @@ pub(super) async fn arm_stall(
     .await?;
 
     Ok(stalled)
+}
+
+/// Forget the stall marker of a transfer that is making progress again (or is
+/// paused by the user).
+pub(super) async fn clear_stall(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
+    sqlx::query(
+        "UPDATE torrent_downloads SET stall_started_at = NULL \
+         WHERE id = $1 AND status = 'downloading' AND stall_started_at IS NOT NULL",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Record the hash qBittorrent reported late for a category-based row.
