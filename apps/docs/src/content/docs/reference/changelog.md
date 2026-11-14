@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.162 — 2026-11-14
+
+### Corrections
+
+- **backoffice** — prevent Komga credential autofill ([#304](https://github.com/julienfroidefond/stripstream-librarian/pull/304))
+
 ## v3.32.161 — 2026-11-14
 
 ### Corrections
