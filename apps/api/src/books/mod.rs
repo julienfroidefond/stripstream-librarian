@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 use crate::books::files::current_book_file_join;
 use crate::series::update::prune_series_if_empty;
+use crate::users::genre_restrictions::ensure_book_visible;
 use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
@@ -89,6 +90,7 @@ pub struct BookItem {
     /// Size of the book file in bytes (latest `book_files` row)
     pub file_size: Option<i64>,
     pub summary: Option<String>,
+    pub isbn: Option<String>,
     pub publish_date: Option<String>,
 }
 
@@ -270,7 +272,7 @@ pub async fn list_books(
     let data_sql = format!(
         r#"
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
-               b.summary, b.publish_date, bf.size_bytes,
+               b.summary, b.isbn, b.publish_date, bf.size_bytes,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at,
@@ -373,6 +375,7 @@ pub async fn list_books(
                 reading_last_read_at: row.get("reading_last_read_at"),
                 file_size: row.get("size_bytes"),
                 summary: row.get("summary"),
+                isbn: row.get("isbn"),
                 publish_date: row.get("publish_date"),
             }
         })
@@ -425,6 +428,7 @@ pub async fn get_book(
     user: Option<Extension<AuthUser>>,
 ) -> Result<Json<BookDetails>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
+    ensure_book_visible(&state.pool, user_id, id).await?;
     let row = sqlx::query(GET_BOOK_SQL)
         .bind(id)
         .bind(user_id)
@@ -766,10 +770,12 @@ async fn persist_rendered_thumbnail(
 )]
 pub async fn get_thumbnail(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(book_id): Path<Uuid>,
     headers_in: HeaderMap,
 ) -> Result<axum::response::Response, ApiError> {
     let started_at = Instant::now();
+    ensure_book_visible(&state.pool, user.map(|u| u.0.user_id), book_id).await?;
     let row = sqlx::query("SELECT thumbnail_path FROM books WHERE id = $1")
         .bind(book_id)
         .fetch_optional(&state.pool)

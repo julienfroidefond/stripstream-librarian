@@ -338,6 +338,63 @@ async fn rename_genre_is_case_sensitive(pool: PgPool) {
     assert_eq!(genres_of(&pool, series).await, vec!["Action"]);
 }
 
+async fn create_user_blocking(pool: &PgPool, username: &str, genres: &[&str]) -> Uuid {
+    let user: Uuid = sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    for g in genres {
+        sqlx::query("INSERT INTO user_genre_restrictions (user_id, genre) VALUES ($1, $2)")
+            .bind(user)
+            .bind(g)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    user
+}
+
+async fn blocked_genres(pool: &PgPool, user: Uuid) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre",
+    )
+    .bind(user)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn rename_genre_moves_user_restrictions(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "S1", &["Mature"]).await;
+    let reader = create_user_blocking(&pool, "reader", &["Mature", "Horror"]).await;
+
+    let _ = rename_genre(State(state), path("Mature"), rename_body("Adult"))
+        .await
+        .unwrap();
+
+    assert_eq!(blocked_genres(&pool, reader).await, vec!["Adult", "Horror"]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn rename_genre_merge_keeps_single_restriction(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "S1", &["Mature", "Adult"]).await;
+    let both = create_user_blocking(&pool, "both", &["Mature", "Adult"]).await;
+    let target_only = create_user_blocking(&pool, "target", &["Adult"]).await;
+
+    let _ = rename_genre(State(state), path("Mature"), rename_body("Adult"))
+        .await
+        .unwrap();
+
+    assert_eq!(blocked_genres(&pool, both).await, vec!["Adult"]);
+    assert_eq!(blocked_genres(&pool, target_only).await, vec!["Adult"]);
+}
+
 // ---------------------------------------------------------------------------
 // delete_genre
 // ---------------------------------------------------------------------------

@@ -189,3 +189,120 @@ async fn archive_series_row_preserves_anilist_link(pool: sqlx::PgPool) {
         Some("https://anilist.co/manga/42")
     );
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn prune_waits_for_a_concurrent_book_insert(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "prune_race").await;
+    let series_id = create_series(&pool, lib_id, "Racy").await;
+
+    // A scan is adding a book to the series but has not committed yet.
+    let mut scan = pool.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, title, kind, format, series_id) VALUES (gen_random_uuid(), $1, 'T1', 'comic', 'cbz', $2)",
+    )
+    .bind(lib_id)
+    .bind(series_id)
+    .execute(&mut *scan)
+    .await
+    .unwrap();
+
+    let prune = tokio::spawn({
+        let pool = pool.clone();
+        async move { prune_series_if_empty(&pool, series_id).await.unwrap() }
+    });
+    // The series row lock makes the prune wait for the scan.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !prune.is_finished(),
+        "prune must wait for the concurrent insert"
+    );
+
+    scan.commit().await.unwrap();
+    assert!(!prune.await.unwrap(), "series gained a book: kept");
+    assert!(series_exists(&pool, series_id).await);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn prune_unknown_series_is_noop(pool: sqlx::PgPool) {
+    assert!(!prune_series_if_empty(&pool, Uuid::new_v4()).await.unwrap());
+}
+
+mod delete_series {
+    use axum::extract::{Path, State};
+
+    use super::{create_series, create_test_library, series_exists};
+    use crate::series::update::{delete_series_by_id, delete_series_core};
+    use stripstream_core::paths::LibraryRoot;
+    use uuid::Uuid;
+
+    /// Library `/libraries/lib` mapped onto a temp dir holding `Series/T1.cbz`.
+    async fn seed(pool: &sqlx::PgPool, root: &std::path::Path) -> (Uuid, Uuid, std::path::PathBuf) {
+        let lib_id = create_test_library(pool, "lib").await;
+        let series_id = create_series(pool, lib_id, "Series").await;
+        let dir = root.join("lib").join("Series");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("T1.cbz");
+        std::fs::write(&file, "data").unwrap();
+        let book_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO books (id, library_id, title, kind, format, series_id) \
+             VALUES (gen_random_uuid(), $1, 'T1', 'comic', 'cbz', $2) RETURNING id",
+        )
+        .bind(lib_id)
+        .bind(series_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+             VALUES (gen_random_uuid(), $1, 'cbz', '/libraries/lib/Series/T1.cbz', 4, NOW(), 'fp')",
+        )
+        .bind(book_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        (lib_id, series_id, file)
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn rolled_back_deletion_keeps_files(pool: sqlx::PgPool) {
+        let root = tempfile::tempdir().unwrap();
+        let (lib_id, series_id, file) = seed(&pool, root.path()).await;
+        let library_root = LibraryRoot::new(root.path());
+
+        let mut tx = pool.begin().await.unwrap();
+        let cleanup = delete_series_core(&mut tx, &library_root, lib_id, series_id, true)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+        drop(cleanup);
+
+        assert!(file.exists(), "files must survive an aborted deletion");
+        assert!(series_exists(&pool, series_id).await);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn committed_deletion_removes_rows_then_files(pool: sqlx::PgPool) {
+        let root = tempfile::tempdir().unwrap();
+        let (_lib_id, series_id, file) = seed(&pool, root.path()).await;
+        let mut state = crate::state::test_state(pool.clone());
+        state.library_root = LibraryRoot::new(root.path());
+
+        let _ = delete_series_by_id(State(state), None, Path(series_id))
+            .await
+            .unwrap();
+
+        assert!(!series_exists(&pool, series_id).await);
+        assert!(!file.exists());
+        assert!(!file.parent().unwrap().exists(), "empty series dir removed");
+        let books: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(books, 0);
+        let scans: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM index_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(scans, 0, "no reconcile scan when every file was removed");
+    }
+}

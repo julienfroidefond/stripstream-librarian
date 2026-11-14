@@ -43,6 +43,10 @@ Cliquez sur **Gérer les restrictions** dans la colonne Actions d'un utilisateur
 
 Cochez les genres à bloquer, puis **Enregistrer**. Par défaut, aucune restriction n'est active.
 
+La restriction s'applique aussi en accès direct : les livres d'une série bloquée (détail, pages, miniature, téléchargement du fichier, progression de lecture) et les métadonnées de la série répondent `404` pour cet utilisateur, même avec un lien direct. Les tokens admin (sans impersonation) ne sont jamais restreints.
+
+Renommer ou fusionner un genre depuis la page Genres reporte les restrictions sur le nouveau nom : un utilisateur qui bloquait l'ancien genre bloque le nouveau. Supprimer un genre conserve la restriction, qui s'appliquera à nouveau si le genre réapparaît.
+
 ---
 
 ## Tokens API

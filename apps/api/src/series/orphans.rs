@@ -210,8 +210,10 @@ pub async fn delete_orphan_series(
 
     // An orphan has no book, so it has no files to delete: never let the shared
     // deletion helper derive a directory from the series name.
-    delete_series_core(&mut tx, &state.library_root, library_id, series_id, false).await?;
+    let cleanup =
+        delete_series_core(&mut tx, &state.library_root, library_id, series_id, false).await?;
     tx.commit().await?;
+    cleanup.run(&state.pool, library_id).await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }

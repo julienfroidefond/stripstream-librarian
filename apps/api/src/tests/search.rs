@@ -820,3 +820,63 @@ async fn search_author_split_elements_not_matched_across_boundary(pool: sqlx::Pg
 
     assert_eq!(rows.len(), 0);
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_falls_back_to_legacy_author_when_authors_empty(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "legacy").await;
+    // `authors` is NOT NULL DEFAULT '{}': the author only lives in `author`.
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Maus",
+        "comic",
+        Some("Art Spiegelman"),
+        &[],
+    )
+    .await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%spiegelman%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Maus");
+    assert_eq!(
+        rows[0].get::<Vec<String>, _>("authors"),
+        vec!["Art Spiegelman".to_string()]
+    );
+
+    let text: String =
+        sqlx::query_scalar("SELECT authors_search_text('{}'::text[], 'Art Spiegelman')")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(text, "Art Spiegelman");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_type_filter_matches_book_kind(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "kinds").await;
+    create_test_book(&pool, lib_id, None, "Kind Comic", "comic", None, &[]).await;
+    create_test_book(&pool, lib_id, None, "Kind Ebook", "ebook", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%Kind%")
+        .bind(None::<Uuid>)
+        .bind(Some("ebook"))
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Kind Ebook");
+}

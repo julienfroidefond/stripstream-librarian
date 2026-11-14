@@ -2,7 +2,7 @@ use std::path::Path;
 
 use axum::{
     body::Body,
-    extract::{Path as AxumPath, State},
+    extract::{Extension, Path as AxumPath, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -14,7 +14,8 @@ use uuid::Uuid;
 use parsers::BookFormat;
 
 use super::files::current_book_file;
-use crate::{error::ApiError, state::AppState};
+use crate::users::genre_restrictions::ensure_book_visible;
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 fn file_content_type(format: BookFormat) -> &'static str {
     match format {
@@ -86,8 +87,10 @@ fn content_disposition(filename: &str) -> String {
 #[instrument(skip(state), fields(book_id = %book_id))]
 pub async fn get_book_file(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     AxumPath(book_id): AxumPath<Uuid>,
 ) -> Result<Response, ApiError> {
+    ensure_book_visible(&state.pool, user.map(|u| u.0.user_id), book_id).await?;
     let book_file = current_book_file(&state.pool, &state.library_root, book_id).await?;
 
     let file = tokio::fs::File::open(&book_file.local_path)
@@ -169,7 +172,7 @@ mod tests {
     }
 
     async fn download_error(state: AppState, book_id: Uuid) -> ApiError {
-        match get_book_file(State(state), AxumPath(book_id)).await {
+        match get_book_file(State(state), None, AxumPath(book_id)).await {
             Ok(_) => panic!("expected the download to fail"),
             Err(error) => error,
         }
@@ -211,7 +214,7 @@ mod tests {
         let book_id = seed_book(&pool).await;
         add_book_file(&pool, book_id, path.to_str().expect("utf-8 path"), "cbz").await;
 
-        let response = get_book_file(State(test_state(pool)), AxumPath(book_id))
+        let response = get_book_file(State(test_state(pool)), None, AxumPath(book_id))
             .await
             .expect("download should succeed");
 

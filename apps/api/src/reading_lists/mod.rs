@@ -147,6 +147,50 @@ async fn lock_list(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<bool,
     Ok(found.is_some())
 }
 
+/// Move every reading-list membership of `source_id` onto `target_id` (series
+/// merge). A list that already holds the target keeps the target's item (and
+/// position): the source item is dropped and the list is compacted. Lists are
+/// locked in id order, like the other list writers.
+pub(crate) async fn reassign_series_items(
+    tx: &mut Transaction<'_, Postgres>,
+    source_id: Uuid,
+    target_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let list_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT DISTINCT list_id FROM reading_list_items WHERE series_id = $1 ORDER BY list_id",
+    )
+    .bind(source_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut moved = 0;
+    for list_id in list_ids {
+        lock_list(tx, list_id).await?;
+        let updated = sqlx::query(
+            "UPDATE reading_list_items SET series_id = $3 \
+             WHERE list_id = $1 AND series_id = $2 \
+             AND NOT EXISTS (SELECT 1 FROM reading_list_items WHERE list_id = $1 AND series_id = $3)",
+        )
+        .bind(list_id)
+        .bind(source_id)
+        .bind(target_id)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if updated > 0 {
+            moved += updated;
+            continue;
+        }
+        sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+            .bind(list_id)
+            .bind(source_id)
+            .execute(&mut **tx)
+            .await?;
+        compact_positions(tx, list_id).await?;
+    }
+    Ok(moved)
+}
+
 /// Rewrite the list positions as a dense 0..n-1 sequence.
 ///
 /// The unique constraint is `DEFERRABLE INITIALLY DEFERRED`, so the transient

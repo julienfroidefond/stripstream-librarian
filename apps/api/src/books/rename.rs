@@ -527,138 +527,256 @@ pub async fn rename_books(
         })
         .collect::<Result<_, ApiError>>()?;
 
-    // Check for conflicts with existing files on disk (outside the batch)
-    let batch_old_paths: Vec<String> = entries.iter().map(|e| e.old_path.clone()).collect();
-    for (entry, (_, physical_new)) in changed_entries.iter().zip(&physical_paths) {
-        let physical_new_path = std::path::Path::new(physical_new);
-        if physical_new_path.exists() && !batch_old_paths.contains(&entry.new_path) {
-            return Err(ApiError::bad_request(format!(
-                "target file already exists: {}",
-                entry.new_filename
-            )));
-        }
-    }
-
     // Build a lookup from book_id to book data
     let book_map: HashMap<Uuid, &BookFileData> = books.iter().map(|b| (b.book_id, b)).collect();
 
-    // Perform renames in a transaction
-    let mut tx = state.pool.begin().await?;
-    let mut renamed_files: Vec<(String, String)> = Vec::new(); // (physical_old, physical_new) for rollback
-    let errors: Vec<RenameError> = Vec::new();
+    let plan: Vec<PlannedRename> = changed_entries
+        .iter()
+        .zip(physical_paths)
+        .filter_map(|(entry, (physical_old, physical_new))| {
+            book_map.get(&entry.book_id).map(|book| PlannedRename {
+                book_id: entry.book_id,
+                file_id: book.file_id,
+                db_new: entry.new_path.clone(),
+                physical_old,
+                physical_new,
+                volume: book.template_book.volume,
+                volume_type: book.template_book.volume_type.clone(),
+            })
+        })
+        .collect();
 
-    for (entry, (physical_old, physical_new)) in changed_entries.iter().zip(physical_paths) {
-        // Rename on filesystem
-        let old_clone = physical_old.clone();
-        let new_clone = physical_new.clone();
-        let rename_result =
-            tokio::task::spawn_blocking(move || std::fs::rename(&old_clone, &new_clone)).await;
-
-        match rename_result {
-            Ok(Ok(())) => {
-                renamed_files.push((physical_old.clone(), physical_new.clone()));
-
-                // Recompute fingerprint
-                let new_path = std::path::Path::new(&physical_new);
-                let meta_result = tokio::task::spawn_blocking({
-                    let new_physical = physical_new.clone();
-                    move || std::fs::metadata(&new_physical)
-                })
-                .await;
-
-                let (new_fingerprint, new_mtime) = match meta_result {
-                    Ok(Ok(meta)) => {
-                        let mtime: DateTime<Utc> = meta
-                            .modified()
-                            .map(DateTime::<Utc>::from)
-                            .unwrap_or_else(|_| Utc::now());
-                        let fp =
-                            compute_fingerprint(new_path, meta.len(), &mtime).unwrap_or_default();
-                        (fp, mtime)
-                    }
-                    _ => (String::new(), Utc::now()),
-                };
-
-                if let Some(book) = book_map.get(&entry.book_id) {
-                    // Update book_files
-                    sqlx::query(
-                        "UPDATE book_files SET abs_path = $1, fingerprint = $2, mtime = $3 WHERE id = $4",
-                    )
-                    .bind(&entry.new_path)
-                    .bind(&new_fingerprint)
-                    .bind(new_mtime)
-                    .bind(book.file_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("[RENAME] DB update failed for {}: {}", entry.new_filename, e);
-                        e
-                    })?;
-
-                    // Preserve book metadata: only volume / volume_type are synced
-                    // (from explicit overrides or the stored values), never the title.
-                    sqlx::query(
-                        "UPDATE books SET volume = $1, volume_type = $2, updated_at = NOW() WHERE id = $3",
-                    )
-                    .bind(book.template_book.volume)
-                    .bind(&book.template_book.volume_type)
-                    .bind(entry.book_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            "[RENAME] Book update failed for {}: {}",
-                            entry.new_filename,
-                            e
-                        );
-                        e
-                    })?;
-                }
-            }
-            Ok(Err(e)) => {
-                tracing::error!(
-                    "[RENAME] Failed to rename {} -> {}: {}",
-                    physical_old,
-                    physical_new,
-                    e
-                );
-                // Rollback already renamed files
-                for (old, new) in renamed_files.iter().rev() {
-                    let _ = std::fs::rename(new, old);
-                }
-                return Err(ApiError::internal(format!(
-                    "failed to rename {}: {}. All renames rolled back.",
-                    entry.old_filename, e
-                )));
-            }
-            Err(e) => {
-                // spawn_blocking panicked
-                for (old, new) in renamed_files.iter().rev() {
-                    let _ = std::fs::rename(new, old);
-                }
-                return Err(ApiError::internal(format!(
-                    "rename task panicked for {}: {}",
-                    entry.old_filename, e
-                )));
-            }
-        }
-    }
-
-    // Commit transaction
-    tx.commit().await?;
+    let renamed = execute_rename_plan(&state.pool, plan).await?;
 
     tracing::info!(
         "[RENAME] Successfully renamed {} files in series '{}'",
-        renamed_files.len(),
+        renamed,
         series_name
     );
 
     Ok(Json(RenameResponse {
         series_id,
         renames: entries,
-        errors,
+        errors: vec![],
         executed: true,
     }))
+}
+
+// ─── Execution ──────────────────────────────────────────────────────────────
+
+/// One file move of an executed rename batch.
+pub(crate) struct PlannedRename {
+    pub book_id: Uuid,
+    pub file_id: Uuid,
+    /// New `book_files.abs_path` (database form).
+    pub db_new: String,
+    pub physical_old: String,
+    pub physical_new: String,
+    pub volume: Option<i32>,
+    pub volume_type: String,
+}
+
+/// Disk moves already performed, undone in reverse order on failure.
+#[derive(Default)]
+struct DiskJournal {
+    moves: Vec<(String, String)>,
+}
+
+impl DiskJournal {
+    async fn rename(&mut self, from: &str, to: &str) -> std::io::Result<()> {
+        let (f, t) = (from.to_string(), to.to_string());
+        tokio::task::spawn_blocking(move || std::fs::rename(&f, &t))
+            .await
+            .map_err(std::io::Error::other)??;
+        self.moves.push((from.to_string(), to.to_string()));
+        Ok(())
+    }
+
+    /// Undo every move in reverse order. Reversing the whole sequence restores
+    /// the original layout even for chains and swaps (A→tmp, B→A, tmp→B).
+    async fn rollback(self) {
+        let moves = self.moves;
+        let _ = tokio::task::spawn_blocking(move || {
+            for (from, to) in moves.iter().rev() {
+                if let Err(e) = std::fs::rename(to, from) {
+                    tracing::error!("[RENAME] Rollback failed for {} -> {}: {}", to, from, e);
+                }
+            }
+        })
+        .await;
+    }
+}
+
+/// Unique temporary sibling of `physical` (same directory, so renames stay atomic).
+fn temp_sibling(physical: &str, token: &str) -> String {
+    let path = std::path::Path::new(physical);
+    let name = format!(".stl-rename-{token}.tmp");
+    path.parent()
+        .map(|p| p.join(&name).to_string_lossy().to_string())
+        .unwrap_or(name)
+}
+
+/// Execute a rename batch safely:
+/// - every target must be free or be the source of another file of the batch;
+/// - phase 1 moves every source to a unique temporary sibling, phase 2 moves
+///   the temporaries to their targets, so chains and swaps never overwrite;
+/// - the database is updated in one transaction, first to unique placeholder
+///   paths then to the targets, so the `UNIQUE (abs_path)` constraint holds;
+/// - any disk or SQL error undoes every disk move already performed.
+///
+/// Returns the number of renamed files.
+pub(crate) async fn execute_rename_plan(
+    pool: &PgPool,
+    plan: Vec<PlannedRename>,
+) -> Result<usize, ApiError> {
+    if plan.is_empty() {
+        return Ok(0);
+    }
+
+    let sources: std::collections::HashSet<&str> =
+        plan.iter().map(|p| p.physical_old.as_str()).collect();
+    let mut targets = std::collections::HashSet::new();
+    for p in &plan {
+        if !targets.insert(p.physical_new.as_str()) {
+            return Err(ApiError::bad_request(format!(
+                "two books would be renamed to the same file: {}",
+                p.physical_new
+            )));
+        }
+        if !sources.contains(p.physical_new.as_str())
+            && std::path::Path::new(&p.physical_new).exists()
+        {
+            return Err(ApiError::bad_request(format!(
+                "target file already exists: {}",
+                p.physical_new
+            )));
+        }
+    }
+
+    let batch_token = Uuid::new_v4().simple().to_string();
+    let temps: Vec<String> = plan
+        .iter()
+        .enumerate()
+        .map(|(i, p)| temp_sibling(&p.physical_old, &format!("{batch_token}-{i}")))
+        .collect();
+
+    let mut journal = DiskJournal::default();
+
+    // Phase 1: sources → temporaries.
+    for (p, temp) in plan.iter().zip(&temps) {
+        if let Err(e) = journal.rename(&p.physical_old, temp).await {
+            tracing::error!("[RENAME] Failed to move {} aside: {}", p.physical_old, e);
+            journal.rollback().await;
+            return Err(ApiError::internal(format!(
+                "failed to rename {}: {}. All renames rolled back.",
+                p.physical_old, e
+            )));
+        }
+    }
+
+    // Phase 2: temporaries → targets (a target appearing meanwhile aborts).
+    for (p, temp) in plan.iter().zip(&temps) {
+        let result = if std::path::Path::new(&p.physical_new).exists() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "target file already exists",
+            ))
+        } else {
+            journal.rename(temp, &p.physical_new).await
+        };
+        if let Err(e) = result {
+            tracing::error!(
+                "[RENAME] Failed to rename {} -> {}: {}",
+                p.physical_old,
+                p.physical_new,
+                e
+            );
+            journal.rollback().await;
+            return Err(ApiError::internal(format!(
+                "failed to rename {}: {}. All renames rolled back.",
+                p.physical_old, e
+            )));
+        }
+    }
+
+    match update_renamed_files(pool, &plan, &batch_token).await {
+        Ok(()) => Ok(plan.len()),
+        Err(e) => {
+            tracing::error!(
+                "[RENAME] DB update failed, rolling back disk: {}",
+                e.message
+            );
+            journal.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Database side of [`execute_rename_plan`], all-or-nothing.
+async fn update_renamed_files(
+    pool: &PgPool,
+    plan: &[PlannedRename],
+    batch_token: &str,
+) -> Result<(), ApiError> {
+    let mut fingerprints = Vec::with_capacity(plan.len());
+    for p in plan {
+        let physical = p.physical_new.clone();
+        let (fp, mtime) = tokio::task::spawn_blocking(move || match std::fs::metadata(&physical) {
+            Ok(meta) => {
+                let mtime: DateTime<Utc> = meta
+                    .modified()
+                    .map(DateTime::<Utc>::from)
+                    .unwrap_or_else(|_| Utc::now());
+                let fp = compute_fingerprint(std::path::Path::new(&physical), meta.len(), &mtime)
+                    .unwrap_or_default();
+                (fp, mtime)
+            }
+            Err(_) => (String::new(), Utc::now()),
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("fingerprint task failed: {e}")))?;
+        fingerprints.push((fp, mtime));
+    }
+
+    let file_ids: Vec<Uuid> = plan.iter().map(|p| p.file_id).collect();
+    let mut tx = pool.begin().await?;
+
+    // Step 1: unique placeholders, so swapped paths never collide mid-update.
+    sqlx::query(
+        "UPDATE book_files SET abs_path = abs_path || '.stl-renaming-' || $2 || '-' || id::text \
+         WHERE id = ANY($1)",
+    )
+    .bind(&file_ids)
+    .bind(batch_token)
+    .execute(&mut *tx)
+    .await?;
+
+    // Step 2: final paths.
+    for (p, (fp, mtime)) in plan.iter().zip(&fingerprints) {
+        sqlx::query(
+            "UPDATE book_files SET abs_path = $1, fingerprint = $2, mtime = $3 WHERE id = $4",
+        )
+        .bind(&p.db_new)
+        .bind(fp)
+        .bind(mtime)
+        .bind(p.file_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Preserve book metadata: only volume / volume_type are synced
+        // (from explicit overrides or the stored values), never the title.
+        sqlx::query(
+            "UPDATE books SET volume = $1, volume_type = $2, updated_at = NOW() WHERE id = $3",
+        )
+        .bind(p.volume)
+        .bind(&p.volume_type)
+        .bind(p.book_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
 }
 
 #[cfg(test)]

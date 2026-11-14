@@ -3,11 +3,86 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
+
+// ─── Access checks ──────────────────────────────────────────────────────────
+
+/// Whether `user_id` may see the series `series_id`: an unrestricted caller
+/// (`None`: admin token without impersonation) sees everything, a reader never
+/// sees a series carrying one of their blocked genres. Same rule as the
+/// `NOT EXISTS (… user_genre_restrictions …)` filters of the listings and of
+/// `GET /series/{id}/details`. A missing series is reported as not visible.
+pub(crate) async fn series_visible(
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    series_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM series s
+            WHERE s.id = $1
+              AND ($2::uuid IS NULL OR NOT EXISTS (
+                  SELECT 1 FROM user_genre_restrictions ugr
+                  WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+              ))
+        )
+        "#,
+    )
+    .bind(series_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// `404 series not found` unless [`series_visible`].
+pub(crate) async fn ensure_series_visible(
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    series_id: Uuid,
+) -> Result<(), ApiError> {
+    if series_visible(pool, user_id, series_id).await? {
+        Ok(())
+    } else {
+        Err(ApiError::not_found("series not found"))
+    }
+}
+
+/// `404 book not found` unless the book exists and its series (if any) is
+/// visible to `user_id` (see [`series_visible`]). A book without series is
+/// never restricted.
+pub(crate) async fn ensure_book_visible(
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    book_id: Uuid,
+) -> Result<(), ApiError> {
+    let visible: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
+            WHERE b.id = $1
+              AND ($2::uuid IS NULL OR NOT EXISTS (
+                  SELECT 1 FROM user_genre_restrictions ugr
+                  WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+              ))
+        )
+        "#,
+    )
+    .bind(book_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    if visible {
+        Ok(())
+    } else {
+        Err(ApiError::not_found("book not found"))
+    }
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct UserGenreRestrictionsResponse {
@@ -218,3 +293,7 @@ pub async fn set_genre_restrictions(
     let blocked_genres = rows.into_iter().map(|r| r.get("genre")).collect();
     Ok(Json(UserGenreRestrictionsResponse { blocked_genres }))
 }
+
+#[cfg(test)]
+#[path = "tests/genre_restrictions.rs"]
+mod tests;
