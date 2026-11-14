@@ -29,8 +29,8 @@ const appleIconSizes = [
 ];
 
 // --- Splash screens ---
-// Device specs live in lib/pwa-splash-screens.json, shared with the layout.
-const SPLASH_SCREENS_FILE = new URL("./lib/pwa-splash-screens.json", import.meta.url);
+// Device specs live in lib/pwa/splash-screens.json, shared with the layout.
+const SPLASH_SCREENS_FILE = new URL("./lib/pwa/splash-screens.json", import.meta.url);
 
 async function loadSplashScreens() {
   return JSON.parse(await readFile(SPLASH_SCREENS_FILE, "utf8"));

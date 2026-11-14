@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchDiagnostics } from "@/lib/api";
-import { withRoute } from "@/lib/api-handler";
+import { withRoute } from "@/lib/server/api-handler";
 
 export const dynamic = "force-dynamic";
 

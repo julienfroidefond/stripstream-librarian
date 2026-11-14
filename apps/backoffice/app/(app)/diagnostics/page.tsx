@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Icon, ProgressBar, SettingsPageHeader, StatBox } from "@/app/components/ui";
 import { fetchDiagnostics, type DiagnosticsResponse, type DiagnosticsService } from "@/lib/api";
-import { formatBytes, formatDateTime, formatNumber, formatUptime } from "@/lib/format";
+import { formatBytes, formatDateTime, formatNumber, formatUptime } from "@/lib/utils/format";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { CopyDiagnosticsButton, PurgeCacheButton, RefreshDiagnosticsButton } from "./DiagnosticsActions";
 import { DiagnosticsProbePanel } from "./DiagnosticsProbe";

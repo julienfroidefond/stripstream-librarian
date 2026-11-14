@@ -22,7 +22,7 @@ import {
   type DownloadActionContext,
   type DownloadItemActionState,
   type DownloadActionStore,
-} from "@/lib/downloadActions";
+} from "@/lib/downloads/actions";
 import { useTranslation } from "@/lib/i18n/context";
 
 /** Upstream message for a failed action, preserving `Error N` for HTTP errors. */

@@ -8,7 +8,7 @@ const session = vi.hoisted(() => ({
   SESSION_COOKIE: "sl_session",
 }));
 
-vi.mock("@/lib/session", () => session);
+vi.mock("@/lib/auth/session", () => session);
 
 import { POST as login } from "@/app/api/auth/login/route";
 import { POST as logout } from "@/app/api/auth/logout/route";

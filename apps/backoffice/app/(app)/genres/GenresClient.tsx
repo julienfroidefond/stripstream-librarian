@@ -24,7 +24,7 @@ import {
   type GenreFilterMode,
   type GenreSelection,
 } from "@/lib/genres/browse";
-import { matchesSearchText } from "@/lib/search";
+import { matchesSearchText } from "@/lib/utils/search";
 import { useTranslation } from "@/lib/i18n/context";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { toast } from "@/app/components/ui";

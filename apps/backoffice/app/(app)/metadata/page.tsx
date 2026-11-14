@@ -10,10 +10,10 @@ import {
   fetchLibraries,
 } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { paramInt, paramString, paramStringOr } from "@/lib/searchParams";
-import { gapsForTab, isGapTab, isValidGap, totalCountKey, type GapTab } from "@/lib/metadataGaps";
+import { paramInt, paramString, paramStringOr } from "@/lib/utils/searchParams";
+import { gapsForTab, isGapTab, isValidGap, totalCountKey, type GapTab } from "@/lib/metadata/gaps";
 import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
-import { hasActiveFilters, libraryOptions, seriesStatusLabels } from "@/lib/catalogFilters";
+import { hasActiveFilters, libraryOptions, seriesStatusLabels } from "@/lib/catalog/filters";
 import { MetadataBooksTable, MetadataSeriesTable } from "@/app/components/MetadataTable";
 import { Card, CardContent, Icon, OffsetPagination, PendingCount } from "@/app/components/ui";
 

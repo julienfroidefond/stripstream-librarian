@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { SESSION_COOKIE } from "./lib/session";
+import { SESSION_COOKIE } from "./lib/auth/session";
 
 function getSecret(): Uint8Array {
   const secret = process.env.SESSION_SECRET;

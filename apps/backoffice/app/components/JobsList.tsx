@@ -5,9 +5,9 @@ import { useTranslation } from "@/lib/i18n/context";
 import type { JobTypeCatalogDto } from "@/lib/api";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { jobTypeShortLabel, resolveJobTypeDescriptor } from "@/lib/jobs/descriptors";
-import { useJobsStream } from "@/lib/useJobStream";
+import { useJobsStream } from "@/lib/jobs/useJobStream";
 import { JobRow } from "./JobRow";
-import { formatDateTime, formatDuration } from "@/lib/format";
+import { formatDateTime, formatDuration } from "@/lib/utils/format";
 
 const PAGE_SIZE = 25;
 

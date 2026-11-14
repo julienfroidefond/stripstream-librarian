@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
-import { hasActiveFilters } from "@/lib/catalogFilters";
+import { hasActiveFilters } from "@/lib/catalog/filters";
 import { Icon } from "./ui";
 
 // SVG path data for filter icons, keyed by field name

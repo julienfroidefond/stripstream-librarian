@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
-import { pickLockableFields } from "@/lib/metadataLocks";
+import { pickLockableFields } from "@/lib/metadata/locks";
 import { browserApi, browserErrorMessage, type SeriesUpdateRequest } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
 import { useLockableFields } from "./MetadataFieldsProvider";

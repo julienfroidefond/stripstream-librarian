@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import { JobProgress } from "./JobProgress";
 import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon, Tooltip } from "./ui";
-import { isActiveJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
+import { isActiveJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobs/status";
 
 interface JobRowProps {
   job: {

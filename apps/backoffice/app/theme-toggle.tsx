@@ -3,7 +3,7 @@
 import { useTheme } from "next-themes";
 
 import { useTranslation } from "@/lib/i18n/context";
-import { useIsMounted } from "@/lib/useIsMounted";
+import { useIsMounted } from "@/lib/hooks/useIsMounted";
 
 // Sun Icon
 const SunIcon = ({ className }: { className?: string }) => (

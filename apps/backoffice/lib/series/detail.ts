@@ -49,11 +49,11 @@ import type {
   SeriesUserActivityDto,
 } from "@/lib/api";
 
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
-import { getActiveUser } from "@/lib/activeUser";
-import { ratedActivity, readingActivity, type RatedSeriesUserActivity } from "@/lib/userActivity";
-import type { ViewMode } from "@/lib/viewMode";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
+import { getActiveUser } from "@/lib/auth/activeUser";
+import { ratedActivity, readingActivity, type RatedSeriesUserActivity } from "@/lib/series/userActivity";
+import type { ViewMode } from "@/lib/catalog/viewMode";
 
 /** Section whose failure degrades the page instead of failing it. */
 export type SeriesDetailSection =

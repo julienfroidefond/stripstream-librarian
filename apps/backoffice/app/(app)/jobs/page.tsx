@@ -6,7 +6,7 @@ import {
   listJobs,
   listJobTypes,
 } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { JobsList } from "@/app/components/JobsList";
 import { getServerTranslations } from "@/lib/i18n/server";
 

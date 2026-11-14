@@ -5,8 +5,8 @@ import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
-import { isTelegramDownloadRetryable } from "@/lib/download";
-import { stripLeadingArticle } from "../../lib/volumeRanges";
+import { isTelegramDownloadRetryable } from "@/lib/downloads/file";
+import { stripLeadingArticle } from "../../lib/series/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
 

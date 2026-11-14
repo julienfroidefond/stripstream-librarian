@@ -1,7 +1,7 @@
 "use client";
 
 import type { SeriesUserActivityDto } from "@/lib/api";
-import type { RatedSeriesUserActivity } from "@/lib/userActivity";
+import type { RatedSeriesUserActivity } from "@/lib/series/userActivity";
 import { useTranslation } from "@/lib/i18n/context";
 
 import RatingStars from "./RatingStars";

@@ -17,13 +17,13 @@ import { RouteTransition } from "@/app/components/RouteTransition";
 import { ScrollProgress } from "@/app/components/motion";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
 import { fetchUsers, fetchMetadataFields } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { AcquisitionReadinessProvider } from "@/app/components/AcquisitionReadinessProvider";
 import { MetadataFieldsProvider } from "@/app/components/MetadataFieldsProvider";
-import { ACTIVE_USER_COOKIE, getActiveUser } from "@/lib/activeUser";
+import { ACTIVE_USER_COOKIE, getActiveUser } from "@/lib/auth/activeUser";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
-import type { NavHref } from "@/lib/navigation";
+import type { NavHref } from "@/lib/ui/navigation";
 
 type NavLinkItem = {
   href: NavHref;

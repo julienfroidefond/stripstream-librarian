@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { LocaleProvider } from "@/lib/i18n/context";
 import { getServerLocale } from "@/lib/i18n/server";
-import { APPLE_WEB_APP_META, SPLASH_LINKS } from "@/lib/pwa";
+import { APPLE_WEB_APP_META, SPLASH_LINKS } from "@/lib/pwa/splash";
 
 export const metadata: Metadata = {
   title: "Stripstream Librarian",

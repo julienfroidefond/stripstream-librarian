@@ -3,13 +3,13 @@ import type { CatalogQuery, CatalogRating, CatalogShelf } from "@/lib/api";
 import { cookies } from "next/headers";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
-import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
+import { getActiveUser } from "@/lib/auth/activeUser";
+import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/utils/searchParams";
 import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
 import { LiveSearchForm, type LiveSearchField } from "@/app/components/LiveSearchForm";
-import { hasActiveFilters, libraryOptions, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalogFilters";
+import { hasActiveFilters, libraryOptions, metadataOptions, missingBooksOptions, readingStatusOptions, seriesStatusLabels, seriesStatusOptions, sortOptions } from "@/lib/catalog/filters";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
@@ -17,7 +17,7 @@ import Link from "next/link";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { ExternalLinkBadge } from "@/app/components/ExternalLinkBadge";
 import nextDynamic from "next/dynamic";
-import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/catalog/viewMode";
 const CreateSeriesButton = nextDynamic(
   () => import("@/app/components/CreateSeriesButton").then(m => m.CreateSeriesButton)
 );

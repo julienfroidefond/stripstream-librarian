@@ -10,9 +10,9 @@ import {
   isClientConfigured,
   readDownloadClientSetting,
   type DownloadClientSetting,
-} from "@/lib/downloadClient";
+} from "@/lib/downloads/client";
 import type { DownloadClient } from "@/lib/api";
-import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settingsSections";
+import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 
 /** Per-client description line under its brand name. */

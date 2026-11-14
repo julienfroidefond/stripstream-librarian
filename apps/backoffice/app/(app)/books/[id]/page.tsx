@@ -1,11 +1,11 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
-import { getActiveUser } from "@/lib/activeUser";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
+import { getActiveUser } from "@/lib/auth/activeUser";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { formatBytes } from "@/lib/format";
+import { formatBytes } from "@/lib/utils/format";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";

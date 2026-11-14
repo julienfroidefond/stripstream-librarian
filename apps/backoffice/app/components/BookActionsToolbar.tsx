@@ -2,7 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import type { BookDto } from "@/lib/api";
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 import { ConvertButton } from "./ConvertButton";

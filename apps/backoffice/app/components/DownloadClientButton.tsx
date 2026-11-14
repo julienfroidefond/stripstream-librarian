@@ -11,10 +11,10 @@ import {
   DOWNLOAD_CLIENT_SETTING_KEY,
   isClientConfigured,
   readDownloadClientSetting,
-} from "@/lib/downloadClient";
+} from "@/lib/downloads/client";
 
 // Re-exported for convenience: components, tests and callers import them from here.
-export * from "@/lib/downloadClient";
+export * from "@/lib/downloads/client";
 
 interface DownloadClientContextValue {
   /** Clients currently configured, in `DOWNLOAD_CLIENTS` order. */

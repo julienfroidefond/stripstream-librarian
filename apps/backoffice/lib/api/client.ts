@@ -2,7 +2,7 @@
  * Enveloppe HTTP bas niveau vers l'API Rust (`apiFetch`, `config`).
  */
 
-import { getActiveUser } from "../activeUser";
+import { getActiveUser } from "../auth/activeUser";
 import { ApiError } from "./errors";
 
 export function config() {

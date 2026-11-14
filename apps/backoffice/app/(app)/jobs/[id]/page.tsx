@@ -19,8 +19,8 @@ import { RssSnapshotCard } from "./components/DownloadDetectionCards";
 import { JobResultCards } from "./components/JobResultCards";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
-import { formatDuration, formatRate } from "@/lib/format";
-import { isCompletedJobStatus, isPartialJobStatus, isTerminalJobStatus } from "@/lib/jobStatus";
+import { formatDuration, formatRate } from "@/lib/utils/format";
+import { isCompletedJobStatus, isPartialJobStatus, isTerminalJobStatus } from "@/lib/jobs/status";
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-import { pollingStreams } from "@/lib/api-stream";
+import { pollingStreams } from "@/lib/server/api-stream";
 import { hasActiveDownloads } from "@/lib/downloads/stream";
 
 /**

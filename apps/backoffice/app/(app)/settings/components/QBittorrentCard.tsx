@@ -2,7 +2,7 @@
 
 import { SettingsCard, SettingsRow, FormInput, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
-import type { QbittorrentSettings } from "@/lib/settingsSections";
+import type { QbittorrentSettings } from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 

@@ -1,5 +1,5 @@
 import { fetchLibraries, fetchSeriesById, fetchSeriesMetadata, getMissingBooks, SeriesMetadataDto, MissingBooksDto } from "@/lib/api";
-import { loadAcquisitionReadiness } from "@/lib/acquisitionReadiness.server";
+import { loadAcquisitionReadiness } from "@/lib/acquisition/readiness.server";
 import { MissingBookActionsToolbar } from "@/app/components/MissingBookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";

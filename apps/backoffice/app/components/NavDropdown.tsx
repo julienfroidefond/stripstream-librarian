@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, NavIcon } from "./ui";
 import type { IconName } from "./ui/Icon";
-import type { NavHref } from "@/lib/navigation";
+import type { NavHref } from "@/lib/ui/navigation";
 
 export type NavDropdownItem = {
   href: NavHref;

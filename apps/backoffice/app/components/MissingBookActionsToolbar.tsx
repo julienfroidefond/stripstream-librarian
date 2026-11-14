@@ -2,7 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 import type { QuickSearch } from "./ProwlarrSearchModal";
 import { useTranslation } from "@/lib/i18n/context";
 

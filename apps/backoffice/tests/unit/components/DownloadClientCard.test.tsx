@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { DownloadClientCard } from "@/app/(app)/settings/components/DownloadClientCard";
-import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settingsSections";
+import type { AlldebridSettings, QbittorrentSettings } from "@/lib/settings/sections";
 import { useSettingsSection } from "@/app/(app)/settings/SettingsDraftProvider";
 import { renderWithSettingsDraft } from "../helpers/settingsDraft";
 

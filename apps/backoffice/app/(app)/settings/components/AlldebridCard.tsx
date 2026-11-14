@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SettingsCard, SettingsRow, FormInput, Icon, Tooltip, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
-import type { AlldebridSettings, LimitsSettings } from "@/lib/settingsSections";
+import type { AlldebridSettings, LimitsSettings } from "@/lib/settings/sections";
 import { useSettingsDraft, useSettingsSection } from "../SettingsDraftProvider";
 import { TestConnectionButton } from "./TestConnectionButton";
 

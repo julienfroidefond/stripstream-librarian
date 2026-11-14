@@ -9,7 +9,7 @@ import {
   DEFAULT_AI_LISTS_PROMPT,
   DEFAULT_AI_PROMPT,
   type AiTaggingSettings,
-} from "@/lib/settingsSections";
+} from "@/lib/settings/sections";
 import { useSettingsSection } from "../SettingsDraftProvider";
 
 export function AiTaggingCard() {

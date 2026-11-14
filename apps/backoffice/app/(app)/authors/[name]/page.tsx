@@ -1,6 +1,6 @@
 import { fetchBooks, fetchAllSeries, BooksPageDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
-import { getActiveUser } from "@/lib/activeUser";
+import { getActiveUser } from "@/lib/auth/activeUser";
 import { BooksGrid } from "@/app/components/BookCard";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { OffsetPagination } from "@/app/components/ui";

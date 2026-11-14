@@ -6,7 +6,7 @@ import {
   SeriesUserReading,
 } from "@/app/components/SeriesUserActivity";
 import type { SeriesUserActivityDto } from "@/lib/api";
-import { ratedActivity, readingActivity } from "@/lib/userActivity";
+import { ratedActivity, readingActivity } from "@/lib/series/userActivity";
 
 function makeActivity(
   overrides: Partial<SeriesUserActivityDto> = {}

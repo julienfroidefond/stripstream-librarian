@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcStackedBar, RcHorizontalBar } from "@/app/components/DashboardCharts";
 import Link from "next/link";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { formatBytes, formatNumber } from "@/lib/format";
+import { formatBytes, formatNumber } from "@/lib/utils/format";
 import { StatCard } from "./StatCard";
 
 type Props = {

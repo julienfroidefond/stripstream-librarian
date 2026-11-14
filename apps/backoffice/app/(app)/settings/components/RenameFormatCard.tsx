@@ -7,7 +7,7 @@ import type { TranslationKey } from "@/lib/i18n";
 import {
   DEFAULT_RENAME_FORMATS,
   type RenameFormatSettings,
-} from "@/lib/settingsSections";
+} from "@/lib/settings/sections";
 import { useSettingsSection, type SettingsSectionHandle } from "../SettingsDraftProvider";
 
 const AVAILABLE_VARS = [

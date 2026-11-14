@@ -25,8 +25,8 @@ const activeUser = vi.hoisted(() => ({ getActiveUser: vi.fn() }));
 const readinessLoader = vi.hoisted(() => ({ loadAcquisitionReadiness: vi.fn() }));
 
 vi.mock("@/lib/api", () => api);
-vi.mock("@/lib/activeUser", () => activeUser);
-vi.mock("@/lib/acquisitionReadiness.server", () => readinessLoader);
+vi.mock("@/lib/auth/activeUser", () => activeUser);
+vi.mock("@/lib/acquisition/readiness.server", () => readinessLoader);
 
 import { loadSeriesDetail, type SeriesDetailSection } from "@/lib/series/detail";
 

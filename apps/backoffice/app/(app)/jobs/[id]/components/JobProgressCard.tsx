@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid, ProgressBar } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
+import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobs/status";
 
 interface JobProgressCardProps {
   job: {

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 
-import type { AcquisitionReadiness } from "@/lib/acquisitionReadiness";
+import type { AcquisitionReadiness } from "@/lib/acquisition/readiness";
 
 const AcquisitionReadinessContext = createContext<AcquisitionReadiness | null>(null);
 

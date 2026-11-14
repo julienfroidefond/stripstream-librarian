@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { apiFetch } from "@/lib/api";
-import { withRoute } from "@/lib/api-handler";
+import { withRoute } from "@/lib/server/api-handler";
 
 export const DELETE = withRoute(async (
   _request: NextRequest,

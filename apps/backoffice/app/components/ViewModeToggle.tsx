@@ -9,7 +9,7 @@ import {
   VIEW_MODE_MAX_AGE,
   serializeViewMode,
   type ViewMode,
-} from "@/lib/viewMode";
+} from "@/lib/catalog/viewMode";
 import { Icon } from "./ui";
 
 interface ViewModeToggleProps {

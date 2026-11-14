@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, updateSetting } from "@/lib/api";
 import { ApiError } from "@/lib/api/errors";
-import { errorResponse, withRoute } from "@/lib/api-handler";
+import { errorResponse, withRoute } from "@/lib/server/api-handler";
 
 export const GET = withRoute(async (
   _request: NextRequest,

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Badge, Button, Icon, toast } from "@/app/components/ui";
 import type { DiagnosticsIntegration, DiagnosticsProbe } from "@/lib/api";
 import { browserApi } from "@/lib/api/browser";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { formatDateTime, formatNumber } from "@/lib/utils/format";
 import { useTranslation } from "@/lib/i18n/context";
 
 /**

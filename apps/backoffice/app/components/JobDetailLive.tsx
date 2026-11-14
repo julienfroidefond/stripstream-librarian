@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import { useJobStream } from "@/lib/useJobStream";
+import { useJobStream } from "@/lib/jobs/useJobStream";
 
 interface JobDetailLiveProps {
   jobId: string;

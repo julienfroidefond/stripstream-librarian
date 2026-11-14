@@ -7,7 +7,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import { browserApi, browserErrorMessage } from "@/lib/api/browser";
 import { ApiError } from "@/lib/api/errors";
 import { SeriesAddModal, type ProwlarrItem } from "./SeriesAddModal";
-import { formatVolumeRange } from "@/lib/format";
+import { formatVolumeRange } from "@/lib/utils/format";
 
 
 const PAGE_SIZE = 25;
