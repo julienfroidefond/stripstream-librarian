@@ -15,10 +15,10 @@ use uuid::Uuid;
 
 use stripstream_jobs::{
     begin_analysis, begin_thumbnail_job, classify_job, cleanup_stale_jobs as cleanup_owner_jobs,
-    fail_orphaned_jobs, finish_job, purge_terminal_jobs, set_total_files, JobOwner, JobStatus,
+    finish_job, purge_terminal_jobs, set_total_files, JobOwner, JobStatus,
 };
 
-use crate::{analyzer, converter, scanner, AppState};
+use crate::{analyzer, converter, lease, scanner, AppState};
 
 /// Error raised by the scanner and the analyzer when the user cancelled the job.
 ///
@@ -170,22 +170,15 @@ async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
     }
 }
 
-/// Startup cleanup. Runs before the worker claims anything, so every active
-/// (`running` / `extracting_pages` / `generating_thumbnails`) indexer-owned job
-/// necessarily belongs to a previous process: all of them are failed, whatever
-/// their age — a job interrupted a minute after it started would otherwise stay
-/// active forever and block every exclusive job. API-owned job types are never
-/// touched (the registry scopes both queries by owner).
+/// Startup cleanup (the active-job half also runs periodically, see
+/// [`sweep_orphaned_jobs`]).
+///
+/// Active (`running` / `extracting_pages` / `generating_thumbnails`) indexer
+/// jobs are failed only when no live process holds their [`lease`](crate::lease):
+/// during a rolling deploy or with two overlapping instances, the jobs of the
+/// other instance are left alone. API-owned job types are never touched.
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
-    let orphaned = fail_orphaned_jobs(
-        pool,
-        JobOwner::Indexer,
-        "Job interrupted by indexer restart",
-    )
-    .await?;
-    if orphaned > 0 {
-        info!("[CLEANUP] Marked {orphaned} interrupted job(s) as failed");
-    }
+    sweep_orphaned_jobs(pool).await?;
 
     let report = cleanup_owner_jobs(
         pool,
@@ -213,6 +206,19 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Fail active indexer jobs whose process is gone (no lease held), whatever their
+/// age, once they are past [`lease::LEASE_GRACE`]. Runs at startup and every
+/// [`lease::SWEEP_INTERVAL`], so a job interrupted right after it started does
+/// not stay active forever.
+pub async fn sweep_orphaned_jobs(pool: &PgPool) -> Result<u64> {
+    let orphaned =
+        lease::fail_unleased_jobs(pool, lease::LEASE_GRACE, lease::ORPHANED_JOB_ERROR).await?;
+    if orphaned > 0 {
+        info!("[CLEANUP] Marked {orphaned} interrupted job(s) as failed");
+    }
+    Ok(orphaned)
 }
 
 /// Run a claimed job to its outcome. The caller writes the terminal status
@@ -649,36 +655,54 @@ mod tests {
         assert_eq!(outcome, JobOutcome::single_success());
     }
 
-    /// A job interrupted seconds after it started must not stay active forever: at startup
-    /// every active indexer job is failed regardless of `started_at`, API jobs are untouched.
+    /// Startup cleanup fails the active indexer jobs nobody runs any more (past the lease
+    /// grace period, even if they had just started), keeps the ones a live instance leases,
+    /// and never touches API jobs.
     #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn startup_cleanup_fails_every_active_indexer_job_regardless_of_age(pool: PgPool) {
-        let mut indexer_jobs = Vec::new();
-        for status in ["running", "extracting_pages", "generating_thumbnails"] {
-            let id = insert_job(&pool, "rebuild", status).await;
-            sqlx::query("UPDATE index_jobs SET started_at = NOW() WHERE id = $1")
+    async fn startup_cleanup_fails_only_unleased_indexer_jobs(pool: PgPool) {
+        let past_grace = |id: Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "UPDATE index_jobs SET started_at = NOW() - INTERVAL '3 minutes' WHERE id = $1",
+                )
                 .bind(id)
                 .execute(&pool)
                 .await
                 .unwrap();
-            indexer_jobs.push(id);
+            }
+        };
+        let mut orphans = Vec::new();
+        for status in ["running", "extracting_pages", "generating_thumbnails"] {
+            let id = insert_job(&pool, "rebuild", status).await;
+            past_grace(id).await;
+            orphans.push(id);
         }
         let conversion = insert_job(&pool, "cbr_to_cbz", "running").await;
+        past_grace(conversion).await;
+        let other_instance = insert_job(&pool, "rebuild", "running").await;
+        past_grace(other_instance).await;
+        let lease = lease::JobLease::acquire(&pool, other_instance)
+            .await
+            .unwrap();
         let fresh_pending = insert_job(&pool, "rebuild", "pending").await;
         let api_job = insert_job(&pool, "metadata_refresh", "running").await;
+        past_grace(api_job).await;
 
         cleanup_stale_jobs(&pool).await.unwrap();
 
-        for id in indexer_jobs.into_iter().chain([conversion]) {
+        for id in orphans.into_iter().chain([conversion]) {
             assert_eq!(
                 job_status(&pool, id).await,
                 (
                     "failed".to_string(),
-                    Some("Job interrupted by indexer restart".to_string())
+                    Some(lease::ORPHANED_JOB_ERROR.to_string())
                 )
             );
         }
+        assert_eq!(job_status(&pool, other_instance).await.0, "running");
         assert_eq!(job_status(&pool, fresh_pending).await.0, "pending");
         assert_eq!(job_status(&pool, api_job).await.0, "running");
+        lease.release().await;
     }
 }

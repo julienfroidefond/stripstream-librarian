@@ -605,13 +605,12 @@ pub async fn run_torrent_poller(
     library_root: stripstream_core::paths::LibraryRoot,
     interval_seconds: u64,
 ) {
-    // Imports left `importing` by a previous process have no owner any more:
-    // hand them back and resume them right away.
-    match torrent_ledger::recover_interrupted_imports(&pool).await {
-        Ok(0) => {}
-        Ok(n) => warn!("[TORRENT_POLLER] Recovered {n} import(s) interrupted by a restart"),
-        Err(e) => warn!("[TORRENT_POLLER] Failed to recover interrupted imports: {e}"),
-    }
+    // Imports interrupted by a restart were handed back to `completed` by
+    // `recovery::reset_stale_downloads`, synchronously, before this task was
+    // spawned: resetting `importing` rows here would race with imports the
+    // HTTP server or the AllDebrid poller reserve meanwhile. Resume every
+    // `completed` row right away; `begin_import` is atomic, so a row another
+    // task reserved first is skipped.
     resume_stale_completed(&pool, &library_root, chrono::Duration::zero()).await;
 
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
@@ -1295,52 +1294,196 @@ async fn cleanup_sources(
     qb_owned: bool,
     log_prefix: &str,
 ) {
-    if let Some(dir) = staging_dir(torrent_id) {
-        match std::fs::remove_dir_all(&dir) {
-            Ok(()) => info!(
-                "{log_prefix} Cleaned up category directory: {}",
-                dir.display()
-            ),
-            Err(e) => warn!("{log_prefix} Failed to clean up {}: {}", dir.display(), e),
-        }
-    }
+    release_sources(
+        pool,
+        staging_dir(torrent_id),
+        torrent_id,
+        client,
+        qb_hash,
+        qb_owned,
+        log_prefix,
+    )
+    .await;
+}
 
-    if client != "qbittorrent" {
-        return;
-    }
-    let Some(hash) = qb_hash else {
+/// What qBittorrent leaves for the staging directory once the torrent was
+/// dealt with.
+#[derive(Debug, PartialEq, Eq)]
+enum StagingVerdict {
+    /// Nothing in qBittorrent writes there any more: the directory may go.
+    Remove,
+    /// The torrent could not be removed (or its state is unknown), or the
+    /// directory holds the data of a torrent Stripstream does not own.
+    Keep,
+}
+
+/// [`cleanup_sources`] with the staging directory resolved.
+///
+/// The torrent goes first: removing `sl-{id}` while qBittorrent still seeds
+/// (or downloads) into it would leave a torrent pointing at missing files. The
+/// directory is only removed once the torrent is gone — deleted by us, or no
+/// longer known to qBittorrent — and never when it holds the data of a torrent
+/// the user added (`qb_owned = FALSE`).
+async fn release_sources(
+    pool: &PgPool,
+    staging: Option<std::path::PathBuf>,
+    torrent_id: Uuid,
+    client: &str,
+    qb_hash: Option<&str>,
+    qb_owned: bool,
+    log_prefix: &str,
+) {
+    let verdict = if client == "qbittorrent" {
+        release_qb_torrent(
+            pool,
+            staging.as_deref(),
+            torrent_id,
+            qb_hash,
+            qb_owned,
+            log_prefix,
+        )
+        .await
+    } else {
+        StagingVerdict::Remove
+    };
+
+    let Some(dir) = staging else {
         return;
     };
-    if !qb_owned {
+    if verdict == StagingVerdict::Keep {
         info!(
-            "{log_prefix} Torrent {hash} was not added by Stripstream, leaving it in qBittorrent"
+            "{log_prefix} Keeping category directory {} (torrent not removed)",
+            dir.display()
         );
         return;
     }
+    match tokio::fs::remove_dir_all(&dir).await {
+        Ok(()) => info!(
+            "{log_prefix} Cleaned up category directory: {}",
+            dir.display()
+        ),
+        Err(e) => warn!("{log_prefix} Failed to clean up {}: {}", dir.display(), e),
+    }
+}
+
+/// Remove the qBittorrent side of a download and tell whether its staging
+/// directory may follow. Any doubt (qBittorrent unreachable, delete refused)
+/// keeps the directory.
+async fn release_qb_torrent(
+    pool: &PgPool,
+    staging: Option<&FsPath>,
+    torrent_id: Uuid,
+    qb_hash: Option<&str>,
+    qb_owned: bool,
+    log_prefix: &str,
+) -> StagingVerdict {
     let Ok((base_url, username, password)) = load_qbittorrent_config(pool).await else {
-        return;
+        warn!("{log_prefix} qBittorrent unavailable, cannot release torrent {torrent_id}");
+        return StagingVerdict::Keep;
     };
     let Ok(http) = build_http_client(Duration::from_secs(10)) else {
-        return;
+        return StagingVerdict::Keep;
     };
     let Ok(sid) = qbittorrent_login(&http, &base_url, &username, &password).await else {
-        return;
+        warn!("{log_prefix} qBittorrent login failed, cannot release torrent {torrent_id}");
+        return StagingVerdict::Keep;
     };
-    let _ = http
-        .post(format!("{base_url}/api/v2/torrents/delete"))
-        .header("Cookie", format!("SID={sid}"))
-        .form(&[("hashes", hash), ("deleteFiles", "true")])
-        .send()
-        .await;
-    info!("{log_prefix} Removed torrent {hash} from qBittorrent");
 
     let cat = format!("sl-{torrent_id}");
-    let _ = http
-        .post(format!("{base_url}/api/v2/torrents/removeCategories"))
+    // A hash never resolved may still be found under our unique category —
+    // such a torrent is necessarily ours.
+    let (hash, owned) = match qb_hash {
+        Some(hash) => (Some(hash.to_string()), qb_owned),
+        None => (
+            resolve_hash_by_category(&http, &base_url, &sid, &cat).await,
+            true,
+        ),
+    };
+
+    let verdict = match hash {
+        None => StagingVerdict::Remove,
+        Some(hash) if owned => {
+            let deleted = http
+                .post(format!("{base_url}/api/v2/torrents/delete"))
+                .header("Cookie", format!("SID={sid}"))
+                .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
+                .send()
+                .await;
+            match deleted {
+                Ok(resp) if resp.status().is_success() => {
+                    info!("{log_prefix} Removed torrent {hash} from qBittorrent");
+                    StagingVerdict::Remove
+                }
+                Ok(resp) => {
+                    warn!(
+                        "{log_prefix} qBittorrent refused to remove torrent {hash}: {}",
+                        resp.status()
+                    );
+                    StagingVerdict::Keep
+                }
+                Err(e) => {
+                    warn!("{log_prefix} Failed to remove torrent {hash}: {e}");
+                    StagingVerdict::Keep
+                }
+            }
+        }
+        Some(hash) => {
+            info!(
+                "{log_prefix} Torrent {hash} was not added by Stripstream, leaving it in qBittorrent"
+            );
+            adopted_staging_verdict(&http, &base_url, &sid, &hash, staging).await
+        }
+    };
+
+    if verdict == StagingVerdict::Remove {
+        let _ = http
+            .post(format!("{base_url}/api/v2/torrents/removeCategories"))
+            .header("Cookie", format!("SID={sid}"))
+            .form(&[("categories", cat.as_str())])
+            .send()
+            .await;
+    }
+    verdict
+}
+
+/// Whether the staging directory may go while an adopted torrent stays in
+/// qBittorrent: only when that torrent is gone, or stores nothing inside it.
+async fn adopted_staging_verdict(
+    http: &reqwest::Client,
+    base_url: &str,
+    sid: &str,
+    hash: &str,
+    staging: Option<&FsPath>,
+) -> StagingVerdict {
+    let Some(staging) = staging else {
+        return StagingVerdict::Remove;
+    };
+    let resp = http
+        .get(format!("{base_url}/api/v2/torrents/info"))
+        .query(&[("hashes", hash)])
         .header("Cookie", format!("SID={sid}"))
-        .form(&[("categories", cat.as_str())])
         .send()
         .await;
+    let infos: Vec<QbTorrentInfo> = match resp {
+        Ok(resp) if resp.status().is_success() => match resp.json().await {
+            Ok(infos) => infos,
+            Err(_) => return StagingVerdict::Keep,
+        },
+        _ => return StagingVerdict::Keep,
+    };
+    let Some(info) = infos.iter().find(|i| i.hash.eq_ignore_ascii_case(hash)) else {
+        return StagingVerdict::Remove;
+    };
+    let inside = [info.save_path.as_deref(), info.content_path.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|p| !p.is_empty())
+        .any(|p| FsPath::new(&remap_downloads_path(p)).starts_with(staging));
+    if inside {
+        StagingVerdict::Keep
+    } else {
+        StagingVerdict::Remove
+    }
 }
 
 /// Remove the volumes imported by a torrent from the series' availability

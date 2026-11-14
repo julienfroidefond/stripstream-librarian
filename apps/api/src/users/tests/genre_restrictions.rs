@@ -119,9 +119,11 @@ async fn helpers_apply_the_listing_rule(pool: PgPool) {
     assert!(ensure_book_visible(&pool, None, f.blocked_book)
         .await
         .is_ok());
+    // Without a user the check is skipped entirely (no query): callers report
+    // a missing book themselves.
     assert!(ensure_book_visible(&pool, None, Uuid::new_v4())
         .await
-        .is_err());
+        .is_ok());
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

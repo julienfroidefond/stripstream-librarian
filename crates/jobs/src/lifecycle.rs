@@ -66,11 +66,17 @@ impl JobScope {
 /// Return the id of a job of one of `types` that is already in flight
 /// (`pending`, `running`, `extracting_pages` or `generating_thumbnails`)
 /// within `scope`, if any.
-pub async fn job_in_flight(
-    pool: &PgPool,
+///
+/// Takes any executor, so a caller can run the check inside its own
+/// transaction (e.g. the API launcher's check-then-insert under a lock).
+pub async fn job_in_flight<'e, E>(
+    executor: E,
     scope: JobScope,
     types: &[&str],
-) -> Result<Option<Uuid>, sqlx::Error> {
+) -> Result<Option<Uuid>, sqlx::Error>
+where
+    E: sqlx::PgExecutor<'e>,
+{
     let (scope, library_id) = scope.parts();
     let types: Vec<String> = types.iter().map(|t| (*t).to_string()).collect();
 
@@ -87,7 +93,7 @@ pub async fn job_in_flight(
     .bind(library_id)
     .bind(types)
     .bind(as_strings(&JobState::IN_FLIGHT))
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
 }
 

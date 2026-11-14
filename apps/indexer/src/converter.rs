@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use parsers::BookFormat;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use parsers::BookFormat;
 use stripstream_jobs::{insert_entity_event, set_current_file};
 
 use crate::{utils, AppState};
@@ -154,6 +154,7 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
     let format = BookFormat::Cbz;
 
     let mut tx = state.pool.begin().await?;
+    merge_duplicate_file_row(&mut tx, file_id, book_id, &new_abs_path).await?;
     sqlx::query(
         "UPDATE book_files SET abs_path = $2, format = $3, size_bytes = $4, mtime = $5, \
          fingerprint = $6, updated_at = NOW() WHERE id = $1",
@@ -189,6 +190,69 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
 
     info!("[CONVERTER] Job {} converted book {}", job_id, book_id);
     Ok(book_name)
+}
+
+/// Free `new_abs_path` (UNIQUE in `book_files`) for the converted file row.
+///
+/// When a crash left the CBZ on disk, a scan may have indexed it as a distinct book before
+/// this retry. That duplicate is folded into the original book: per-user reading progress is
+/// carried over (the most recently updated row wins), then the duplicate file row is deleted
+/// and its book too once it has no file left. Runs in the conversion transaction.
+async fn merge_duplicate_file_row(
+    tx: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    book_id: Uuid,
+    new_abs_path: &str,
+) -> Result<()> {
+    let duplicate: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT id, book_id FROM book_files WHERE abs_path = $1 AND id <> $2 FOR UPDATE",
+    )
+    .bind(new_abs_path)
+    .bind(file_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((dup_file_id, dup_book_id)) = duplicate else {
+        return Ok(());
+    };
+
+    info!(
+        "[CONVERTER] {} is already indexed as book {}: merging it into book {}",
+        new_abs_path, dup_book_id, book_id
+    );
+
+    if dup_book_id != book_id {
+        sqlx::query(
+            "INSERT INTO book_reading_progress \
+                 (book_id, user_id, status, current_page, last_read_at, updated_at) \
+             SELECT $1, user_id, status, current_page, last_read_at, updated_at \
+             FROM book_reading_progress WHERE book_id = $2 \
+             ON CONFLICT (book_id, user_id) DO UPDATE \
+               SET status = EXCLUDED.status, \
+                   current_page = EXCLUDED.current_page, \
+                   last_read_at = EXCLUDED.last_read_at, \
+                   updated_at = EXCLUDED.updated_at \
+               WHERE EXCLUDED.updated_at > book_reading_progress.updated_at",
+        )
+        .bind(book_id)
+        .bind(dup_book_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    sqlx::query("DELETE FROM book_files WHERE id = $1")
+        .bind(dup_file_id)
+        .execute(&mut **tx)
+        .await?;
+    if dup_book_id != book_id {
+        sqlx::query(
+            "DELETE FROM books WHERE id = $1 \
+             AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
+        )
+        .bind(dup_book_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -443,5 +507,101 @@ mod tests {
             .unwrap();
         assert_eq!(format, "cbr");
         assert!(cbr.exists());
+    }
+
+    /// After a crash the CBZ was indexed by a scan as a distinct book: the retry folds that
+    /// duplicate into the original book (reading progress carried over, newest row wins)
+    /// instead of failing forever on the UNIQUE `book_files.abs_path`.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn convert_book_merges_a_cbz_already_indexed_as_another_book(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let cbr = dir.path().join("Gon T05.cbr");
+        let cbz = dir.path().join("Gon T05.cbz");
+        let pages: &[(&str, &[u8])] = &[("01.jpg", b"a"), ("02.jpg", b"b")];
+        write_zip(&cbr, pages);
+        write_zip(&cbz, pages);
+
+        let lib = create_library(&pool).await;
+        let book = create_book(&pool, lib, "cbr").await;
+        let file_id = add_book_file(&pool, book, "cbr", &cbr).await;
+        let duplicate = create_book(&pool, lib, "cbz").await;
+        let dup_file = add_book_file(&pool, duplicate, "cbz", &cbz).await;
+
+        let mut users = Vec::new();
+        for name in ["only-dup", "dup-newer", "orig-newer"] {
+            let id: Uuid =
+                sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                    .bind(name)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            users.push(id);
+        }
+        let progress = |book: Uuid, user: Uuid, status: &'static str, page: i32, age_min: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "INSERT INTO book_reading_progress \
+                         (book_id, user_id, status, current_page, last_read_at, updated_at) \
+                     VALUES ($1, $2, $3, $4, NOW(), NOW() - ($5 * INTERVAL '1 minute'))",
+                )
+                .bind(book)
+                .bind(user)
+                .bind(status)
+                .bind(page)
+                .bind(age_min)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+        progress(duplicate, users[0], "reading", 7, 1).await;
+        progress(book, users[1], "reading", 2, 10).await;
+        progress(duplicate, users[1], "read", 30, 1).await;
+        progress(book, users[2], "reading", 12, 1).await;
+        progress(duplicate, users[2], "reading", 3, 10).await;
+        let job = create_job(&pool).await;
+
+        let state = crate::test_state(pool.clone());
+        convert_book(&state, job, book).await.unwrap();
+
+        let (abs_path, format): (String, String) =
+            sqlx::query_as("SELECT abs_path, format FROM book_files WHERE id = $1")
+                .bind(file_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            (abs_path.as_str(), format.as_str()),
+            (&*cbz.to_string_lossy(), "cbz")
+        );
+        let leftovers: i64 = sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM book_files WHERE id = $1) \
+                  + (SELECT COUNT(*) FROM books WHERE id = $2)",
+        )
+        .bind(dup_file)
+        .bind(duplicate)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(leftovers, 0, "the duplicate book and its file row are gone");
+
+        let mut rows: Vec<(Uuid, String, i32)> = sqlx::query_as(
+            "SELECT user_id, status, current_page FROM book_reading_progress WHERE book_id = $1",
+        )
+        .bind(book)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        rows.sort_by_key(|(user, _, _)| users.iter().position(|u| u == user));
+        assert_eq!(
+            rows,
+            vec![
+                (users[0], "reading".to_string(), 7),
+                (users[1], "read".to_string(), 30),
+                (users[2], "reading".to_string(), 12),
+            ]
+        );
+        assert!(!cbr.exists() && cbz.exists());
     }
 }

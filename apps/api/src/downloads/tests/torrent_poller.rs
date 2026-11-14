@@ -511,3 +511,190 @@ async fn deleting_a_partial_row_removes_only_torrents_stripstream_added(pool: Pg
         .unwrap();
     assert_eq!(left, 0);
 }
+
+// ─── Source cleanup order ───────────────────────────────────────────────────
+
+/// A fake qBittorrent whose `torrents/delete` answers `delete_status`.
+async fn fake_qbittorrent_with_delete(
+    pool: &PgPool,
+    torrents: serde_json::Value,
+    delete_status: u16,
+) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/auth/login"))
+        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/torrents/info"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(torrents))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/torrents/delete"))
+        .respond_with(ResponseTemplate::new(delete_status))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/torrents/removeCategories"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({
+        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
+    }))
+    .execute(pool)
+    .await
+    .unwrap();
+    server
+}
+
+fn staging_with_file(root: &tempfile::TempDir, id: Uuid) -> std::path::PathBuf {
+    let dir = root.path().join(format!("sl-{id}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Amulet T01.cbz"), b"data").unwrap();
+    dir
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_owned_torrent_is_deleted_before_its_staging_dir(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let id = Uuid::new_v4();
+    let dir = staging_with_file(&root, id);
+    let server = fake_qbittorrent_with_delete(&pool, serde_json::json!([]), 200).await;
+
+    release_sources(
+        &pool,
+        Some(dir.clone()),
+        id,
+        "qbittorrent",
+        Some("ab01"),
+        true,
+        "[T]",
+    )
+    .await;
+
+    assert_eq!(deleted_hashes(&server).await.len(), 1);
+    assert!(
+        !dir.exists(),
+        "the staging dir goes once the torrent is gone"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_refused_torrent_delete_keeps_the_staging_dir(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let id = Uuid::new_v4();
+    let dir = staging_with_file(&root, id);
+    let server = fake_qbittorrent_with_delete(&pool, serde_json::json!([]), 500).await;
+
+    release_sources(
+        &pool,
+        Some(dir.clone()),
+        id,
+        "qbittorrent",
+        Some("ab01"),
+        true,
+        "[T]",
+    )
+    .await;
+
+    assert_eq!(deleted_hashes(&server).await.len(), 1);
+    assert!(
+        dir.join("Amulet T01.cbz").exists(),
+        "files under a live torrent must stay"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_unreachable_qbittorrent_keeps_the_staging_dir(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let id = Uuid::new_v4();
+    let dir = staging_with_file(&root, id);
+    // No qBittorrent configured at all.
+
+    release_sources(
+        &pool,
+        Some(dir.clone()),
+        id,
+        "qbittorrent",
+        Some("ab01"),
+        true,
+        "[T]",
+    )
+    .await;
+
+    assert!(dir.join("Amulet T01.cbz").exists());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_adopted_torrent_storing_data_in_the_staging_dir_is_left_alone(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let id = Uuid::new_v4();
+    let dir = staging_with_file(&root, id);
+    let server = fake_qbittorrent_with_delete(
+        &pool,
+        serde_json::json!([{
+            "hash": "ab01", "state": "uploading",
+            "save_path": dir.to_string_lossy(),
+            "content_path": dir.join("Amulet T01.cbz").to_string_lossy(),
+        }]),
+        200,
+    )
+    .await;
+
+    release_sources(
+        &pool,
+        Some(dir.clone()),
+        id,
+        "qbittorrent",
+        Some("ab01"),
+        false,
+        "[T]",
+    )
+    .await;
+
+    assert!(
+        deleted_hashes(&server).await.is_empty(),
+        "never delete the user's torrent"
+    );
+    assert!(
+        dir.join("Amulet T01.cbz").exists(),
+        "never delete the user's data"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_adopted_torrent_stored_elsewhere_lets_the_staging_dir_go(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let id = Uuid::new_v4();
+    let dir = staging_with_file(&root, id);
+    let server = fake_qbittorrent_with_delete(
+        &pool,
+        serde_json::json!([{
+            "hash": "ab01", "state": "uploading",
+            "save_path": "/elsewhere/manga", "content_path": "/elsewhere/manga/Amulet",
+        }]),
+        200,
+    )
+    .await;
+
+    release_sources(
+        &pool,
+        Some(dir.clone()),
+        id,
+        "qbittorrent",
+        Some("ab01"),
+        false,
+        "[T]",
+    )
+    .await;
+
+    assert!(deleted_hashes(&server).await.is_empty());
+    assert!(!dir.exists());
+}

@@ -9,10 +9,11 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `main.rs` | Point d'entrée, initialisation, lancement du worker, démarrage du serveur HTTP |
 | `lib.rs` | `AppState` (pool) |
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** |
-| `job.rs` | `process_job` → `Result<JobOutcome, RunError>`, `finish` (statut terminal via `classify_job`), `JobCancelled`, `cleanup_stale_jobs` ; claim, échec et annulation viennent directement de `stripstream_jobs` |
+| `job.rs` | `process_job` → `Result<JobOutcome, RunError>`, `finish` (statut terminal via `classify_job`), `JobCancelled`, `cleanup_stale_jobs`, `sweep_orphaned_jobs` ; claim, échec et annulation viennent directement de `stripstream_jobs` |
+| `lease.rs` | `JobLease` (verrou consultatif de session = job vivant) et `fail_unleased_jobs` (sweep des jobs orphelins) |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
 | `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
-| `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) dans `spawn_blocking` ; met à jour `book_files` (chemin, format, taille, mtime, fingerprint) et `books.format` dans une transaction ; reprend un CBZ complet laissé par un crash (`parsers::cbz_is_conversion_of`) |
+| `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) dans `spawn_blocking` ; met à jour `book_files` (chemin, format, taille, mtime, fingerprint) et `books.format` dans une transaction ; reprend un CBZ complet laissé par un crash (`parsers::cbz_is_conversion_of`) ; si un scan a entre-temps indexé ce CBZ comme livre distinct, ce doublon est fusionné dans la même transaction (progression de lecture reportée, la plus récente gagne, puis suppression) |
 | `batch.rs` | `ScanBatch::flush` avec UNNEST (`BookInsert/BookUpdate/BookCorrection/FileInsert/FileUpdate/EventInsert`) ; les transitions d'analyse sont dans `stripstream_core::analysis` |
 | `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
 | `watcher.rs` | Polling filesystem toutes les **30 s** (snapshot, pas d'inotify) — crée des jobs `rebuild` |
@@ -55,10 +56,18 @@ Jobs spéciaux :
 - **Résultat** : un scan compte une unité par bibliothèque ; une bibliothèque en échec incrémente
   `stats.errors` sans arrêter le job, qui finit `partial` (au moins une réussie) ou `failed` (toutes
   en échec, `error_opt` = « n/m unit(s) failed »). Conversion et miniatures sont une unité unique.
-- **Jobs stale** : au démarrage, `cleanup_stale_jobs` marque `failed` **tous** les jobs actifs
-  (`running`, `extracting_pages`, `generating_thumbnails`) des types possédés par l'indexer, sans seuil
-  d'âge (`stripstream_jobs::fail_orphaned_jobs`, comme l'API) ; les jobs de l'API ne sont jamais touchés.
-  Il marque aussi les `pending` de plus de 30 min et purge les jobs terminaux de plus de 90 jours.
+- **Jobs stale** : chaque job en cours est couvert par un `lease::JobLease` (verrou consultatif
+  PostgreSQL de session, pris juste après `claim_next` sur une connexion dédiée, libéré en fin de run
+  ou à la fermeture de la session : crash, pod tué, connexion perdue). `job::sweep_orphaned_jobs`
+  (au démarrage **et** toutes les `lease::SWEEP_INTERVAL` = 2 min) marque `failed` les jobs actifs
+  (`running`, `extracting_pages`, `generating_thumbnails`) des types de l'indexer dont **personne ne
+  tient le lease** et démarrés depuis plus de `lease::LEASE_GRACE` (2 min, fenêtre claim → lease).
+  Un rolling deploy / deux instances qui se chevauchent ne tuent donc jamais les jobs vivants de
+  l'autre instance, et un job interrompu juste après son démarrage est repris au sweep suivant.
+  Pas de seuil sur la durée d'un job (un scan peut durer des heures). Les jobs de l'API ne sont
+  jamais touchés. Au premier déploiement, les jobs d'une ancienne version (sans lease) encore en
+  cours sont vus comme orphelins. `cleanup_stale_jobs` marque aussi les `pending` de plus de 30 min
+  et purge les jobs terminaux de plus de 90 jours.
 - **Scheduler** : le `NOT EXISTS` anti-doublon porte sur tous les statuts « en vol »
   (`JobState::IN_FLIGHT` : pending + les trois statuts actifs).
 
@@ -102,7 +111,9 @@ Pipeline allégé — **zéro ouverture d'archive** :
   sous-arbre (dossier illisible…), `seen` est partiel : **aucune suppression** de livre n'est faite
   pour ce scan et les `directory_mtimes` ne sont pas enregistrés (warning + `stats.warnings`).
 - **Chemins non UTF-8** : ignorés avec un warning (`stats.warnings`), sous-arbre compris ; jamais
-  stockés via `to_string_lossy`.
+  stockés via `to_string_lossy`. Les livres déjà en base sous la forme lossy d'un chemin sauté
+  (fichier, ou tout ce qui est sous un dossier sauté) sont protégés de la suppression
+  (`NonUtf8Skips`) ; le reste de la bibliothèque reste soumis aux suppressions normales.
 - **Liens symboliques** : jamais suivis (`scanner::FOLLOW_SYMLINKS = false`), ni par la discovery, ni
   par le comptage des fichiers d'un job, ni par le watcher — le watcher ne signale donc jamais un
   fichier que la discovery n'indexerait pas. Suivre les liens exposerait à des boucles, à des chemins

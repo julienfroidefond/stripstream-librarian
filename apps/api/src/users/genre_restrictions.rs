@@ -60,16 +60,22 @@ pub(crate) async fn ensure_book_visible(
     user_id: Option<Uuid>,
     book_id: Uuid,
 ) -> Result<(), ApiError> {
+    // No user (admin without impersonation): nothing can be restricted, and
+    // every caller reports a missing book itself. Skipping the query keeps the
+    // page/thumbnail hot path free of an extra round trip.
+    let Some(user_id) = user_id else {
+        return Ok(());
+    };
     let visible: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS (
             SELECT 1 FROM books b
             LEFT JOIN series s ON s.id = b.series_id
             WHERE b.id = $1
-              AND ($2::uuid IS NULL OR NOT EXISTS (
+              AND NOT EXISTS (
                   SELECT 1 FROM user_genre_restrictions ugr
                   WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
-              ))
+              )
         )
         "#,
     )

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback } from "react";
+import { useState, useTransition, useEffect, useCallback, useRef } from "react";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import type { BookDetailsDto, BookItemDto } from "@/lib/api";
@@ -33,10 +33,15 @@ export function EditBookForm({ book: initialBook, children }: EditBookFormProps)
   const [isPending, startTransition] = useTransition();
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [details, setDetails] = useState<BookDetailsDto | null>(
-    isBookDetails(initialBook) ? initialBook : null,
-  );
+  // A detail passed as prop is always used as-is, so a `router.refresh()`
+  // (after a save, or a change made elsewhere) is picked up. A list item has
+  // no ISBN / locked fields: the detail is fetched fresh on every open, never
+  // kept from a previous open, so the form never writes back stale values.
+  const propDetails = isBookDetails(initialBook) ? initialBook : null;
+  const [fetchedDetails, setFetchedDetails] = useState<BookDetailsDto | null>(null);
+  const details = propDetails ?? fetchedDetails;
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const loadRequest = useRef(0);
   const book = details ?? initialBook;
   const bookIsbn = details?.isbn ?? null;
   const bookLockedFields = details?.locked_fields;
@@ -98,6 +103,8 @@ export function EditBookForm({ book: initialBook, children }: EditBookFormProps)
   }, []);
 
   const handleClose = useCallback(() => {
+    loadRequest.current += 1; // ignore a detail load still in flight
+    setLoadingDetails(false);
     resetFrom(book);
     setError(null);
     setIsOpen(false);
@@ -136,6 +143,7 @@ export function EditBookForm({ book: initialBook, children }: EditBookFormProps)
           locked_fields: visibleLockedFields,
         };
         await browserApi.books.update(book.id, body);
+        setFetchedDetails(null);
         setIsOpen(false);
         router.refresh();
       } catch (error) {
@@ -294,17 +302,30 @@ export function EditBookForm({ book: initialBook, children }: EditBookFormProps)
   );
 
   const open = () => {
+    setError(null);
     setIsOpen(true);
-    if (details || loadingDetails) return;
+    if (propDetails) {
+      // Start from the current prop, not from the values of a previous open.
+      resetFrom(propDetails);
+      return;
+    }
+    const request = ++loadRequest.current;
+    setFetchedDetails(null);
+    resetFrom(initialBook);
     setLoadingDetails(true);
     browserApi.books
       .detail(initialBook.id)
       .then((loaded) => {
-        setDetails(loaded);
+        if (request !== loadRequest.current) return;
+        setFetchedDetails(loaded);
         resetFrom(loaded);
       })
-      .catch((err) => setError(browserErrorMessage(err, t("editBook.saveError"))))
-      .finally(() => setLoadingDetails(false));
+      .catch((err) => {
+        if (request === loadRequest.current) setError(browserErrorMessage(err, t("editBook.saveError")));
+      })
+      .finally(() => {
+        if (request === loadRequest.current) setLoadingDetails(false);
+      });
   };
 
   return (

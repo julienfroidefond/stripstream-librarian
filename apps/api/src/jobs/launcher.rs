@@ -20,7 +20,7 @@ use tracing::warn;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use stripstream_jobs::status::JobState;
+use stripstream_jobs::lifecycle::{job_in_flight, JobScope};
 
 use crate::error::ApiError;
 use crate::jobs::lifecycle::fail_job;
@@ -198,16 +198,6 @@ async fn insert_unless_in_flight(
     library_id: Option<Uuid>,
     spec: &JobSpec,
 ) -> Result<Launch, sqlx::Error> {
-    let in_flight: Vec<String> = JobState::IN_FLIGHT
-        .iter()
-        .map(|s| s.as_str().to_string())
-        .collect();
-    let blocking: Vec<String> = spec
-        .blocking_types()
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-
     let mut tx = pool.begin().await?;
     sqlx::query(
         "SELECT pg_advisory_xact_lock(hashtext('index_jobs_launch:' || COALESCE($1::text, 'global')))",
@@ -216,19 +206,11 @@ async fn insert_unless_in_flight(
     .execute(&mut *tx)
     .await?;
 
-    // Same scope rule as `job_in_flight` (Library / Global).
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs \
-         WHERE library_id IS NOT DISTINCT FROM $1 \
-           AND type = ANY($2) \
-           AND status = ANY($3) \
-         LIMIT 1",
-    )
-    .bind(library_id)
-    .bind(&blocking)
-    .bind(&in_flight)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let scope = match library_id {
+        Some(id) => JobScope::Library(id),
+        None => JobScope::Global,
+    };
+    let existing = job_in_flight(&mut *tx, scope, &spec.blocking_types()).await?;
     if let Some(existing) = existing {
         return Ok(Launch::AlreadyRunning(existing));
     }

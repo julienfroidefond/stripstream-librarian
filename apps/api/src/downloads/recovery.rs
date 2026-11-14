@@ -6,6 +6,11 @@
 //! the queue lives in memory ([`super::worker::DownloadSlots`]), so the task
 //! that would have claimed it died with the process. The API sweeps both once
 //! at startup.
+//!
+//! Torrent imports left `importing` are handed back to `completed` in the same
+//! sweep. It must run before the pollers are spawned and before HTTP is
+//! served: once anything can reserve an import, an `importing` row may belong
+//! to a live task, and resetting it would start the same import twice.
 
 use sqlx::PgPool;
 
@@ -17,7 +22,20 @@ use sqlx::PgPool;
 /// requeue for direct provider downloads — `failed` is the status that offers
 /// the retry button. Both UIs refuse to relaunch a `queued` row, so leaving it
 /// there would block it forever.
+///
+/// Also hands torrent imports interrupted by the restart back to `completed`
+/// (see [`super::torrent_ledger::recover_interrupted_imports`]); the torrent
+/// poller resumes them on its first pass. Callers must run this before
+/// spawning the download pollers and serving HTTP.
 pub async fn reset_stale_downloads(pool: &PgPool) -> Result<(), sqlx::Error> {
+    match super::torrent_ledger::recover_interrupted_imports(pool).await {
+        Ok(0) => {}
+        Ok(n) => {
+            tracing::warn!("[RECOVERY] Recovered {n} torrent import(s) interrupted by a restart")
+        }
+        Err(e) => tracing::warn!("[RECOVERY] Failed to recover interrupted torrent imports: {e}"),
+    }
+
     sqlx::query(
         "UPDATE telegram_book_links \
          SET status = 'available', bytes_downloaded = 0, download_speed = 0, eta = 0, \
@@ -171,6 +189,53 @@ mod tests {
             status_of(imported_id).await,
             "imported",
             "finished rows are untouched"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn interrupted_torrent_imports_are_handed_back_at_startup(pool: PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(library_id)
+            .bind(format!("lib_{library_id}"))
+            .bind(format!("/libraries/{library_id}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let importing = Uuid::new_v4();
+        let downloading = Uuid::new_v4();
+        for (id, status) in [(importing, "importing"), (downloading, "downloading")] {
+            sqlx::query(
+                "INSERT INTO torrent_downloads (id, library_id, series_name, status) \
+                 VALUES ($1, $2, 'Amulet', $3)",
+            )
+            .bind(id)
+            .bind(library_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        reset_stale_downloads(&pool).await.unwrap();
+
+        let status_of = |id: Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT status FROM torrent_downloads WHERE id = $1",
+                )
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        assert_eq!(status_of(importing).await, "completed");
+        assert_eq!(
+            status_of(downloading).await,
+            "downloading",
+            "a transfer still runs in its backend"
         );
     }
 }

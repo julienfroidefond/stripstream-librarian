@@ -281,3 +281,57 @@ async fn symlinks_are_not_followed(pool: sqlx::PgPool) {
 
     assert_eq!(f.book_titles().await, vec!["Series - T01"]);
 }
+
+/// Books stored under the lossy form of a path the walk skipped (non UTF-8 name) are kept;
+/// rows elsewhere in the library stay eligible for deletion.
+#[cfg(unix)]
+#[test]
+fn non_utf8_skips_protect_only_rows_under_the_skipped_path() {
+    use super::NonUtf8Skips;
+    use std::collections::HashMap;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let root = Path::new("/data/lib");
+    let mut skips = NonUtf8Skips::default();
+    skips.skip(&root.join(OsStr::from_bytes(b"Bad \xff Dir")), true);
+    skips.skip(
+        &root
+            .join("Series")
+            .join(OsStr::from_bytes(b"Series \xfe T02.cbz")),
+        false,
+    );
+
+    let under_dir = "/data/lib/Bad \u{fffd} Dir/Inner - T01.cbz".to_string();
+    let nested = "/data/lib/Bad \u{fffd} Dir/Sub/Inner - T02.cbz".to_string();
+    let file = "/data/lib/Series/Series \u{fffd} T02.cbz".to_string();
+    let sibling = "/data/lib/Bad \u{fffd} Dir2/Other.cbz".to_string();
+    let gone = "/data/lib/Series/Series - T03.cbz".to_string();
+    let seen_already = "/data/lib/Series/Series - T01.cbz".to_string();
+
+    assert!(skips.protects(&under_dir));
+    assert!(skips.protects(&nested));
+    assert!(skips.protects(&file));
+    assert!(
+        !skips.protects(&sibling),
+        "prefix match stops at the directory boundary"
+    );
+    assert!(!skips.protects(&gone));
+
+    let existing = [&under_dir, &nested, &file, &sibling, &gone, &seen_already];
+    let mut seen: HashMap<String, bool> = HashMap::from([(seen_already.clone(), true)]);
+    let protected = skips.protect_existing(existing.into_iter(), &mut seen);
+
+    assert_eq!(protected, 3);
+    assert!(
+        seen.contains_key(&under_dir) && seen.contains_key(&nested) && seen.contains_key(&file)
+    );
+    assert!(!seen.contains_key(&sibling) && !seen.contains_key(&gone));
+}
+
+/// With nothing skipped, no row is protected.
+#[test]
+fn empty_non_utf8_skips_protect_nothing() {
+    let skips = super::NonUtf8Skips::default();
+    assert!(!skips.protects("/data/lib/Series/Series - T01.cbz"));
+}

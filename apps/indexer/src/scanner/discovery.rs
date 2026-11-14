@@ -27,6 +27,58 @@ const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 /// ...and every this many files outside unchanged directories.
 const PROGRESS_EVERY_FILES: i32 = 10;
 
+/// Paths the walk skipped because their name is not valid UTF-8.
+///
+/// Older scans stored such paths through `to_string_lossy`, so the database may still hold
+/// books under their lossy form. They are never in `seen` (the walk cannot record them), yet
+/// they are still on disk: those rows must not be treated as stale. Only rows under a skipped
+/// path are protected, so one odd name never blocks deletions in the rest of the library.
+#[derive(Debug, Default)]
+pub(crate) struct NonUtf8Skips {
+    files: HashSet<String>,
+    dir_prefixes: Vec<String>,
+}
+
+impl NonUtf8Skips {
+    pub(crate) fn skip(&mut self, path: &Path, is_dir: bool) {
+        let lossy = path.to_string_lossy().into_owned();
+        if is_dir {
+            let prefix = if lossy.ends_with('/') {
+                lossy
+            } else {
+                format!("{lossy}/")
+            };
+            self.dir_prefixes.push(prefix);
+        } else {
+            self.files.insert(lossy);
+        }
+    }
+
+    /// Whether the known (local) path `path` lies under a path skipped by this walk.
+    pub(crate) fn protects(&self, path: &str) -> bool {
+        self.files.contains(path)
+            || self
+                .dir_prefixes
+                .iter()
+                .any(|prefix| path.starts_with(prefix.as_str()))
+    }
+
+    /// Mark every known path under a skipped path as seen, so stale deletion keeps it.
+    pub(crate) fn protect_existing<'a>(
+        &self,
+        existing: impl Iterator<Item = &'a String>,
+        seen: &mut HashMap<String, bool>,
+    ) -> usize {
+        let mut protected = 0;
+        for path in existing {
+            if self.protects(path) && seen.insert(path.clone(), true).is_none() {
+                protected += 1;
+            }
+        }
+        protected
+    }
+}
+
 pub fn push_capped_item(items: &mut Vec<String>, value: String) {
     if items.len() < NOTIFICATION_ITEMS_LIMIT {
         items.push(value);
@@ -185,6 +237,8 @@ pub async fn scan_library_discovery(
     // Set when part of the tree could not be explored (walk aborted, unreadable subtree):
     // `seen` is then partial and no stale deletion may be derived from it.
     let mut walk_incomplete = false;
+    // Non UTF-8 paths skipped by the walk: known books under them are kept.
+    let mut non_utf8_skips = NonUtf8Skips::default();
 
     // Track consecutive IO errors to detect fd exhaustion (ENFILE)
     let mut consecutive_io_errors: usize = 0;
@@ -234,7 +288,9 @@ pub async fn scan_library_discovery(
                 path.display()
             );
             stats.warnings += 1;
-            if entry.file_type().is_dir() {
+            let is_dir = entry.file_type().is_dir();
+            non_utf8_skips.skip(&path, is_dir);
+            if is_dir {
                 walker.skip_current_dir();
             }
             continue;
@@ -439,6 +495,14 @@ pub async fn scan_library_discovery(
         );
         stats.warnings += 1;
     } else {
+        let protected = non_utf8_skips.protect_existing(existing.keys(), &mut seen);
+        if protected > 0 {
+            warn!(
+                "[SCAN] Library {}: keeping {} known book(s) under non UTF-8 paths skipped by \
+                 this scan",
+                library_id, protected
+            );
+        }
         handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
         upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
     }
