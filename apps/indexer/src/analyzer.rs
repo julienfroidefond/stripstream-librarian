@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::stream::{self, StreamExt};
 use parsers::{analyze_book, page_count_only, BookFormat};
 use sqlx::Row;
@@ -15,7 +15,7 @@ use stripstream_jobs::is_job_cancelled;
 use stripstream_thumbnails::{ThumbnailSettings, ThumbnailStore};
 
 use crate::{
-    batch::{flush_events, flush_parse_errors, EventInsert},
+    batch::{clear_parse_errors, flush_events, flush_parse_errors, EventInsert},
     job::JobCancelled,
     AppState,
 };
@@ -490,6 +490,9 @@ pub async fn analyze_library_books(
 
             let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
             let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
+            // Archives read successfully this time (page count at least): any parse error of
+            // a previous attempt is stale.
+            let mut parsed_ok: Vec<Uuid> = Vec::new();
             let mut released: Vec<Uuid> = Vec::new();
             let mut failed: Vec<Uuid> = Vec::new();
             let mut events: Vec<EventInsert> = Vec::new();
@@ -546,6 +549,7 @@ pub async fn analyze_library_books(
                         recovered_from,
                     } => {
                         page_count_updates.push((book_id, page_count));
+                        parsed_ok.push(book_id);
                         let (message, level, detail) = match &recovered_from {
                             Some(error) => (
                                 format!(
@@ -577,6 +581,7 @@ pub async fn analyze_library_books(
                         raw_path,
                         page_count,
                     } => {
+                        parsed_ok.push(book_id);
                         all_extracted.push((book_id, raw_path, page_count));
                     }
                 }
@@ -600,6 +605,9 @@ pub async fn analyze_library_books(
             }
             if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
                 warn!("[ANALYZER] Failed to flush parse errors: {e}");
+            }
+            if let Err(e) = clear_parse_errors(&state.pool, &mut parsed_ok).await {
+                warn!("[ANALYZER] Failed to clear stale parse errors: {e}");
             }
             if let Err(e) = analysis::mark_failed(&state.pool, &failed).await {
                 warn!("[ANALYZER] Failed to record analysis failures: {e}");
@@ -886,6 +894,9 @@ pub async fn regenerate_thumbnails(
 }
 
 /// Delete orphaned thumbnail files (books deleted in full_rebuild get new UUIDs).
+///
+/// The set of live book ids is the only safeguard of the purge: if it cannot be read, the
+/// purge is abandoned with an error (an empty set would delete every thumbnail).
 pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
     let store = ThumbnailSettings::load_or_default(&state.pool)
         .await
@@ -895,7 +906,7 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
         sqlx::query_scalar(r#"SELECT id FROM books"#)
             .fetch_all(&state.pool)
             .await
-            .unwrap_or_default()
+            .context("cannot list books, orphan thumbnail purge abandoned")?
             .into_iter()
             .collect();
 
@@ -1289,6 +1300,51 @@ mod tests {
         assert_eq!(error_events, 1);
     }
 
+    /// A `failed` book retried successfully (same file row, so discovery never rewrote it)
+    /// must get its `parse_status` back to `ok`.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn successful_retry_clears_previous_parse_error(pool: sqlx::PgPool) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T03.cbz");
+        std::fs::write(&cbz, b"this is definitely not a zip archive").unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+        let state = crate::test_state(pool.clone());
+
+        analyze_library_books(&state, create_job(&pool).await, Some(lib), false)
+            .await
+            .unwrap();
+        let parse_status = || async {
+            sqlx::query_as::<_, (String, Option<String>)>(
+                "SELECT parse_status, parse_error_opt FROM book_files WHERE book_id = $1",
+            )
+            .bind(book)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        assert_eq!(parse_status().await.0, "error");
+
+        // The archive becomes readable (e.g. a transient I/O error): the retry succeeds.
+        write_test_cbz(&cbz, 3).unwrap();
+        analyze_library_books(&state, create_job(&pool).await, Some(lib), false)
+            .await
+            .unwrap();
+
+        assert_eq!(parse_status().await, ("ok".to_string(), None));
+        let page_count: Option<i32> =
+            sqlx::query_scalar("SELECT page_count FROM books WHERE id = $1")
+                .bind(book)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(page_count, Some(3));
+    }
+
     /// Sub-phase A reads the page count and stages the first page, but the page is not a
     /// decodable image so sub-phase B cannot encode it: the page count must still be recorded
     /// (book `cover_pending`, not stuck `analyzing`) and the staged `.raw` removed.
@@ -1425,5 +1481,27 @@ mod tests {
         assert!(kept.exists(), "a thumbnail of a live book must be kept");
         assert!(!orphan.exists(), "an orphaned thumbnail must be deleted");
         assert!(unrelated.exists(), "unrelated files must not be touched");
+    }
+
+    /// If the live book ids cannot be read, the purge is abandoned: an empty set would
+    /// otherwise make every thumbnail look orphaned.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_orphaned_thumbnails_keeps_everything_when_books_cannot_be_listed(
+        pool: sqlx::PgPool,
+    ) {
+        let thumb_dir = tempfile::tempdir().unwrap();
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+        let thumbnail = thumb_dir.path().join(format!("{}.webp", Uuid::new_v4()));
+        std::fs::write(&thumbnail, b"cover").unwrap();
+        sqlx::query("ALTER TABLE books RENAME TO books_unavailable")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let state = crate::test_state(pool.clone());
+        let result = cleanup_orphaned_thumbnails(&state).await;
+
+        assert!(result.is_err(), "the SQL error must surface");
+        assert!(thumbnail.exists(), "no thumbnail may be purged");
     }
 }

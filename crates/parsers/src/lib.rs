@@ -17,10 +17,12 @@ mod cbr;
 mod epub;
 mod metadata;
 pub mod pdf;
+#[cfg(test)]
+mod test_support;
 mod volume;
 mod zip;
 
-pub use cbr::convert_cbr_to_cbz;
+pub use cbr::{cbz_is_conversion_of, convert_cbr_to_cbz};
 pub use metadata::{analyze_book, page_count_only, parse_metadata, parse_metadata_fast};
 pub use volume::{
     extract_hs_info, extract_int_info, extract_metadata_volume, extract_volume, extract_volumes,

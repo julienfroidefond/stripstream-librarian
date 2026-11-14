@@ -126,6 +126,26 @@ pub async fn flush_parse_errors(pool: &PgPool, updates: &mut Vec<(Uuid, String)>
     Ok(())
 }
 
+/// Reset the parse error of book files that were just read successfully. A retry that
+/// succeeds on an unchanged file (same fingerprint, so discovery never rewrites its row)
+/// must not keep the `error` left by a previous attempt.
+pub async fn clear_parse_errors(pool: &PgPool, book_ids: &mut Vec<Uuid>) -> Result<()> {
+    if book_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE book_files SET parse_status = 'ok', parse_error_opt = NULL, updated_at = NOW() \
+         WHERE book_id = ANY($1) AND (parse_status <> 'ok' OR parse_error_opt IS NOT NULL)",
+    )
+    .bind(&*book_ids)
+    .execute(pool)
+    .await?;
+
+    book_ids.clear();
+    Ok(())
+}
+
 /// A `books` correction for a file whose content did not change: only the fields
 /// derived from the filename move, and `series_id` is kept when none is resolved.
 pub struct BookCorrection {
@@ -677,5 +697,46 @@ mod tests {
         assert_eq!(map[&book_a].1.as_deref(), Some("corrupt archive"));
         assert_eq!(map[&book_b].0, "error");
         assert_eq!(map[&book_b].1.as_deref(), Some("timed out"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn clear_parse_errors_resets_only_the_given_files(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let retried = create_test_book(&pool, library_id).await;
+        let still_broken = create_test_book(&pool, library_id).await;
+        for (i, book_id) in [retried, still_broken].iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
+                 VALUES ($1, $2, 'cbz', $3, 100, NOW(), 'fp', 'error', 'corrupt archive')",
+            )
+            .bind(Uuid::new_v4())
+            .bind(book_id)
+            .bind(format!("/tmp/{}/file{}.cbz", library_id, i))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let mut ids = vec![retried];
+        clear_parse_errors(&pool, &mut ids).await.unwrap();
+        assert!(ids.is_empty());
+
+        let status = |book_id: Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_as::<_, (String, Option<String>)>(
+                    "SELECT parse_status, parse_error_opt FROM book_files WHERE book_id = $1",
+                )
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        assert_eq!(status(retried).await, ("ok".to_string(), None));
+        assert_eq!(
+            status(still_broken).await,
+            ("error".to_string(), Some("corrupt archive".to_string()))
+        );
     }
 }
