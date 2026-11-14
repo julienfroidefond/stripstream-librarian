@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.161 — 2026-11-14
+
+### Corrections
+
+- codebase-wide bug hunt (data loss, security, sync, UI contract) ([#302](https://github.com/julienfroidefond/stripstream-librarian/pull/302))
+
 ## v3.32.160 — 2026-11-14
 
 ### Refactoring
