@@ -100,16 +100,32 @@ export function KomgaSyncCard({ users }: { users: UserDto[] }) {
           placeholder="https://komga.example.com"
           value={value.url}
           onChange={(e) => section.patch({ url: e.target.value })}
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore
         />
       </SettingsRow>
       <SettingsRow label={t("settings.username")}>
         <FormInput
           value={value.username}
           onChange={(e) => section.patch({ username: e.target.value })}
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore
         />
       </SettingsRow>
       <SettingsRow label={t("settings.password")}>
-        <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
+        <FormInput
+          type="password"
+          value={komgaPassword}
+          onChange={(e) => setKomgaPassword(e.target.value)}
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore
+        />
       </SettingsRow>
       {users.length > 0 && (
         <SettingsRow label={t("users.title")}>
