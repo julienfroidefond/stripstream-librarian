@@ -8,6 +8,12 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.160 — 2026-11-14
+
+### Refactoring
+
+- **backoffice** — organize lib/ into domain and shared folders ([#301](https://github.com/julienfroidefond/stripstream-librarian/pull/301))
+
 ## v3.32.159 — 2026-11-13
 
 ### Corrections
