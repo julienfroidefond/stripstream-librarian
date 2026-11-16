@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.166 — 2026-11-16
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump jsdom from 30.1.3 to 31.0.0 in /apps/backoffice ([#278](https://github.com/julienfroidefond/stripstream-librarian/pull/278))
+
+</details>
+
 ## v3.32.165 — 2026-11-16
 
 <details>
