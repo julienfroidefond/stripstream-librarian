@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.170 — 2026-11-19
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump @testing-library/user-event ([#314](https://github.com/julienfroidefond/stripstream-librarian/pull/314))
+
+</details>
+
 ## v3.32.169 — 2026-11-17
 
 <details>
