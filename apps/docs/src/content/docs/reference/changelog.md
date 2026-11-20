@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.173 — 2026-11-20
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump rand from 0.10.3 to 0.10.4 ([#316](https://github.com/julienfroidefond/stripstream-librarian/pull/316))
+
+</details>
+
 ## v3.32.172 — 2026-11-20
 
 <details>
