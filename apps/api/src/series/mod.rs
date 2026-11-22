@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod archive;
+pub(crate) mod catalog;
 pub mod create;
 pub mod favorites;
 pub(crate) mod helpers;
@@ -163,7 +164,7 @@ pub struct ListAllSeriesQuery {
     /// Filter by shelf state for the current user: "true" for series set aside, "false" for the others
     #[schema(value_type = Option<String>, example = "true")]
     pub shelved: Option<String>,
-    /// Sort order: "title" (default), "latest" (most recently added first), or "release_date" (series start year descending)
+    /// Sort order: "title" (default), "latest" (most recently added first), "release_date" (series start year descending), or "community_score" (best rated first)
     #[schema(value_type = Option<String>, example = "release_date")]
     pub sort: Option<String>,
     /// Filter by genre (exact match, case-sensitive)

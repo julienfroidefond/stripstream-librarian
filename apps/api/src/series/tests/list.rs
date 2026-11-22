@@ -5,6 +5,7 @@
 //! and `total` semantics after the count/data queries were merged into one.
 
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::{Extension, Json};
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -992,4 +993,171 @@ async fn list_series_filters_shelved_for_current_user(pool: PgPool) {
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].series_id, shelved);
     assert!(page.items[0].shelved_at.is_some());
+}
+
+async fn approve_rated_link(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_id: Uuid,
+    provider: &str,
+    rating: f32,
+    scale: f32,
+) {
+    sqlx::query(
+        "INSERT INTO external_metadata_links \
+             (library_id, series_id, provider, external_id, status, provider_rating, provider_rating_scale) \
+         VALUES ($1, $2, $3, 'ext-1', 'approved', $4, $5)",
+    )
+    .bind(library_id)
+    .bind(series_id)
+    .bind(provider)
+    .bind(rating)
+    .bind(scale)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_sorts_by_community_score(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let acclaimed = create_series(&pool, library, "Acclaimed").await;
+    let average = create_series(&pool, library, "Average").await;
+    create_book(&pool, library, acclaimed, "Acclaimed Vol 1").await;
+    create_book(&pool, library, average, "Average Vol 1").await;
+    approve_rated_link(&pool, library, acclaimed, "anilist", 9.0, 10.0).await;
+    approve_rated_link(&pool, library, average, "anilist", 5.0, 10.0).await;
+
+    let Json(page) = list_all_series(
+        State(state),
+        None,
+        Query(ListAllSeriesQuery {
+            sort: Some("community_score".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 2);
+    assert_eq!(page.items[0].series_id, acclaimed);
+    assert_eq!(page.items[0].community_score, Some(4.5));
+    assert_eq!(page.items[1].series_id, average);
+    assert_eq!(page.items[1].community_score, Some(2.5));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_filters_by_volume_type(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let one_shot = create_series(&pool, library, "One shot").await;
+    let numbered = create_series(&pool, library, "Numbered").await;
+    create_book_with(&pool, library, one_shot, "One shot", None, "oneshot").await;
+    create_book_with(&pool, library, numbered, "Vol 1", Some(1), "regular").await;
+
+    let Json(page) = list_all_series(
+        State(state),
+        None,
+        Query(ListAllSeriesQuery {
+            volume_type: Some("oneshot".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].series_id, one_shot);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_filters_by_description_gap(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let described = create_series(&pool, library, "Described").await;
+    let bare = create_series(&pool, library, "Bare").await;
+    sqlx::query("UPDATE series SET description = $2 WHERE id = $1")
+        .bind(described)
+        .bind("A real description")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(page) = list_all_series(
+        State(state),
+        None,
+        Query(ListAllSeriesQuery {
+            gap: Some("no_description".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].series_id, bare);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_filters_by_user_rating(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let rated = create_series(&pool, library, "Rated").await;
+    let unrated = create_series(&pool, library, "Unrated").await;
+    let reader = create_user(&pool, "reader").await;
+    sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, 7)")
+        .bind(reader)
+        .bind(rated)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(rated_page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: reader })),
+        Query(ListAllSeriesQuery {
+            rated_only: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+    let Json(unrated_page) = list_all_series(
+        State(state),
+        Some(Extension(AuthUser { user_id: reader })),
+        Query(ListAllSeriesQuery {
+            rated_only: Some("unrated".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rated_page.total, 1);
+    assert_eq!(rated_page.items[0].series_id, rated);
+    assert_eq!(rated_page.items[0].user_rating, Some(7));
+    assert_eq!(unrated_page.total, 1);
+    assert_eq!(unrated_page.items[0].series_id, unrated);
+    assert_eq!(unrated_page.items[0].user_rating, None);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_rejects_an_unknown_sort(pool: PgPool) {
+    let state = test_state(pool);
+
+    let Err(error) = list_all_series(
+        State(state),
+        None,
+        Query(ListAllSeriesQuery {
+            sort: Some("popularity".to_string()),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    else {
+        panic!("an unknown sort must be rejected");
+    };
+
+    assert_eq!(error.status, StatusCode::BAD_REQUEST);
 }

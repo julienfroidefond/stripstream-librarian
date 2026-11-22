@@ -5,6 +5,7 @@
 //! `#[sqlx::test]`, so the real aggregate / array SQL is exercised without an HTTP server.
 
 use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use axum::Json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -466,16 +467,18 @@ async fn series_gap_filters_isolate_each_dimension(pool: PgPool) {
         series_ids(&state, library, "no_cover").await,
         vec![no_cover]
     );
-    assert_eq!(
-        series_ids(&state, library, "not-a-gap").await.len(),
-        7,
-        "an unknown gap is ignored"
-    );
-    assert_eq!(
-        series_ids(&state, library, "unlinked").await.len(),
-        7,
-        "a removed gap is ignored"
-    );
+    for unknown in ["not-a-gap", "unlinked"] {
+        let error = list_all_series(
+            State(state.clone()),
+            None,
+            series_gap_query(Some(library), unknown),
+        )
+        .await
+        .err()
+        .unwrap_or_else(|| panic!("gap '{unknown}' must be rejected"));
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
