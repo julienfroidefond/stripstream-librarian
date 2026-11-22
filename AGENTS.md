@@ -251,6 +251,15 @@ DB seam, `events_for` the pure policy (which events, and when the scan summary i
 `stripstream_jobs::ScanStats` (serde), which `scanner::JobStats` aliases. The worker only calls
 `notify_job`; `cleanup_available_downloads` stays in the indexer.
 
+### Job In Flight (`crates/jobs/src/lifecycle.rs`, ADR 0034)
+
+`JobState::IN_FLIGHT` is the only definition of "a job still holds its slot". A point lookup goes
+through `job_in_flight(executor, JobScope, JobTypes)`: `JobTypes::Any` when anything in flight blocks
+the caller (the file watcher), `JobTypes::Only(&[...])` for the conflicting types (the API launcher,
+manual triggers). Set-based queries that also filter on their target (the scheduler) keep their SQL
+and bind `JobState::in_flight_strings()`; never write the four statuses as literals. When the lookup
+fails, the caller owns the policy (the watcher polls anyway / assumes the library busy) and logs it.
+
 ### Series Catalogue Read Model (`apps/api/src/series/catalog/`, ADR 0030)
 
 `catalog::query(pool, SeriesRequest)` is the only read that projects a `SeriesItem`: `/series`,
