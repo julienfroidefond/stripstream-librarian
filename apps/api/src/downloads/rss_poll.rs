@@ -1,14 +1,18 @@
 use axum::{extract::State, Json};
 use parsers::match_release_title;
 use serde::Deserialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use tracing::info;
 use uuid::Uuid;
 
-use stripstream_core::availability;
 use stripstream_core::http::build_http_client_with_agent;
 
-use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr};
+use super::ingest::{
+    cleanup, event_counts, new_items_since, new_releases_since, store_releases, Cleanup,
+    ReleaseTarget, StorePolicy, Stored,
+};
+use super::release::AvailableReleaseDto;
+use super::{blacklist, missing, prowlarr};
 use crate::jobs::helpers::{insert_entity_event as insert_event, set_total_files};
 use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
 use crate::jobs::lifecycle::{classify_job, finish_job, JobStatus};
@@ -184,8 +188,6 @@ pub(crate) async fn process_rss_poll(
         indexer_stats.len()
     );
 
-    let now_str = chrono::Utc::now().to_rfc3339();
-
     for (series_id, series_name, missing_volumes, lib_id) in &series_info {
         if missing_volumes.is_empty() {
             continue;
@@ -195,7 +197,6 @@ pub(crate) async fn process_rss_poll(
 
         let matched_releases: Vec<AvailableReleaseDto> = rss_releases
             .iter()
-            .filter(|r| !blacklisted_titles.contains(&r.title))
             .filter_map(|r| {
                 if let Some(matched) = match_release_title(&r.title, series_name, missing_volumes) {
                     Some(AvailableReleaseDto {
@@ -207,7 +208,7 @@ pub(crate) async fn process_rss_poll(
                         matched_missing_volumes: matched.matched_missing_volumes,
                         all_volumes: matched.all_volumes,
                         has_failed: false,
-                        detected_at: Some(now_str.clone()),
+                        detected_at: None,
                         match_confidence: matched.confidence.as_str().to_string(),
                         match_reasons: matched
                             .reasons
@@ -223,97 +224,55 @@ pub(crate) async fn process_rss_poll(
             })
             .collect();
 
-        if matched_releases.is_empty() {
-            insert_event(
-                pool,
-                job_id,
-                "downloads_not_found",
-                "info",
-                Some(series_name),
-                None,
-                Some(serde_json::json!({"missing_count": missing_count})),
-            )
-            .await;
-            continue;
-        }
-
-        let releases_json = serde_json::to_value(&matched_releases).ok();
-        insert_event(
+        let target = ReleaseTarget {
+            library_id: *lib_id,
+            series_id: *series_id,
+            series_name,
+        };
+        let stored = store_releases(
             pool,
             job_id,
-            "downloads_found",
-            "info",
-            Some(series_name),
-            None,
-            Some(serde_json::json!({
-                "release_count": matched_releases.len(),
-                "missing_count": missing_count,
-                "available_releases": releases_json,
-            })),
-        )
-        .await;
-
-        let _ = availability::merge_releases(
-            pool,
-            *lib_id,
-            *series_id,
+            &target,
             missing_count,
-            &matched_releases,
+            matched_releases,
+            &blacklisted_titles,
+            &StorePolicy::prowlarr_rss(),
         )
         .await;
-    }
 
-    // Count from events
-    let event_counts = sqlx::query(
-        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
-    )
-    .bind(job_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let mut count_found = 0i64;
-    let mut count_not_found = 0i64;
-    for row in &event_counts {
-        let s: String = row.get("event_type");
-        let c: i64 = row.get("cnt");
-        match s.as_str() {
-            "downloads_found" => count_found = c,
-            "downloads_not_found" => count_not_found = c,
-            _ => {}
+        match stored {
+            Ok(Stored::Found(_)) => {}
+            Ok(Stored::Nothing) => {
+                insert_event(
+                    pool,
+                    job_id,
+                    "downloads_not_found",
+                    "info",
+                    Some(series_name),
+                    None,
+                    Some(serde_json::json!({"missing_count": missing_count})),
+                )
+                .await;
+            }
+            Err(error) => {
+                // The RSS policy logs a failed merge instead of failing the run.
+                tracing::warn!(series = %series_name, %error, "release merge failed");
+            }
         }
     }
 
-    // Count new releases detected during this run
-    let new_releases: i64 = if let Some(lid) = library_id {
-        sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) FROM available_downloads ad,
-                 jsonb_array_elements(ad.available_releases) AS rel
-            WHERE ad.library_id = $1
-              AND rel->>'detected_at' IS NOT NULL
-              AND (rel->>'detected_at')::timestamptz >= $2
-            "#,
-        )
-        .bind(lid)
-        .bind(job_started_at)
-        .fetch_one(pool)
+    // The RSS poll keeps rows as-is: the next detection drops the ones whose
+    // series became complete.
+    cleanup(pool, Cleanup::Keep).await;
+
+    let counts = event_counts(pool, job_id)
         .await
-        .unwrap_or(0)
-    } else {
-        sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) FROM available_downloads ad,
-                 jsonb_array_elements(ad.available_releases) AS rel
-            WHERE rel->>'detected_at' IS NOT NULL
-              AND (rel->>'detected_at')::timestamptz >= $1
-            "#,
-        )
-        .bind(job_started_at)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0)
-    };
+        .map_err(|e| e.to_string())?;
+    let count_found = counts.found;
+    let count_not_found = counts.not_found;
+
+    // Count new releases detected during this run.
+    let new_releases = new_releases_since(pool, job_started_at, library_id).await;
 
     // Cap snapshot at 200 releases to bound storage per job
     let snapshot: Vec<_> = rss_releases
@@ -401,7 +360,7 @@ pub(crate) async fn process_rss_poll(
         }
         JobStatus::Partial => {
             let errors = failed_indexers.len() as i64;
-            let new_items = load_new_items(pool, library_id, job_started_at).await;
+            let new_items = new_items_since(pool, job_started_at, library_id).await;
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::DownloadDetectionPartial {
@@ -432,67 +391,6 @@ pub(crate) async fn process_rss_poll(
     Ok(())
 }
 
-/// Releases detected since `job_started_at`, grouped by series and capped at 10.
-/// Shared by the success and partial notifications so a partially failed run
-/// still reports what its healthy indexers found.
-async fn load_new_items(
-    pool: &PgPool,
-    library_id: Option<Uuid>,
-    job_started_at: chrono::DateTime<chrono::Utc>,
-) -> Vec<(String, String)> {
-    if let Some(lid) = library_id {
-        sqlx::query(
-            r#"
-            SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
-            FROM available_downloads ad
-            CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
-            JOIN series s ON s.id = ad.series_id
-            WHERE ad.library_id = $1
-              AND (rel->>'detected_at')::timestamptz >= $2
-            ORDER BY s.name
-            LIMIT 10
-            "#,
-        )
-        .bind(lid)
-        .bind(job_started_at)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| {
-            (
-                r.get::<String, _>("series_name"),
-                r.get::<String, _>("release_title"),
-            )
-        })
-        .collect()
-    } else {
-        sqlx::query(
-            r#"
-            SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
-            FROM available_downloads ad
-            CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
-            JOIN series s ON s.id = ad.series_id
-            WHERE (rel->>'detected_at')::timestamptz >= $1
-            ORDER BY s.name
-            LIMIT 10
-            "#,
-        )
-        .bind(job_started_at)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| {
-            (
-                r.get::<String, _>("series_name"),
-                r.get::<String, _>("release_title"),
-            )
-        })
-        .collect()
-    }
-}
-
 /// Send the "download detection completed" notification when the run found new
 /// releases (unchanged behaviour: silent when nothing new was detected).
 async fn notify_new_releases(
@@ -508,7 +406,7 @@ async fn notify_new_releases(
         return;
     }
 
-    let new_items = load_new_items(pool, library_id, job_started_at).await;
+    let new_items = new_items_since(pool, job_started_at, library_id).await;
 
     notifications::notify(
         pool.clone(),

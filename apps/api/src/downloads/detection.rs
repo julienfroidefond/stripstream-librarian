@@ -14,6 +14,10 @@ use stripstream_core::availability;
 use stripstream_core::http::build_http_client_with_agent;
 use stripstream_core::series_identity;
 
+use super::ingest::{
+    cleanup, event_counts, new_items_since, new_releases_since, store_releases, Cleanup,
+    ReleaseTarget, StorePolicy, Stored,
+};
 use super::{blacklist, missing, prowlarr};
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, set_total_files, update_progress,
@@ -62,47 +66,9 @@ pub struct DownloadDetectionResultDto {
     pub error_message: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct AvailableReleaseDto {
-    pub title: String,
-    pub size: i64,
-    pub download_url: Option<String>,
-    pub indexer: Option<String>,
-    pub seeders: Option<i32>,
-    pub matched_missing_volumes: Vec<i32>,
-    #[serde(default)]
-    pub all_volumes: Vec<i32>,
-    /// True if a previous download of overlapping volumes failed for this series.
-    #[serde(default)]
-    pub has_failed: bool,
-    /// When this release was first detected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detected_at: Option<String>,
-    /// `high` can be automated; `review` has weaker title or volume evidence.
-    #[serde(default = "default_match_confidence")]
-    pub match_confidence: String,
-    /// Machine-readable evidence used by the shared title matcher.
-    #[serde(default = "default_match_reasons")]
-    pub match_reasons: Vec<String>,
-    /// Set when the release comes from a DDL provider rather than Prowlarr.
-    /// The value is the provider registry id (e.g. `fourtoutici`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
-    /// DDL-provider-specific file id, used to start a direct download.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_id: Option<String>,
-}
-
-fn default_match_confidence() -> String {
-    // Historical JSON releases have no qualification evidence. Keep them
-    // visible, but require an explicit confirmation until a scan refreshes
-    // them with the shared matcher.
-    "review".to_string()
-}
-
-fn default_match_reasons() -> Vec<String> {
-    vec!["legacy_unqualified".to_string()]
-}
+/// The shared release shape, re-exported here for the existing call sites and
+/// the OpenAPI schema path.
+pub use super::release::AvailableReleaseDto;
 
 // ---------------------------------------------------------------------------
 // POST /download-detection/start
@@ -808,13 +774,13 @@ pub(crate) async fn process_download_detection(
     // Fetch all series in this library (with or without books — series added
     // via Discovery have no books yet but still need detection).
     // Also add an "unclassified" pseudo-series if there are orphan books.
-    let all_series_rows: Vec<(String, Option<uuid::Uuid>)> = sqlx::query_as(
+    let all_series: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT s.name AS name, s.id::uuid AS series_id
+        SELECT s.name AS name
         FROM series s
         WHERE s.library_id = $1
         UNION ALL
-        SELECT 'unclassified' AS name, NULL::uuid AS series_id
+        SELECT 'unclassified' AS name
         WHERE EXISTS (
             SELECT 1 FROM books b
             WHERE b.library_id = $1 AND b.series_id IS NULL
@@ -842,26 +808,18 @@ pub(crate) async fn process_download_detection(
     .await
     .map_err(|e| e.to_string())?;
 
-    let all_series: Vec<String> = all_series_rows
-        .iter()
-        .map(|(name, _)| name.clone())
-        .collect();
-    let series_id_map: std::collections::HashMap<String, Uuid> = all_series_rows
-        .iter()
-        .filter_map(|(name, id)| id.map(|id| (name.clone(), id)))
-        .collect();
     let total = all_series.len() as i32;
     set_total_files(pool, job_id, total)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Approved metadata links for this library (series_name -> link_id)
-    let link_map: std::collections::HashMap<String, Uuid> =
+    // Approved metadata links for this library (series_name -> link)
+    let link_map: std::collections::HashMap<String, missing::ApprovedLink> =
         missing::load_approved_links(pool, Some(library_id), missing::LinkScope::All)
             .await
             .map_err(|e| e.to_string())?
             .into_iter()
-            .map(|link| (link.series_name, link.link_id))
+            .map(|link| (link.series_name.clone(), link))
             .collect();
 
     let client = build_http_client_with_agent(std::time::Duration::from_secs(30))
@@ -899,24 +857,21 @@ pub(crate) async fn process_download_detection(
         }
 
         // Check if this series has an approved metadata link
-        let link_id = match link_map.get(series_name) {
-            Some(id) => *id,
-            None => {
-                insert_event(
-                    pool,
-                    job_id,
-                    "no_metadata_link",
-                    "info",
-                    Some(series_name),
-                    None,
-                    None,
-                )
-                .await;
-                continue;
-            }
+        let Some(link) = link_map.get(series_name) else {
+            insert_event(
+                pool,
+                job_id,
+                "no_metadata_link",
+                "info",
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
+            continue;
         };
 
-        let missing = missing::load_link_missing_volumes(pool, link_id)
+        let missing = missing::load_link_missing_volumes(pool, link.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -932,14 +887,18 @@ pub(crate) async fn process_download_detection(
             )
             .await;
             // Series is complete, remove from available_downloads
-            if let Some(&sid) = series_id_map.get(series_name) {
-                let _ = availability::delete_for_series(pool, sid).await;
-            }
+            let _ = availability::delete_for_series(pool, link.series_id).await;
             continue;
         }
 
         let missing_volumes = missing.missing_volumes;
         let missing_count = missing.missing_count;
+        let target = ReleaseTarget {
+            library_id,
+            series_id: link.series_id,
+            series_name,
+        };
+        let policy = StorePolicy::prowlarr_detection();
 
         // Search Prowlarr
         match search_prowlarr_for_series(
@@ -952,33 +911,39 @@ pub(crate) async fn process_download_detection(
         )
         .await
         {
-            Ok((mut matched_releases, _raw_count)) if !matched_releases.is_empty() => {
-                // Filter out blacklisted releases
-                matched_releases.retain(|r| !blacklisted_titles.contains(&r.title));
-                if matched_releases.is_empty() {
-                    insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": _raw_count, "all_blacklisted": true}))).await;
-                    if let Some(&sid) = series_id_map.get(series_name) {
-                        let _ = availability::set_missing_count(pool, sid, missing_count).await;
+            Ok((matched_releases, raw_count)) if !matched_releases.is_empty() => {
+                let stored = store_releases(
+                    pool,
+                    job_id,
+                    &target,
+                    missing_count,
+                    matched_releases,
+                    &blacklisted_titles,
+                    &policy,
+                )
+                .await;
+
+                match stored {
+                    Ok(Stored::Found(_)) => {}
+                    Ok(Stored::Nothing) => {
+                        insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": raw_count, "all_blacklisted": true}))).await;
+                        let _ =
+                            availability::set_missing_count(pool, link.series_id, missing_count)
+                                .await;
                     }
-                    continue;
-                }
-                // Stamp new releases with detected_at
-                let now_str = chrono::Utc::now().to_rfc3339();
-                for r in &mut matched_releases {
-                    r.detected_at = Some(now_str.clone());
-                }
-                let releases_json = serde_json::to_value(&matched_releases).ok();
-                insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
-                // UPSERT into available_downloads — merge new releases with existing ones
-                if let Some(&sid) = series_id_map.get(series_name) {
-                    let _ = availability::merge_releases(
-                        pool,
-                        library_id,
-                        sid,
-                        missing_count,
-                        &matched_releases,
-                    )
-                    .await;
+                    Err(error) => {
+                        warn!("[DOWNLOAD_DETECTION] series '{series_name}': {error}");
+                        insert_event(
+                            pool,
+                            job_id,
+                            "error",
+                            "error",
+                            Some(series_name),
+                            Some(&error.to_string()),
+                            Some(serde_json::json!({"missing_count": missing_count})),
+                        )
+                        .await;
+                    }
                 }
             }
             Ok((_matched, raw_count)) => {
@@ -992,9 +957,7 @@ pub(crate) async fn process_download_detection(
                 insert_event(pool, job_id, event_type, level, Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": raw_count}))).await;
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
-                if let Some(&sid) = series_id_map.get(series_name) {
-                    let _ = availability::set_missing_count(pool, sid, missing_count).await;
-                }
+                let _ = availability::set_missing_count(pool, link.series_id, missing_count).await;
             }
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
@@ -1015,53 +978,21 @@ pub(crate) async fn process_download_detection(
     // Drop legacy non-tome volumes from stored releases and delete rows left
     // without any release. Non-tomes never counted as missing, so the counter
     // is left untouched.
-    let _ = availability::normalize_library(pool, library_id).await;
-    let _ = availability::delete_empty(pool, Some(library_id)).await;
+    cleanup(pool, Cleanup::NormalizeThenDeleteEmpty(library_id)).await;
 
-    // Build final stats from events
-    let counts = sqlx::query(
-        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
-    )
-    .bind(job_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let mut count_found = 0i64;
-    let mut count_not_found = 0i64;
-    let mut count_no_missing = 0i64;
-    let mut count_no_metadata = 0i64;
-    let mut count_errors = 0i64;
-    for row in &counts {
-        let s: String = row.get("event_type");
-        let c: i64 = row.get("cnt");
-        match s.as_str() {
-            "downloads_found" => count_found = c,
-            "downloads_not_found" => count_not_found = c,
-            "no_missing_volumes" => count_no_missing = c,
-            "no_metadata_link" => count_no_metadata = c,
-            "error" => count_errors = c,
-            _ => {}
-        }
-    }
+    let counts = event_counts(pool, job_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let count_found = counts.found;
+    let count_not_found = counts.not_found;
+    let count_no_missing = counts.no_missing;
+    let count_no_metadata = counts.no_metadata;
+    let count_errors = counts.errors;
 
     // Count releases newly discovered during this run.
     // merge_releases preserves detected_at for releases that already existed,
     // so anything with detected_at >= job_started_at is genuinely new.
-    let new_releases: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*) FROM available_downloads ad,
-             jsonb_array_elements(ad.available_releases) AS rel
-        WHERE ad.library_id = $1
-          AND rel->>'detected_at' IS NOT NULL
-          AND (rel->>'detected_at')::timestamptz >= $2
-        "#,
-    )
-    .bind(library_id)
-    .bind(job_started_at)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let new_releases = new_releases_since(pool, job_started_at, Some(library_id)).await;
 
     let stats = serde_json::json!({
         "total_series": total as i64,
@@ -1090,31 +1021,7 @@ pub(crate) async fn process_download_detection(
             .ok()
             .flatten();
 
-    let new_items: Vec<(String, String)> = sqlx::query(
-        r#"
-        SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
-        FROM available_downloads ad
-        CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
-        JOIN series s ON s.id = ad.series_id
-        WHERE ad.library_id = $1
-          AND (rel->>'detected_at')::timestamptz >= $2
-        ORDER BY s.name
-        LIMIT 10
-        "#,
-    )
-    .bind(library_id)
-    .bind(job_started_at)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|r| {
-        (
-            r.get::<String, _>("series_name"),
-            r.get::<String, _>("release_title"),
-        )
-    })
-    .collect();
+    let new_items = new_items_since(pool, job_started_at, Some(library_id)).await;
 
     match status {
         JobStatus::Failed => {
