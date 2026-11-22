@@ -3,7 +3,8 @@
  *
  * The page sends one `GET /genres/browse` per filter change; this module turns
  * the UI selection into that query and owns the selection transitions
- * (include/exclude toggles, rename and delete of a genre).
+ * (include/exclude toggles, rename and delete of a genre). The writes
+ * themselves live in `lib/genres/actions.ts` (ADR 0035).
  */
 
 import type { GenreBrowseQuery } from "@/lib/api/genres";
