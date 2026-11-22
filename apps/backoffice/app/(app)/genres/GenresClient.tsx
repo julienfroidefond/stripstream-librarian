@@ -29,6 +29,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { toast } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
+import { useGenreActions } from "./useGenreActions";
 
 type Props = {
   /** Server-loaded first view (untagged series, every library). */
@@ -198,7 +199,7 @@ function GenreSeriesModal({
 
 export function GenresClient({ initialBrowse, libraries }: Props) {
   const { t } = useTranslation();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useGenreActions();
   const [activeGenreModal, setActiveGenreModal] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState("");
 
@@ -220,6 +221,11 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
   const filterRef = useRef<HTMLDivElement>(null);
   const didFetchRef = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
+  /** Latest committed query; a write's late reload must not use a stale closure. */
+  const queryRef = useRef({ selection, libraryFilter, debouncedSearch });
+  useEffect(() => {
+    queryRef.current = { selection, libraryFilter, debouncedSearch };
+  }, [selection, libraryFilter, debouncedSearch]);
 
   const genres = browse.facets.genres;
 
@@ -243,14 +249,24 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
     }
   }, [t]);
 
-  const reload = () => loadSeries(selection, libraryFilter, debouncedSearch);
+  const reload = () => {
+    const query = queryRef.current;
+    return loadSeries(query.selection, query.libraryFilter, query.debouncedSearch);
+  };
 
   /** After a genre write: apply the new selection (the effect reloads) or reload as is. */
-  const refreshWith = async (next: GenreSelection) => {
-    const changed = next.genres.join("\u0000") !== selection.genres.join("\u0000")
-      || next.exclude.join("\u0000") !== selection.exclude.join("\u0000");
-    if (changed) setSelection(next);
-    else await reload();
+  const refreshWith = async (transform: (current: GenreSelection) => GenreSelection) => {
+    const current = queryRef.current.selection;
+    const next = transform(current);
+    const changed =
+      next.genres.join("\u0000") !== current.genres.join("\u0000") ||
+      next.exclude.join("\u0000") !== current.exclude.join("\u0000");
+    if (changed) {
+      queryRef.current = { ...queryRef.current, selection: next };
+      setSelection(next);
+    } else {
+      await reload();
+    }
   };
 
   const loadMore = async () => {
@@ -300,53 +316,36 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
   const handleRename = async (oldName: string, requestedName: string) => {
     const newName = requestedName.trim();
     if (!newName || newName === oldName) return true;
-    setBusy(true);
-    try {
-      await browserApi.genres.rename(oldName, newName);
-      await refreshWith(renameGenreInSelection(selection, oldName, newName));
+    return run({ type: "rename", from: oldName, to: newName }, async () => {
+      await refreshWith(current => renameGenreInSelection(current, oldName, newName));
       toast(t("genres.renameSuccess"));
-      return true;
-    } catch (error) {
-      toast(browserErrorMessage(error, t("common.error")), "error");
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const handleDelete = async (name: string) => {
     if (!confirm(t("genres.deleteConfirm"))) return false;
-    setBusy(true);
-    try {
-      await browserApi.genres.remove(name);
+    return run({ type: "delete", name }, async () => {
       // Always refetch: deleting a genre adds its series back to the untagged
       // view, and removing an active filter changes the list.
-      await refreshWith(removeGenreFromSelection(selection, name));
+      await refreshWith(current => removeGenreFromSelection(current, name));
       toast(t("genres.deleteSuccess"));
-      return true;
-    } catch (error) {
-      toast(browserErrorMessage(error, t("common.error")), "error");
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const handleAssign = async () => {
     const genre = assignInput.trim();
     if (!genre || selected.size === 0) return;
-    setBusy(true);
-    try {
-      await browserApi.genres.assign(genre, Array.from(selected));
-      const count = selected.size;
-      await reload();
+    const seriesIds = Array.from(selected);
+    await run({ type: "assign", genre, seriesIds }, async () => {
       setAssignInput("");
-      toast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
-    } catch (error) {
-      toast(browserErrorMessage(error, t("common.error")), "error");
-    } finally {
-      setBusy(false);
-    }
+      await reload();
+      toast(
+        t("genres.assignSuccess", {
+          count: String(seriesIds.length),
+          plural: seriesIds.length !== 1 ? "s" : "",
+        }),
+      );
+    });
   };
 
   const handleAiSuggest = async () => {
@@ -364,17 +363,11 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
   };
 
   const handleApplyAiTag = async (seriesId: string, genre: string) => {
-    setBusy(true);
-    try {
-      await browserApi.genres.assign(genre, [seriesId]);
+    await run({ type: "applySuggestion", genre, seriesId }, async () => {
       setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
       await reload();
       toast(t("genres.assignSuccess", { count: "1", plural: "" }));
-    } catch (error) {
-      toast(browserErrorMessage(error, t("genres.aiError")), "error");
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const toggleSelect = (id: string) => {
@@ -424,7 +417,7 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
         <GenreSeriesModal
           key={activeGenreModal}
           genre={activeGenreModal}
-          busy={busy}
+          busy={busy(activeGenreModal)}
           onClose={() => setActiveGenreModal(null)}
           onRename={async newName => {
             const renamed = await handleRename(activeGenreModal, newName);
@@ -517,7 +510,7 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
                           <div className="hidden">
                             <button
                               onClick={() => setActiveGenreModal(g.name)}
-                              disabled={busy}
+                              disabled={busy(g.name)}
                               title={t("genres.rename")}
                               className="rounded-md bg-background/90 p-1.5 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                             >
@@ -525,7 +518,7 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
                             </button>
                             <button
                               onClick={() => handleDelete(g.name)}
-                              disabled={busy}
+                              disabled={busy(g.name)}
                               title={t("genres.delete")}
                               className="rounded-md bg-background/90 p-1.5 text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             >
@@ -680,14 +673,14 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
               </datalist>
               <button
                 onClick={handleAssign}
-                disabled={busy || !assignInput.trim()}
+                disabled={busy(assignInput.trim()) || !assignInput.trim()}
                 className="h-9 rounded-xl bg-primary px-4 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0"
               >
                 {t("genres.assignButton", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
               </button>
               <button
                 onClick={handleAiSuggest}
-                disabled={busy || aiLoading}
+                disabled={aiLoading}
                 className="h-9 rounded-xl border border-highlight/40 bg-highlight/10 px-4 text-xs font-medium text-highlight hover:bg-highlight/20 disabled:opacity-50 transition-colors shrink-0"
               >
                 {aiLoading ? t("common.loading") : t("genres.aiSuggestSelected", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
@@ -710,7 +703,7 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
                   <span className="block truncate text-sm font-medium">{suggestion.name}</span>
                   <div className="flex flex-wrap gap-2">
                     {suggestion.tags.map(tag => (
-                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="mt-2 rounded-full border border-highlight/40 px-2.5 py-1 text-xs text-highlight hover:bg-highlight/20 disabled:opacity-50">
+                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy(tag)} className="mt-2 rounded-full border border-highlight/40 px-2.5 py-1 text-xs text-highlight hover:bg-highlight/20 disabled:opacity-50">
                         {tag} <span className="ml-1 opacity-70">+</span>
                       </button>
                     ))}
