@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::super::{
     get_series_by_id, list_all_series, list_favorites, list_series, ongoing_books, ongoing_series,
-    ListAllSeriesQuery, ListSeriesQuery, OngoingQuery,
+    ListAllSeriesQuery, OngoingQuery,
 };
 use crate::auth::AuthUser;
 use crate::state::test_state;
@@ -123,18 +123,10 @@ async fn set_shelved(pool: &PgPool, series_id: Uuid, user_id: Uuid) {
         .unwrap();
 }
 
-fn series_query(page: Option<i64>, limit: Option<i64>) -> Query<ListSeriesQuery> {
-    Query(ListSeriesQuery {
-        q: None,
-        reading_status: None,
-        series_status: None,
-        has_missing: None,
-        metadata_provider: None,
-        has_books: None,
-        shelved: None,
-        page,
-        limit,
-        sort: None,
+fn series_query(page: Option<i64>, limit: Option<i64>) -> Query<ListAllSeriesQuery> {
+    Query(ListAllSeriesQuery {
+        library_id: None,
+        ..all_query(page, limit).0
     })
 }
 
@@ -160,8 +152,8 @@ fn all_query(page: Option<i64>, limit: Option<i64>) -> Query<ListAllSeriesQuery>
     })
 }
 
-fn series_query_q(q: &str) -> Query<ListSeriesQuery> {
-    Query(ListSeriesQuery {
+fn series_query_q(q: &str) -> Query<ListAllSeriesQuery> {
+    Query(ListAllSeriesQuery {
         q: Some(q.to_string()),
         ..series_query(None, None).0
     })
@@ -1078,7 +1070,7 @@ async fn list_series_filters_shelved_for_current_user(pool: PgPool) {
         State(state),
         Some(Extension(AuthUser { user_id: reader })),
         Path(library),
-        Query(ListSeriesQuery {
+        Query(ListAllSeriesQuery {
             shelved: Some("true".to_string()),
             ..series_query(None, None).0
         }),
@@ -1256,4 +1248,182 @@ async fn list_all_series_rejects_an_unknown_sort(pool: PgPool) {
     };
 
     assert_eq!(error.status, StatusCode::BAD_REQUEST);
+}
+
+/// `/libraries/{id}/series` and `/series?library_id=` are the same read: same
+/// filters, same sorts, same projection. Any divergence is a bug in one of the
+/// two entry points, not a feature.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn the_per_library_reader_matches_the_cross_library_reader(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let other_library = create_library(&pool, "other").await;
+    let reader = create_user(&pool, "reader").await;
+
+    // Complete, rated, with missing volumes.
+    let alpha = create_series(&pool, library, "Alpha").await;
+    create_book(&pool, library, alpha, "Alpha Vol 1").await;
+    sqlx::query(
+        "UPDATE series SET description = 'A description', start_year = 1990, \
+         total_volumes = 3, genres = ARRAY['Fantasy'], authors = ARRAY['Akira Toriyama'] \
+         WHERE id = $1",
+    )
+    .bind(alpha)
+    .execute(&pool)
+    .await
+    .unwrap();
+    approve_rated_link(&pool, library, alpha, "anilist", 9.0, 10.0).await;
+
+    // In progress, rated by the reader, no missing volumes.
+    let beta = create_series(&pool, library, "Beta").await;
+    create_book(&pool, library, beta, "Beta Vol 1").await;
+    let beta_vol_2 = create_book_with(&pool, library, beta, "Beta Vol 2", Some(2), "regular").await;
+    sqlx::query("UPDATE series SET start_year = 2000 WHERE id = $1")
+        .bind(beta)
+        .execute(&pool)
+        .await
+        .unwrap();
+    set_read(&pool, beta_vol_2, reader, Utc::now()).await;
+    sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, 4)")
+        .bind(reader)
+        .bind(beta)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Wishlist: nothing owned, two tomes missing.
+    let gamma = create_series(&pool, library, "Gamma").await;
+    sqlx::query("UPDATE series SET total_volumes = 2 WHERE id = $1")
+        .bind(gamma)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Set aside by the reader.
+    let delta = create_series(&pool, library, "Delta").await;
+    create_book(&pool, library, delta, "Delta Vol 1").await;
+    set_shelved(&pool, delta, reader).await;
+
+    // Another library: must never leak into the per-library read.
+    let zeta = create_series(&pool, other_library, "Zeta").await;
+    create_book(&pool, other_library, zeta, "Zeta Vol 1").await;
+
+    /// A named query builder, rebuilt per call so both readers get a fresh DTO.
+    type ReaderCase = (&'static str, fn() -> ListAllSeriesQuery);
+
+    let cases: Vec<ReaderCase> = vec![
+        ("no filter", || all_query(None, None).0),
+        ("title", || ListAllSeriesQuery {
+            sort: Some("title".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("latest", || ListAllSeriesQuery {
+            sort: Some("latest".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("release date", || ListAllSeriesQuery {
+            sort: Some("release_date".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("community score", || ListAllSeriesQuery {
+            sort: Some("community_score".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("reading status", || ListAllSeriesQuery {
+            reading_status: Some("reading".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("has missing", || ListAllSeriesQuery {
+            has_missing: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("gap: no description", || ListAllSeriesQuery {
+            gap: Some("no_description".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("rated only", || ListAllSeriesQuery {
+            rated_only: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("shelved", || ListAllSeriesQuery {
+            shelved: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("genre", || ListAllSeriesQuery {
+            genre: Some("Fantasy".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("volume type", || ListAllSeriesQuery {
+            volume_type: Some("regular".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("no books", || ListAllSeriesQuery {
+            no_books: Some("true".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("name", || ListAllSeriesQuery {
+            q: Some("a".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("linked", || ListAllSeriesQuery {
+            metadata_provider: Some("linked".to_string()),
+            ..all_query(None, None).0
+        }),
+        ("first page of one", || ListAllSeriesQuery {
+            page: Some(1),
+            limit: Some(1),
+            ..all_query(None, None).0
+        }),
+        ("second page of one", || ListAllSeriesQuery {
+            page: Some(2),
+            limit: Some(1),
+            ..all_query(None, None).0
+        }),
+    ];
+
+    for (case, build) in cases {
+        let cross = list_all_series(
+            State(state.clone()),
+            Some(Extension(AuthUser { user_id: reader })),
+            Query(ListAllSeriesQuery {
+                library_id: Some(library),
+                ..build()
+            }),
+        )
+        .await
+        .unwrap();
+        let scoped = list_series(
+            State(state.clone()),
+            Some(Extension(AuthUser { user_id: reader })),
+            Path(library),
+            Query(build()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(cross.0).unwrap(),
+            serde_json::to_value(scoped.0).unwrap(),
+            "the two readers disagree on case: {case}"
+        );
+    }
+
+    // The path is authoritative, and the fixture really does have four series.
+    let Json(page) = list_series(
+        State(state),
+        None,
+        Path(library),
+        Query(ListAllSeriesQuery {
+            library_id: Some(other_library),
+            ..all_query(None, None).0
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        page.total, 4,
+        "the query library_id must not override the path"
+    );
+    assert!(page.items.iter().all(|item| item.series_id != zeta));
 }

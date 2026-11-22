@@ -46,14 +46,17 @@ Chaque ligne du tableau renvoie vers la série ou le livre concerné. Depuis la 
 :::note[Détails techniques]
 **Endpoint** : `GET /metadata/gaps/summary` (scope `read`), avec un paramètre optionnel `library_id`. Il renvoie 16 compteurs agrégés (8 pour les séries, 8 pour les livres).
 
-**Filtres de liste** : les endpoints `GET /series` et `GET /books` acceptent un paramètre `gap=` :
+**Filtres de liste** : les endpoints `GET /series`, `GET /libraries/{library_id}/series` et `GET /books` acceptent un paramètre `gap=` :
 
 | Endpoint | Valeurs de `gap` |
 |----------|------------------|
-| `GET /series` | `no_description`, `no_genre`, `no_authors`, `no_publishers`, `no_year`, `no_cover`, `no_community_score` |
+| `GET /series`, `GET /libraries/{library_id}/series` | `no_description`, `no_genre`, `no_authors`, `no_publishers`, `no_year`, `no_cover`, `no_community_score` |
 | `GET /books` | `no_summary`, `no_isbn`, `no_cover`, `no_author`, `no_publish_date`, `no_language`, `no_volume` |
 
-Une valeur inconnue est ignorée (aucun filtre appliqué). Les compteurs du résumé utilisent **exactement les mêmes prédicats SQL** que les filtres de liste, donc les puces et les tableaux filtrés ne peuvent jamais diverger.
+Le catalogue des séries valide la valeur : une valeur inconnue renvoie `400` avec la liste des
+valeurs acceptées, au lieu d'ignorer le filtre. `GET /books` ignore encore une valeur inconnue. Les
+compteurs du résumé utilisent **exactement les mêmes prédicats SQL** que les filtres de liste, donc
+les puces et les tableaux filtrés ne peuvent jamais diverger.
 
 **Définition des lacunes** :
 

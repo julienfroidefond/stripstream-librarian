@@ -18,10 +18,29 @@ impl SeriesRequest {
         query: ListAllSeriesQuery,
         user_id: Option<Uuid>,
     ) -> Result<Self, ApiError> {
+        let library_id = query.library_id;
+        Self::from_list(query, library_id, user_id)
+    }
+
+    /// Translate the `/libraries/{library_id}/series` query DTO.
+    ///
+    /// The path decides the library; a `library_id` in the query string is
+    /// ignored rather than silently narrowing a different set.
+    pub fn from_list_library(
+        query: ListAllSeriesQuery,
+        library_id: Uuid,
+        user_id: Option<Uuid>,
+    ) -> Result<Self, ApiError> {
+        Self::from_list(query, Some(library_id), user_id)
+    }
+
+    fn from_list(
+        query: ListAllSeriesQuery,
+        library_id: Option<Uuid>,
+        user_id: Option<Uuid>,
+    ) -> Result<Self, ApiError> {
         Ok(Self {
-            scope: SeriesScope::All {
-                library_id: query.library_id,
-            },
+            scope: SeriesScope::All { library_id },
             filters: SeriesFilters {
                 q: query.q,
                 reading_status: parse_reading_statuses(query.reading_status.as_deref())?,

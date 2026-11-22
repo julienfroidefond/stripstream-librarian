@@ -100,6 +100,14 @@ Sur la page **Séries**, plusieurs filtres sont disponibles :
 
 **Wishlist / bibliothèque** — les séries **sans livres** constituent votre wishlist (séries ajoutées depuis la découverte, pas encore téléchargées). Le filtre vous permet de basculer entre wishlist, séries possédées, ou tout afficher.
 
+:::note[Détails techniques]
+`GET /series` et `GET /libraries/{library_id}/series` sont le même lecteur : mêmes filtres (`q`,
+`reading_status`, `series_status`, `has_missing`, `metadata_provider`, `gap`, `author`, `has_books`,
+`no_books`, `shelved`, `genre`, `volume_type`, `rated_only`) et mêmes tris (`title` par défaut,
+`latest`, `release_date`, `community_score`). Une valeur inconnue de tri ou de filtre renvoie `400`
+avec la liste des valeurs acceptées.
+:::
+
 ---
 
 ## Nettoyage automatique

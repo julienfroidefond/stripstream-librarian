@@ -21,7 +21,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `downloads/` | `prowlarr`, `qbittorrent`, `torrent_import`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
 | `jobs/` | `index_jobs.rs` (suivi + SSE), `launcher.rs` (lancement des jobs in-process), `poller.rs`, `helpers.rs` |
 | `reading/` | `progress.rs`, `status_match.rs`, `status_pull.rs`, `status_push.rs` |
-| `series/` | `list`, `create`, `merge`, `update`, `archive`, `favorites`, `ratings`, `recommendations`, `related`, `ongoing`, `helpers` |
+| `series/` | `catalog/` (le seul modèle de lecture de `SeriesItem`, ADR 0030), `list`, `create`, `merge`, `update`, `archive`, `favorites`, `ratings`, `recommendations`, `related`, `ongoing`, `helpers` |
 | `reading_lists/` | Listes de lecture |
 | `users/` | `accounts.rs`, `auth.rs`, `tokens.rs`, `genre_restrictions.rs` |
 | `libraries.rs`, `search.rs`, `settings.rs`, `stats.rs`, `authors.rs`, `genres.rs`, `responses.rs`, `ai_tagging.rs` | Endpoints transverses |
@@ -76,6 +76,16 @@ async fn get_book(...) { }
 ### Fichier courant d'un livre (`books/files.rs`)
 - `current_book_file(pool, &library_root, book_id)` → `BookFile { db_path, local_path, format: BookFormat }` (404 sans fichier). Le format vient toujours de la base, jamais de l'extension.
 - Requêtes ensemblistes : `concat!(…, current_book_file_join!("size_bytes"), …)` (alias `b` pour `books`, `bf` pour le fichier). Ne pas réécrire `ORDER BY updated_at DESC LIMIT 1` sur `book_files`.
+
+### Catalogue des séries (`series/catalog/`, ADR 0030)
+Toute surface qui renvoie un `SeriesItem` (`/series`, `/libraries/{id}/series`, `/favorites`,
+`/series/ongoing`, `/series/{id}/details`) lit via `catalog::query(&PgPool, SeriesRequest)`. Le
+handler traduit son DTO en `SeriesRequest` typé (`from_list_all`, `from_list_library`,
+`for_one`, `for_favorites`, `for_ongoing`) et ne garde que la mise en forme de sa réponse. Une
+`SeriesScope` porte ce qui distingue un lecteur : préambule CTE, corps de `series_counts`, ordre et
+prédicat du comptage des manquants. Ne pas écrire une nouvelle requête qui projette `SeriesItem`
+ailleurs : ajouter une portée ou un constructeur. Une valeur de filtre inconnue doit être un `400`
+listant les valeurs acceptées, jamais un filtre silencieusement ignoré.
 
 ### Réglage `limits` (ADR 0026)
 `stripstream_core::limits` (réexporté par `settings/limits.rs`) est le seul schéma de `app_settings.limits`, partagé avec l'indexer : chaque champ y a un `Spec`
