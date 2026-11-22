@@ -169,7 +169,7 @@ libraries/             # book storage (mounted volume)
 | `apps/api/src/metadata/shared_sync.rs` | Factored sync used by approve + batch + refresh |
 | `apps/api/src/metadata_providers/mod.rs` | `MetadataProvider` trait + `available_providers()` |
 | `apps/indexer/src/scanner.rs` | Phase 1 discovery: fast scan, no archive I/O |
-| `apps/indexer/src/analyzer.rs` | Phase 2 analysis: `analyze_book` + thumbnails via the shared store |
+| `apps/indexer/src/analyzer/mod.rs` | Phase 2 analysis orchestration: claim, batches, progress, cancellation; per-book work in `analyzer/book.rs`, DB translation in `analyzer/record.rs` (ADR 0033) |
 | `crates/thumbnails/src/lib.rs` | `ThumbnailSettings` / `ThumbnailStore` shared by API and indexer |
 | `crates/notifications/src/job.rs` | `notify_job`: the notification policy of a finished job (ADR 0032) |
 | `apps/indexer/src/batch.rs` | Bulk DB ops via `UNNEST` |
@@ -301,6 +301,17 @@ architecture (discovery then analysis) and the `books.analysis_status` lifecycle
 `apps/indexer/AGENTS.md`. Every `analysis_status` transition (claim, release, failure, page counts,
 covers from the indexer or the API, cover reset) goes through `crates/core/src/analysis.rs`;
 never write that column in SQL elsewhere (discovery only inserts `discovered`).
+
+### Book Analysis (`apps/indexer/src/analyzer/`, ADR 0033)
+
+`analyzer/mod.rs` orchestrates the analysis job (claim, batches, progress, cancellation) and owns
+no per-book verdict. `analyzer/book.rs` turns one book into an `Extracted` (sub-phase A) or a
+`Published` (sub-phase B); `analyzer/record.rs` is the only place those verdicts become page
+counts, `analysis_status`, parse errors, cover paths and events. Add a per-book behaviour in
+`book.rs`, write it in `record.rs` through `stripstream_core::analysis`, and keep the two
+sub-phases (`extracting_pages` → `generating_thumbnails`) distinct — their job statuses and
+progress split are user-visible. `converter.rs` has its own lifecycle (CBR → CBZ duplicate merge)
+and is not part of this pipeline.
 
 ---
 

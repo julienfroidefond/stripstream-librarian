@@ -12,7 +12,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `job.rs` | `process_job` → `Result<JobOutcome, RunError>`, `finish` (statut terminal via `classify_job`), `JobCancelled`, `cleanup_stale_jobs`, `sweep_orphaned_jobs` ; claim, échec et annulation viennent directement de `stripstream_jobs` |
 | `lease.rs` | `JobLease` (verrou consultatif de session = job vivant) et `fail_unleased_jobs` (sweep des jobs orphelins) |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
-| `analyzer.rs` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
+| `analyzer/` | Phase 2 analysis : claim `analysis_status`, ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable). `mod.rs` orchestre le job ; `book.rs` porte le pipeline d'un livre (`BookAnalyzer` → `Extracted` / `Published`) ; `record.rs` traduit ces verdicts en `analysis_status`, événements et couvertures (ADR 0033) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) dans `spawn_blocking` ; met à jour `book_files` (chemin, format, taille, mtime, fingerprint) et `books.format` dans une transaction ; reprend un CBZ complet laissé par un crash (`parsers::cbz_is_conversion_of`) ; si un scan a entre-temps indexé ce CBZ comme livre distinct, ce doublon est fusionné dans la même transaction (progression de lecture reportée, la plus récente gagne, puis suppression) |
 | `batch.rs` | `ScanBatch::flush` avec UNNEST (`BookInsert/BookUpdate/BookCorrection/FileInsert/FileUpdate/EventInsert`) ; les transitions d'analyse sont dans `stripstream_core::analysis` |
 | `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
@@ -126,7 +126,7 @@ Pipeline allégé — **zéro ouverture d'archive** :
 
 Fingerprint = SHA256(taille + mtime + filename) pour détecter les changements sans relire le fichier.
 
-### Phase 2 : Analysis (`analyzer.rs`)
+### Phase 2 : Analysis (`analyzer/`)
 
 Traitement progressif en background, piloté par `books.analysis_status` (voir ci-dessous) :
 - Analyse complète : claim `discovered`, `failed` et `analyzing` (reprise après job interrompu).
@@ -148,6 +148,18 @@ Traitement progressif en background, piloté par `books.analysis_status` (voir c
   `original`. Régénération et nettoyage des orphelins passent par `purge` / `purge_orphans` ; si la liste des
   livres ne peut pas être lue, la purge des orphelins est abandonnée (jamais avec un ensemble vide).
 - Config : `ThumbnailSettings::load_or_default` (clé `'thumbnail'`) + `app_settings.limits`
+
+Le module est découpé par responsabilité (ADR 0033) :
+
+| Fichier | Rôle |
+|---|---|
+| `analyzer/mod.rs` | orchestration du job : sélection et claim, lots de 200, concurrence, progression 0-50 / 50-100, annulation, régénération, purge des orphelins |
+| `analyzer/book.rs` | pipeline d'un livre : `BookAnalyzer::extract` rend un `Extracted`, `BookAnalyzer::publish` rend un `Published` — jamais d'écriture SQL |
+| `analyzer/record.rs` | traduction des verdicts en base : `record_extraction`, `record_publication`, textes d'événements, suppression des resource forks |
+
+Règle : un nouveau comportement par livre se décide dans `book.rs`, s'écrit dans `record.rs` (via
+`stripstream_core::analysis`), et ne se réimplémente jamais dans `mod.rs`. Les deux sous-phases
+restent distinctes parce que leurs statuts de job sont visibles : ne pas les fusionner.
 
 #### États d'analyse
 
@@ -201,7 +213,7 @@ state.library_root.resolve(&local_path)?.to_db()
 
 ## Gotchas
 
-- **Thumbnails** : générés **directement par l'indexer** (phase 2, `analyzer.rs`). L'API ne crée que
+- **Thumbnails** : générés **directement par l'indexer** (phase 2, `analyzer/`). L'API ne crée que
   les jobs en DB ; elle peut toutefois rendre et persister une miniature à la demande (`GET
   /books/{id}/thumbnail`), ce qui fait passer un livre `cover_pending` à `complete`.
 - **analysis_status** : source de vérité de l'avancement de l'analyse. Ne pas déduire l'état de
