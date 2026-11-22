@@ -73,8 +73,11 @@ Jobs spéciaux :
   jamais touchés. Au premier déploiement, les jobs d'une ancienne version (sans lease) encore en
   cours sont vus comme orphelins. `cleanup_stale_jobs` marque aussi les `pending` de plus de 30 min
   et purge les jobs terminaux de plus de 90 jours.
-- **Scheduler** : le `NOT EXISTS` anti-doublon porte sur tous les statuts « en vol »
-  (`JobState::IN_FLIGHT` : pending + les trois statuts actifs).
+- **Scheduler** : le `NOT EXISTS` anti-doublon porte sur tous les statuts « en vol » via
+  `JobState::in_flight_strings()` (pending + les trois statuts actifs). Ces requêtes restent
+  ensemblistes parce qu'elles portent les portes de configuration et le stamping `next_*` ; le
+  prédicat ponctuel, lui, vient toujours de `stripstream_jobs::job_in_flight` (`JobScope`,
+  `JobTypes`, ADR 0034). Ne jamais réécrire les quatre statuts en littéral.
 
 ## Pattern batch (batch.rs)
 
@@ -229,6 +232,10 @@ state.library_root.resolve(&local_path)?.to_db()
   déjà appliquées en base (livre/série supprimés via l'API) sont détectées et ignorées
   (`is_already_reconciled`) : pas de rebuild redondant. Seuls les ajouts et les suppressions externes
   (fichier toujours présent dans `book_files`) déclenchent un rebuild.
+  « Un job est en vol » passe par `job_in_flight` : `JobScope::Any` / `JobTypes::Any` pour sauter
+  le poll, `JobScope::Library(id)` / `JobTypes::Any` avant d'insérer. Un échec SQL laisse le poll
+  continuer (`any_job_in_flight`) mais fait considérer la bibliothèque comme occupée
+  (`library_is_busy`) : cette asymétrie est une politique, pas un oubli.
 - **Watcher + scheduler** : tournent en tâches tokio séparées dans `worker.rs`, en parallèle de la
   boucle principale. Le scheduler vérifie 7 familles de jobs toutes les 60 s.
 - **spawn_blocking** : l'ouverture d'archive (`analyze_book`) et la génération de thumbnail sont des
