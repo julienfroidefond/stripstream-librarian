@@ -171,6 +171,7 @@ libraries/             # book storage (mounted volume)
 | `apps/indexer/src/scanner.rs` | Phase 1 discovery: fast scan, no archive I/O |
 | `apps/indexer/src/analyzer.rs` | Phase 2 analysis: `analyze_book` + thumbnails via the shared store |
 | `crates/thumbnails/src/lib.rs` | `ThumbnailSettings` / `ThumbnailStore` shared by API and indexer |
+| `crates/notifications/src/job.rs` | `notify_job`: the notification policy of a finished job (ADR 0032) |
 | `apps/indexer/src/batch.rs` | Bulk DB ops via `UNNEST` |
 | `apps/indexer/src/worker.rs` | Job loop, watcher, scheduler orchestration |
 | `apps/indexer/src/converter.rs` | CBR → CBZ conversion |
@@ -238,6 +239,17 @@ between sources is data: a `StorePolicy` (event name, `EntityKind`, `ReleaseDeta
 built by `prowlarr_detection()`, `prowlarr_rss()` or `ddl_catalogue()`. `new_releases_since`,
 `new_items_since`, `event_counts` and `cleanup` own the run-level reads and cleanup. Never write the
 found event, the `detected_at` stamp or the merge inline in a download flow.
+
+### Job Notifications (`crates/notifications/src/job.rs`, ADR 0032)
+
+`notify_job(pool, JobFinished)` is the only way a finished indexer job becomes Telegram messages.
+`JobFinished` says what happened (`job_id`, `library_id`, `JobOutcome`, duration); the module loads
+the job, its library, its book, `stats_json` and the scan's `book_added` events. `job_events` is the
+DB seam, `events_for` the pure policy (which events, and when the scan summary is worth sending) and
+`deliver` the shared config gate, formatting and send (`notify` uses it too). Never load
+`stats_json` or `book_added` in the indexer to build an event. `stats_json` has one schema:
+`stripstream_jobs::ScanStats` (serde), which `scanner::JobStats` aliases. The worker only calls
+`notify_job`; `cleanup_available_downloads` stays in the indexer.
 
 ### Series Catalogue Read Model (`apps/api/src/series/catalog/`, ADR 0030)
 

@@ -8,7 +8,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 |---------|------|
 | `main.rs` | Point d'entrée, initialisation, lancement du worker, démarrage du serveur HTTP |
 | `lib.rs` | `AppState` (pool) |
-| `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** |
+| `worker.rs` | Boucle principale : claim job → process → cleanup stale ; lance watcher + scheduler ; boucle scheduler toutes les **60 s** ; signale la fin de chaque job à `notifications::notify_job` |
 | `job.rs` | `process_job` → `Result<JobOutcome, RunError>`, `finish` (statut terminal via `classify_job`), `JobCancelled`, `cleanup_stale_jobs`, `sweep_orphaned_jobs` ; claim, échec et annulation viennent directement de `stripstream_jobs` |
 | `lease.rs` | `JobLease` (verrou consultatif de session = job vivant) et `fail_unleased_jobs` (sweep des jobs orphelins) |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), dossiers inchangés via mtime ; `scanner/reconcile.rs` (décision pure sur un fichier connu) et `scanner/writer.rs` (`ScanWriter`, seul écrivain) |
@@ -56,6 +56,11 @@ Jobs spéciaux :
 - **Résultat** : un scan compte une unité par bibliothèque ; une bibliothèque en échec incrémente
   `stats.errors` sans arrêter le job, qui finit `partial` (au moins une réussie) ou `failed` (toutes
   en échec, `error_opt` = « n/m unit(s) failed »). Conversion et miniatures sont une unité unique.
+- **Notifications** : le worker ne construit aucun message. Il appelle
+  `notifications::notify_job(pool, JobFinished { job_id, library_id, outcome, duration_seconds })`
+  ; le module charge le job, sa bibliothèque, son livre, `stats_json` et les `book_added` du scan,
+  puis décide des messages (`events_for`, ADR 0032). `cleanup_available_downloads`, lui, reste dans
+  l'indexer : c'est une écriture du domaine indexation, faite après un scan réussi.
 - **Jobs stale** : chaque job en cours est couvert par un `lease::JobLease` (verrou consultatif
   PostgreSQL de session, pris juste après `claim_next` sur une connexion dédiée, libéré en fin de run
   ou à la fermeture de la session : crash, pod tué, connexion perdue). `job::sweep_orphaned_jobs`
