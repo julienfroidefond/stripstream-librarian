@@ -216,6 +216,25 @@ pas de refresh. `app/components/ReadingListsProvider.tsx` expose `ReadingListsPr
 `ReadingListDetailClient`, `AddToReadingListModal`, `AiReadingListsModal`) ne gardent aucune copie
 des listes en `useState` et n'appellent jamais `browserApi.readingLists` pour écrire.
 
+## Écritures des genres (Genre actions store)
+
+`lib/genres/actions.ts` est la seule porte d'écriture de l'atelier de genres
+([ADR 0035](../../docs/adr/0035-genres-write-store.md)) : renommer, supprimer, assigner un genre
+et appliquer un tag suggéré par l'IA. Le module est pur, sans React :
+
+- le **sujet** d'une écriture est le nom du genre : deux genres différents partent en parallèle,
+  deux écritures sur le même genre sont sérialisées, une écriture identique (ids de séries triés)
+  est coalescée sur la requête en vol ;
+- `busy(genre)` couvre l'écriture **et** la continuation d'après-écriture (`run(write, after)`),
+  pas seulement la requête ;
+- un échec se règle sur `false`, remonte à `onError` (toast) et n'exécute pas la continuation ;
+  le store ne relit jamais la page.
+
+`app/(app)/genres/useGenreActions.ts` expose `busy` / `run` à `GenresClient` via
+`useSyncExternalStore`. Le composant garde l'après-écriture : transition de sélection
+(`lib/genres/browse.ts`), relecture `/genres/browse` (ADR 0028) et toast de succès. Aucun appel
+`browserApi.genres.rename/remove/assign` direct, aucun booléen `busy` global.
+
 ## Passer le DTO, pas ses champs
 
 Un composant reçoit l'objet que la page possède déjà ([ADR 0029](../../docs/adr/0029-pass-dtos-not-fields.md)),
