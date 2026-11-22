@@ -221,6 +221,8 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
   const filterRef = useRef<HTMLDivElement>(null);
   const didFetchRef = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
+  /** Selection already loaded by a write's aftermath; the effect below skips it. */
+  const writtenSelectionRef = useRef<GenreSelection | null>(null);
   /** Latest committed query; a write's late reload must not use a stale closure. */
   const queryRef = useRef({ selection, libraryFilter, debouncedSearch });
   useEffect(() => {
@@ -254,7 +256,11 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
     return loadSeries(query.selection, query.libraryFilter, query.debouncedSearch);
   };
 
-  /** After a genre write: apply the new selection (the effect reloads) or reload as is. */
+  /**
+   * After a genre write: apply the new selection and reload it here, or reload
+   * the current selection as is. Either path is awaited by the write's
+   * aftermath, so `busy` covers the reconciliation too.
+   */
   const refreshWith = async (transform: (current: GenreSelection) => GenreSelection) => {
     const current = queryRef.current.selection;
     const next = transform(current);
@@ -263,7 +269,11 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
       next.exclude.join("\u0000") !== current.exclude.join("\u0000");
     if (changed) {
       queryRef.current = { ...queryRef.current, selection: next };
+      // The selection effect would load this selection too; mark it so the
+      // write's await covers the request instead of racing a second one.
+      writtenSelectionRef.current = next;
       setSelection(next);
+      await loadSeries(next, queryRef.current.libraryFilter, queryRef.current.debouncedSearch);
     } else {
       await reload();
     }
@@ -291,6 +301,10 @@ export function GenresClient({ initialBrowse, libraries }: Props) {
   useEffect(() => {
     if (!didFetchRef.current) {
       didFetchRef.current = true;
+      return;
+    }
+    if (writtenSelectionRef.current === selection) {
+      writtenSelectionRef.current = null;
       return;
     }
     void loadSeries(selection, libraryFilter, debouncedSearch);
