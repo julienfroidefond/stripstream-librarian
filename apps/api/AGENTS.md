@@ -87,6 +87,16 @@ prédicat du comptage des manquants. Ne pas écrire une nouvelle requête qui pr
 ailleurs : ajouter une portée ou un constructeur. Une valeur de filtre inconnue doit être un `400`
 listant les valeurs acceptées, jamais un filtre silencieusement ignoré.
 
+### Ingestion des releases (`downloads/ingest.rs`, ADR 0031)
+Toute release écrite dans `available_downloads` passe par `store_releases` : liste noire,
+`detected_at`, événement « trouvé », fusion `availability::merge_releases`. Les trois flux
+(détection, RSS, DDL) gardent leur collecte ; leurs différences sont des données —
+`StorePolicy::prowlarr_detection/prowlarr_rss/ddl_catalogue` (événement, entité, détail, politique
+d'échec de fusion) et `Cleanup` (`Keep`, `DeleteEmpty`, `NormalizeThenDeleteEmpty`). Les bilans de
+job passent par `new_releases_since`, `new_items_since` et `event_counts`. Ne pas réécrire
+l'horodatage, l'événement ou la fusion dans un flux, et ne pas réimplémenter le comptage des
+nouveaux : `merge_releases` conserve `detected_at`, c'est ce qui rend la requête fiable.
+
 ### Réglage `limits` (ADR 0026)
 `stripstream_core::limits` (réexporté par `settings/limits.rs`) est le seul schéma de `app_settings.limits`, partagé avec l'indexer : chaque champ y a un `Spec`
 (défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture

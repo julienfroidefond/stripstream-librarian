@@ -228,6 +228,17 @@ The counter decrements by the number of **distinct volumes actually removed** fr
 release — never by the number of imported files or release matches. Do not re-implement the
 release JSON filtering in the API or the indexer.
 
+### Release Ingestion (`apps/api/src/downloads/ingest.rs`, ADR 0031)
+
+`store_releases` is the only way a release enters `available_downloads`: it drops blacklisted
+titles, stamps `detected_at`, emits the source's "found" event, merges through
+`availability::merge_releases` and returns `Stored::Nothing` / `Found(n)`. Detection, the RSS poll
+and the DDL search keep their own collection loops but share this publication step. What differs
+between sources is data: a `StorePolicy` (event name, `EntityKind`, `ReleaseDetail`, `MergeFailure`)
+built by `prowlarr_detection()`, `prowlarr_rss()` or `ddl_catalogue()`. `new_releases_since`,
+`new_items_since`, `event_counts` and `cleanup` own the run-level reads and cleanup. Never write the
+found event, the `detected_at` stamp or the merge inline in a download flow.
+
 ### Series Catalogue Read Model (`apps/api/src/series/catalog/`, ADR 0030)
 
 `catalog::query(pool, SeriesRequest)` is the only read that projects a `SeriesItem`: `/series`,
