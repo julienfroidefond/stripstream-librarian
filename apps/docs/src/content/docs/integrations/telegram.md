@@ -34,7 +34,8 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 Les notifications de succès les plus importantes incluent aussi un résumé utile, pas seulement un compteur :
 
 - **Scan avec nouveaux fichiers** : une notification par série, avec l'affiche quand elle est disponible, puis la liste des nouveaux livres ajoutés dans cette série
-- **Scan terminé sans nouveaux livres** : bibliothèque, type de scan, durée et compteurs
+- **Scan terminé sans nouveaux livres** : bibliothèque, type de scan, durée et compteurs ; les erreurs et les avertissements n'apparaissent que s'il y en a
+- **Avertissements** : les avertissements d'un scan (parcours partiel, chemins ignorés, sous-arbres sautés) apparaissent dans le résumé ; à eux seuls, ils n'envoient pas de notification
 - **Pull AniList terminé** : nombre de séries liées, puis la liste des séries effectivement liées pendant ce job
 - **Push AniList terminé** : nombre de séries poussées, puis la liste des séries effectivement envoyées à AniList
 - **Synchronisation Telegram Monitor** : uniquement les nouveaux fichiers rapprochés d'une série de votre bibliothèque ; aucune notification n'est envoyée si aucun fichier ne correspond. Une synchronisation partielle (une source illisible) est signalée une seule fois avec le nombre de sources en erreur
@@ -56,6 +57,8 @@ Si une image ne s'affiche pas dans une notification, c'est que la miniature n'é
 Les notifications avec image utilisent l'API Telegram `sendPhoto` (upload multipart) avec fallback automatique vers `sendMessage` (texte seul) en cas d'échec.
 
 Les notifications sont envoyées en mode fire-and-forget : un échec d'envoi ne bloque jamais l'opération principale qui l'a déclenchée.
+
+La politique des messages d'un job d'indexation vit dans `notifications::notify_job` (ADR 0032) : l'indexer signale seulement la fin du job, le module charge ses statistiques et ses livres découverts, décide des messages puis les envoie dans l'ordre, avec une seule lecture de la configuration. Le schéma `stats_json` est unique (`stripstream_jobs::ScanStats`).
 
 Codes d'événements internes : `scan_completed`, `scan_failed`, `scan_cancelled`, `thumbnail_completed`, `thumbnail_failed`, `conversion_completed`, `conversion_failed`, `metadata_approved`, `metadata_batch_completed`, `metadata_batch_failed`, `metadata_refresh_completed`, `metadata_refresh_failed`, `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed`, `download_detection_completed`, `download_detection_partial`, `download_detection_failed`.
 :::
