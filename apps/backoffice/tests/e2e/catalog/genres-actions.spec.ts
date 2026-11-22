@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 import { escapeRegExp, uniqueName } from "../helpers";
 import { getSeriesMetadata } from "../support/api";
@@ -11,8 +11,23 @@ import {
 /**
  * Atelier de genres : tagging individuel, sélection globale, suggestions IA
  * mockées, filtre par bibliothèque et bascule Include/Exclude avec remise à
- * zéro. Les fixtures sont des séries vides de `e2e-metadata`.
+ * zéro, puis renommage et suppression d'un genre depuis la modale.
+ *
+ * La page ne lit plus `/genres/untagged-series` ni `/series?genre=` : toute la
+ * liste et ses facettes viennent de `GET /genres/browse` (ADR 0028). Les
+ * attentes de réponse portent donc sur ce contrat.
  */
+
+function browseResponse(
+  page: Page,
+  predicate: (params: URLSearchParams) => boolean,
+): Promise<unknown> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.endsWith("/api/genres/browse")) return false;
+    return predicate(url.searchParams);
+  });
+}
 
 test.describe("genres — actions de l'atelier", () => {
   test("tag individuel, tout sélectionner/désélectionner et suggestion IA", async ({ page }) => {
@@ -30,10 +45,10 @@ test.describe("genres — actions de l'atelier", () => {
       await page.getByRole("button", { name: /^Series without genre/ }).click();
       await page.getByRole("button", { name: "Table", exact: true }).click();
 
-      const searchResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/genres/untagged-series")) return false;
-        return new URL(response.url()).searchParams.get("q") === token;
-      });
+      const searchResponse = browseResponse(
+        page,
+        params => params.get("untagged") === "true" && params.get("q") === token,
+      );
       await page.getByPlaceholder("Search…").last().fill(token);
       await searchResponse;
 
@@ -49,13 +64,20 @@ test.describe("genres — actions de l'atelier", () => {
       await page.getByRole("button", { name: "Deselect all", exact: true }).click();
       await expect(page.getByText("2 sél.", { exact: true })).toHaveCount(0);
 
-      // Tagging individuel d'une seule série.
+      // Tagging individuel d'une seule série. L'écriture se termine par la
+      // relecture de `/genres/browse`, qui vide la sélection : attendre cette
+      // réponse avant de cocher la série suivante.
       await firstCheckbox.check();
       await page.getByPlaceholder("Genre name to assign...").fill(manualGenre);
+      const assignReload = browseResponse(
+        page,
+        params => params.get("untagged") === "true" && params.get("q") === token,
+      );
       await page.getByRole("button", { name: "Assign to 1 series", exact: true }).click();
       await expect
         .poll(async () => (await getSeriesMetadata(first.seriesId)).genres)
         .toContain(manualGenre);
+      await assignReload;
 
       // Suggestion IA mockée : aucun appel au provider réel.
       await secondCheckbox.check();
@@ -68,6 +90,10 @@ test.describe("genres — actions de l'atelier", () => {
       });
       await page.getByRole("button", { name: "Suggest for 1 series", exact: true }).click();
       await expect(page.getByText("Tag suggestions", { exact: true })).toBeVisible();
+      const applyReload = browseResponse(
+        page,
+        params => params.get("untagged") === "true" && params.get("q") === token,
+      );
       await page
         .getByRole("button", { name: new RegExp(`^${escapeRegExp(aiGenre)}`) })
         .click();
@@ -75,6 +101,7 @@ test.describe("genres — actions de l'atelier", () => {
         .poll(async () => (await getSeriesMetadata(second.seriesId)).genres)
         .toContain(aiGenre);
       await expect(page.getByText("Tag suggestions", { exact: true })).toHaveCount(0);
+      await applyReload;
     } finally {
       await removeMetadataSeries(first);
       await removeMetadataSeries(second);
@@ -93,18 +120,20 @@ test.describe("genres — actions de l'atelier", () => {
       await workspace.getByRole("button", { name: "Table", exact: true }).click();
 
       // Filtre par bibliothèque : la requête de genres est bien scopée.
-      const libraryResponse = page.waitForResponse(
-        (response) =>
-          response.url().includes("/api/genres?library_id=") && response.request().method() === "GET"
+      const libraryResponse = browseResponse(page, params =>
+        params.getAll("library_ids").includes(series.libraryId),
       );
       await page.getByRole("button", { name: METADATA_LIBRARY_NAME, exact: true }).click();
       await libraryResponse;
 
+      const allResponse = browseResponse(
+        page,
+        params => !params.has("untagged") && !params.has("genres") && !params.has("exclude"),
+      );
       await workspace.getByRole("button", { name: /^All\s*\(/ }).click();
-      const searchResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/series?")) return false;
-        return new URL(response.url()).searchParams.get("q") === series.name;
-      });
+      await allResponse;
+
+      const searchResponse = browseResponse(page, params => params.get("q") === series.name);
       await workspace.getByPlaceholder("Search…").fill(series.name);
       await searchResponse;
       await expect(workspace.getByText(series.name, { exact: true })).toBeVisible();
@@ -115,33 +144,73 @@ test.describe("genres — actions de l'atelier", () => {
       await expect(genrePill).toBeVisible();
 
       // Include : la série taguée reste visible.
-      const includeResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/series?")) return false;
-        return new URL(response.url()).searchParams.get("genre") === genre;
-      });
+      const includeResponse = browseResponse(page, params =>
+        params.getAll("genres").includes(genre),
+      );
       await genrePill.click();
       await includeResponse;
       await expect(workspace.getByText(series.name, { exact: true })).toBeVisible();
 
       // Exclude : la même série disparaît.
       await workspace.getByRole("button", { name: "Exclude", exact: true }).click();
-      const excludeResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/series?")) return false;
-        return new URL(response.url()).searchParams.get("genre") === genre;
-      });
+      const excludeResponse = browseResponse(page, params =>
+        params.getAll("exclude").includes(genre),
+      );
       await genrePill.click();
       await excludeResponse;
       await expect(workspace.getByText(series.name, { exact: true })).toHaveCount(0);
 
       // « All » réinitialise les deux modes et réaffiche la série.
-      const resetResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/series?")) return false;
-        const url = new URL(response.url());
-        return !url.searchParams.has("genre") && !url.searchParams.has("q");
+      const resetResponse = browseResponse(page, params => {
+        return (
+          !params.has("genres") &&
+          !params.has("exclude") &&
+          !params.has("q") &&
+          !params.has("untagged")
+        );
       });
       await workspace.getByRole("button", { name: /^All\s*\(/ }).click();
       await resetResponse;
       await expect(workspace.getByText(series.name, { exact: true })).toBeVisible();
+    } finally {
+      await removeMetadataSeries(series);
+    }
+  });
+
+  test("renomme puis supprime un genre depuis la modale", async ({ page }) => {
+    test.setTimeout(90_000);
+
+    const genre = uniqueName("E2E Rename Genre");
+    const renamed = uniqueName("E2E Renamed Genre");
+    const series = await createMetadataSeries({ genres: [genre] });
+
+    try {
+      await page.goto("/genres");
+      await page.getByRole("button", { name: genre, exact: true }).click();
+      const modal = page.getByTestId("modal-panel");
+      await expect(modal).toBeVisible();
+
+      // Renommage : l'écriture puis la relecture de la page restent dans la
+      // fenêtre busy, donc la modale n'est réarmée qu'une fois la liste à jour.
+      await modal.getByTitle("Rename").click();
+      await modal.getByRole("textbox").fill(renamed);
+      const renameReload = browseResponse(page, params => params.get("untagged") === "true");
+      await modal.getByTitle("Save").click();
+      await expect
+        .poll(async () => (await getSeriesMetadata(series.seriesId)).genres)
+        .toContain(renamed);
+      await renameReload;
+      await expect(modal).toContainText(renamed);
+
+      // Suppression : la modale se ferme après la relecture.
+      page.once("dialog", dialog => dialog.accept());
+      const deleteReload = browseResponse(page, params => params.get("untagged") === "true");
+      await modal.getByTitle("Delete").click();
+      await expect
+        .poll(async () => (await getSeriesMetadata(series.seriesId)).genres)
+        .not.toContain(renamed);
+      await deleteReload;
+      await expect(page.getByTestId("modal-panel")).toHaveCount(0);
     } finally {
       await removeMetadataSeries(series);
     }
