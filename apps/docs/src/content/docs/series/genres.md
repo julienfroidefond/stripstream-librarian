@@ -12,7 +12,7 @@ Les genres sont des tags libres attachés aux séries. Ils peuvent être issus d
 La page **Genres** du backoffice centralise toute la gestion :
 
 - **Bibliothèque de genres** — chaque genre affiche une couverture représentative et son nombre de séries dans les bibliothèques sélectionnées. Cliquez dessus pour consulter les séries concernées.
-- **Renommage et suppression** — ces actions se trouvent dans la modale du genre. Le renommage s'applique à toutes les séries ; la suppression retire uniquement ce genre des séries.
+- **Renommage et suppression** — ces actions se trouvent dans la modale du genre. Le renommage s'applique à toutes les séries ; la suppression retire uniquement ce genre des séries. Chaque action est indépendante : traiter un genre ne bloque pas les autres, ni les suggestions IA.
 - **Espace d'attribution** — filtrez les séries par bibliothèque, genres inclus (une série doit les porter **tous**) ou exclus, ou affichez uniquement les séries sans genre. Les compteurs des genres ne dépendent que des bibliothèques sélectionnées. La liste est paginée : **Charger plus** affiche la suite, sans limite de 500 séries. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné. La recherche porte sur le nom de série, sans distinction de casse ni d'accents (par ex. `asterix` retrouve `Astérix`), et s'applique à l'ensemble du périmètre filtré — pas seulement aux séries affichées.
 - **Sélection et affichage** — choisissez plusieurs séries dans la vue cartes ou tableau, puis affectez-leur un genre existant en une opération.
 
