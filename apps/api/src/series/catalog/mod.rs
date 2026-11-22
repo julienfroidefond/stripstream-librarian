@@ -156,6 +156,10 @@ pub enum SeriesSort {
     Latest,
     ReleaseDate,
     CommunityScore,
+    /// Most recent reading activity first. Owned by [`SeriesScope::Ongoing`],
+    /// which always uses it; it is not accepted from a query string because a
+    /// series without progress has no activity to sort on.
+    Activity,
 }
 
 impl SeriesSort {
@@ -172,11 +176,21 @@ impl SeriesSort {
     }
 }
 
-/// Where the rows come from. Variants are added as readers are ported.
+/// Where the rows come from.
+///
+/// A scope owns both the series set and its order; filters only narrow it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeriesScope {
     /// Every series, optionally restricted to one library.
     All { library_id: Option<Uuid> },
+    /// One series, by id: the detail endpoint. Zero rows means "not found",
+    /// which also covers a series hidden by a genre restriction.
+    One { series_id: Uuid },
+    /// The series the reader favourited, most recently favourited first.
+    Favorites,
+    /// The series the reader started but did not finish, most recent reading
+    /// activity first. Series the reader set aside are excluded.
+    Ongoing,
 }
 
 /// Filters applied to the scoped series set.
@@ -206,6 +220,9 @@ pub struct SeriesRequest {
     /// 1-indexed.
     pub page: i64,
     pub limit: i64,
+    /// Whether the scope is paged. Whole-set readers (favourites) return every
+    /// match in the scope's own order and ignore `page`/`limit`.
+    pub paginated: bool,
     /// The reader whose progress, shelf and rating are projected.
     pub user_id: Option<Uuid>,
 }

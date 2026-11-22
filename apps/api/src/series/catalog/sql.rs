@@ -62,21 +62,148 @@ impl Binder {
     }
 }
 
+/// What a scope contributes to the query: its staging CTEs, its
+/// `series_counts` body and its order.
+struct ScopeSql {
+    /// CTEs emitted before `series_counts`, already comma-terminated.
+    preamble: String,
+    /// The body of `series_counts AS (...)`.
+    series_counts: String,
+    /// The scope's order key selected from `sc` in `filtered`, with its leading
+    /// comma; empty when the key is already projected.
+    order_key: String,
+    /// `ORDER BY` body, evaluated against `filtered`'s columns.
+    order: String,
+}
+
+/// The cross-library list and the detail: both read the whole `series` table.
+fn all_scope(where_clause: &str, user: &str, sort: SeriesSort) -> ScopeSql {
+    let tome_counts = helpers::series_tome_counts("brp");
+    ScopeSql {
+        preamble: String::new(),
+        series_counts: format!(
+            r#"
+            SELECT
+                s.id as series_id,
+                s.name,
+                s.library_id,
+                {tome_counts},
+                COALESCE(MAX(b.created_at), s.created_at) as latest_created_at
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND {user}::uuid IS NOT NULL AND brp.user_id = {user}
+            {where_clause}
+            GROUP BY s.id, s.name, s.library_id, s.created_at"#
+        ),
+        order_key: ", sc.latest_created_at".to_string(),
+        order: sort_order(sort),
+    }
+}
+
+/// The reader's favourites: the scope owns the ordering, by favourite time.
+fn favorites_scope(user: &str) -> ScopeSql {
+    let tome_counts = helpers::series_tome_counts("brp");
+    ScopeSql {
+        preamble: String::new(),
+        series_counts: format!(
+            r#"
+            SELECT
+                s.id AS series_id,
+                s.name,
+                s.library_id,
+                {tome_counts},
+                f.created_at AS favorited_at
+            FROM series_user_favorites f
+            JOIN series s ON s.id = f.series_id
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = {user}
+            WHERE f.user_id = {user}
+            GROUP BY f.created_at, s.id, s.name, s.library_id"#
+        ),
+        order_key: ", sc.favorited_at".to_string(),
+        order: "favorited_at DESC".to_string(),
+    }
+}
+
+/// The reader's ongoing series, built from their progress so the scan starts
+/// on a small set instead of every book.
+fn ongoing_scope(user: &str) -> ScopeSql {
+    let tome_counts = helpers::series_tome_counts("up");
+    ScopeSql {
+        preamble: format!(
+            r#"
+    user_progress AS (
+        SELECT book_id, status, last_read_at
+        FROM book_reading_progress
+        WHERE user_id = {user}
+    ),
+    active_series AS (
+        SELECT DISTINCT b.series_id
+        FROM user_progress up
+        JOIN books b ON b.id = up.book_id
+        WHERE up.status IN ('read', 'reading')
+    ),"#
+        ),
+        series_counts: format!(
+            r#"
+            SELECT * FROM (
+                SELECT
+                    s.id AS series_id,
+                    s.name,
+                    s.library_id,
+                    {tome_counts}
+                FROM active_series a_s
+                JOIN series s ON s.id = a_s.series_id
+                JOIN books b ON b.series_id = s.id
+                LEFT JOIN user_progress up ON up.book_id = b.id
+                GROUP BY s.id, s.name, s.library_id
+            ) stats
+            WHERE stats.books_started_count > 0
+              AND stats.books_read_count < stats.book_count"#
+        ),
+        order_key: String::new(),
+        order: "last_read_at DESC NULLS LAST".to_string(),
+    }
+}
+
+/// The order of a `title`/`latest`/`release_date`/`community_score` page.
+fn sort_order(sort: SeriesSort) -> String {
+    const TITLE: &str = "lower(name) ASC";
+    match sort {
+        SeriesSort::Title => TITLE.to_string(),
+        // For series without books, latest_created_at falls back to
+        // s.created_at (see the series_counts CTE), so the value is never NULL.
+        SeriesSort::Latest => "latest_created_at DESC".to_string(),
+        SeriesSort::ReleaseDate => format!("start_year DESC NULLS LAST, {TITLE}"),
+        SeriesSort::CommunityScore => {
+            format!("community_score DESC NULLS LAST, {TITLE}")
+        }
+        // Owned by the ongoing scope, which never calls this.
+        SeriesSort::Activity => TITLE.to_string(),
+    }
+}
+
 /// Build the catalogue SQL and its bound parameters.
 pub(super) fn build(request: &SeriesRequest) -> (String, Vec<Param>) {
     let mut binder = Binder::default();
     let filters = &request.filters;
 
-    // The scope comes first so the missing-count CTE can reuse `$1` as its
-    // library predicate.
-    let (scope_where, library_param) = match &request.scope {
+    // The scope comes first so the missing-count CTE can reuse its predicate.
+    let (scope_where, scope_predicate) = match &request.scope {
         SeriesScope::All { library_id } => match library_id {
             Some(library_id) => {
                 let param = binder.push(Param::Uuid(*library_id));
-                (format!("WHERE s.library_id = {param}"), Some(param))
+                let predicate = format!("s.library_id = {param}");
+                (format!("WHERE {predicate}"), Some(predicate))
             }
-            None => ("WHERE TRUE".to_string(), None),
+            None => (String::new(), None),
         },
+        SeriesScope::One { series_id } => {
+            let param = binder.push(Param::Uuid(*series_id));
+            let predicate = format!("s.id = {param}");
+            (format!("WHERE {predicate}"), Some(predicate))
+        }
+        SeriesScope::Favorites | SeriesScope::Ongoing => (String::new(), None),
     };
 
     // Always bound (NULL when no reader is selected) so the CTE can test it
@@ -182,38 +309,54 @@ pub(super) fn build(request: &SeriesRequest) -> (String, Vec<Param>) {
         "AND ({user_param}::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_genre_restrictions ugr WHERE ugr.user_id = {user_param} AND ugr.genre = ANY(s.genres)))"
     );
 
-    let title_order_clause = "lower(name) ASC";
-    let order_clause = match request.sort {
-        SeriesSort::Title => title_order_clause.to_string(),
-        // For series without books, latest_created_at falls back to
-        // s.created_at (see the series_counts CTE), so the value is never NULL.
-        SeriesSort::Latest => "latest_created_at DESC".to_string(),
-        SeriesSort::ReleaseDate => format!("start_year DESC NULLS LAST, {title_order_clause}"),
-        SeriesSort::CommunityScore => {
-            format!("community_score DESC NULLS LAST, {title_order_clause}")
-        }
+    // A scope that borrows a set (favourites, ongoing) expresses its
+    // missing-count predicate as a membership test on that set.
+    let missing_predicate = match request.scope {
+        SeriesScope::Favorites => Some(format!(
+            "s.id IN (SELECT series_id FROM series_user_favorites WHERE user_id = {user_param})"
+        )),
+        SeriesScope::Ongoing => Some("s.id IN (SELECT series_id FROM active_series)".to_string()),
+        SeriesScope::All { .. } | SeriesScope::One { .. } => scope_predicate,
     };
 
-    let missing_cte = helpers::build_missing_counts_cte(library_param.as_deref());
-    let tome_counts = helpers::series_tome_counts("brp");
+    let scope = match request.scope {
+        SeriesScope::All { .. } | SeriesScope::One { .. } => {
+            all_scope(&scope_where, &user_param, request.sort)
+        }
+        SeriesScope::Favorites => favorites_scope(&user_param),
+        SeriesScope::Ongoing => ongoing_scope(&user_param),
+    };
 
-    let limit_param = binder.push(Param::Int(request.limit));
-    let offset_param = binder.push(Param::Int((request.page - 1) * request.limit));
+    // Ongoing never shows a series the reader set aside.
+    let scope_cond = match request.scope {
+        SeriesScope::Ongoing => "AND sus.created_at IS NULL",
+        _ => "",
+    };
+
+    let missing_cte =
+        crate::coverage::missing_counts_cte_for_predicate(missing_predicate.as_deref());
+
+    let paging = if request.paginated {
+        let limit_param = binder.push(Param::Int(request.limit));
+        let offset_param = binder.push(Param::Int((request.page - 1) * request.limit));
+        format!("LIMIT {limit_param} OFFSET {offset_param}")
+    } else {
+        String::new()
+    };
+
+    let ScopeSql {
+        preamble,
+        series_counts,
+        order_key,
+        order: order_clause,
+    } = scope;
 
     let sql = format!(
         r#"
-        WITH series_counts AS (
-            SELECT
-                s.id as series_id,
-                s.name,
-                s.library_id,
-                {tome_counts},
-                COALESCE(MAX(b.created_at), s.created_at) as latest_created_at
-            FROM series s
-            LEFT JOIN books b ON b.series_id = s.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND {user_param}::uuid IS NOT NULL AND brp.user_id = {user_param}
-            {scope_where}
-            GROUP BY s.id, s.name, s.library_id, s.created_at
+        WITH
+        {preamble}
+        series_counts AS (
+            {series_counts}
         ),
         {missing_cte},
         filtered AS (
@@ -232,8 +375,7 @@ pub(super) fn build(request: &SeriesRequest) -> (String, Vec<Param>) {
                 s.cover_url, s.start_year, s.genres, s.authors, s.description,
                 cs.community_score,
                 sur.rating as user_rating,
-                sus.created_at as shelved_at,
-                sc.latest_created_at
+                sus.created_at as shelved_at{order_key}
             FROM series_counts sc
             LEFT JOIN series s ON s.id = sc.series_id
             LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
@@ -261,12 +403,13 @@ pub(super) fn build(request: &SeriesRequest) -> (String, Vec<Param>) {
               {volume_type_cond}
               {rating_cond}
               {genre_restriction_cond}
+              {scope_cond}
         ),
         total AS (SELECT COUNT(*) AS total_count FROM filtered),
         page AS (
             SELECT * FROM filtered
             ORDER BY {order_clause}
-            LIMIT {limit_param} OFFSET {offset_param}
+            {paging}
         )
         SELECT p.*, fb.id as first_book_id, fb.updated_at as first_book_updated_at, t.total_count
         FROM total t
@@ -317,6 +460,7 @@ mod tests {
             sort: SeriesSort::CommunityScore,
             page: 2,
             limit: 10,
+            paginated: true,
             user_id: Some(Uuid::new_v4()),
         };
 
@@ -333,12 +477,69 @@ mod tests {
             sort: SeriesSort::Title,
             page: 1,
             limit: 50,
+            paginated: true,
             user_id: None,
         };
 
         let (sql, params) = build(&request);
 
         assert_bound(&sql, params.len());
+    }
+
+    #[test]
+    fn the_detail_scope_reads_one_series_and_its_missing_count() {
+        let series_id = Uuid::new_v4();
+        let request = SeriesRequest::for_one(series_id, None);
+
+        let (sql, params) = build(&request);
+
+        assert_bound(&sql, params.len());
+        assert!(sql.contains("s.id = $1"), "the scope filters on the series");
+        assert!(
+            sql.contains("WHERE s.id = $1"),
+            "the missing-count CTE is scoped to the same series"
+        );
+        assert!(sql.contains("LIMIT $3 OFFSET $4"), "one row at most");
+    }
+
+    #[test]
+    fn the_favorites_scope_is_ordered_by_favorite_time_and_unpaged() {
+        let request = SeriesRequest::for_favorites(Uuid::new_v4());
+
+        let (sql, params) = build(&request);
+
+        assert_bound(&sql, params.len());
+        assert!(sql.contains("favorited_at DESC"));
+        assert!(
+            sql.contains(
+                "s.id IN (SELECT series_id FROM series_user_favorites WHERE user_id = $1)"
+            ),
+            "the missing-count CTE borrows the favourite set"
+        );
+        assert!(
+            !sql.contains("OFFSET"),
+            "favourites return the whole set: no page window"
+        );
+        assert!(
+            !sql.contains("latest_created_at"),
+            "the All-scope order key must not leak into another scope"
+        );
+    }
+
+    #[test]
+    fn the_ongoing_scope_orders_by_activity_and_hides_shelved_series() {
+        let request = SeriesRequest::for_ongoing(Uuid::new_v4(), 10);
+
+        let (sql, params) = build(&request);
+
+        assert_bound(&sql, params.len());
+        assert!(sql.contains("ORDER BY last_read_at DESC NULLS LAST"));
+        assert!(sql.contains("sus.created_at IS NULL"));
+        assert!(
+            sql.contains("s.id IN (SELECT series_id FROM active_series)"),
+            "the missing-count CTE borrows the active set"
+        );
+        assert!(!sql.contains("latest_created_at"));
     }
 
     fn assert_bound(sql: &str, param_count: usize) {

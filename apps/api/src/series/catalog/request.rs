@@ -48,8 +48,51 @@ impl SeriesRequest {
             sort: SeriesSort::parse(query.sort.as_deref())?,
             page: query.page.unwrap_or(1).max(1),
             limit: query.limit.unwrap_or(50).clamp(1, 200),
+            paginated: true,
             user_id,
         })
+    }
+
+    /// The series detail: one row, or none when the id is unknown or hidden by
+    /// a genre restriction.
+    pub fn for_one(series_id: Uuid, user_id: Option<Uuid>) -> Self {
+        Self {
+            scope: SeriesScope::One { series_id },
+            filters: SeriesFilters::default(),
+            sort: SeriesSort::Title,
+            page: 1,
+            limit: 1,
+            paginated: true,
+            user_id,
+        }
+    }
+
+    /// The reader's favourites, all of them: the scope orders them by the time
+    /// they were favourited.
+    pub fn for_favorites(user_id: Uuid) -> Self {
+        Self {
+            scope: SeriesScope::Favorites,
+            filters: SeriesFilters::default(),
+            sort: SeriesSort::Title,
+            page: 1,
+            limit: 0,
+            paginated: false,
+            user_id: Some(user_id),
+        }
+    }
+
+    /// The reader's ongoing series, most recent activity first. The sort is
+    /// owned by the scope: a caller cannot ask for another one.
+    pub fn for_ongoing(user_id: Uuid, limit: i64) -> Self {
+        Self {
+            scope: SeriesScope::Ongoing,
+            filters: SeriesFilters::default(),
+            sort: SeriesSort::Activity,
+            page: 1,
+            limit,
+            paginated: true,
+            user_id: Some(user_id),
+        }
     }
 }
 

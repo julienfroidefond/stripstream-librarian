@@ -3,12 +3,12 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
-use super::{helpers, SeriesItem};
+use super::catalog::{self, SeriesRequest};
+use super::{require_user, SeriesItem};
 
 #[utoipa::path(
     get,
@@ -21,56 +21,8 @@ pub async fn list_favorites(
     State(state): State<AppState>,
     user: Option<Extension<AuthUser>>,
 ) -> Result<Json<Vec<SeriesItem>>, ApiError> {
-    let user_id = user.map(|u| u.0.user_id).ok_or_else(|| {
-        ApiError::bad_request("no user selected — choose a user in the backoffice settings")
-    })?;
-
-    let tome_counts = helpers::series_tome_counts("brp");
-
-    let sql = format!(
-        r#"
-        SELECT s.name, s.id AS series_id, s.library_id, s.status AS series_status,
-               {tome_counts},
-               fb.id AS first_book_id, fb.updated_at AS first_book_updated_at,
-               ml.provider AS metadata_provider, asl.anilist_id, asl.anilist_url,
-               s.cover_url, s.start_year, COALESCE(s.genres, ARRAY[]::text[]) AS genres,
-               COALESCE(s.authors, ARRAY[]::text[]) AS authors, s.description,
-               sur.rating AS user_rating, sus.created_at AS shelved_at
-        FROM series_user_favorites f
-        JOIN series s ON s.id = f.series_id
-        LEFT JOIN books b ON b.series_id = s.id
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $1
-        LEFT JOIN LATERAL (
-            SELECT id, updated_at FROM books
-            WHERE series_id = s.id
-            ORDER BY CASE WHEN volume_type = 'regular' THEN 0 ELSE 1 END, volume NULLS LAST, title
-            LIMIT 1
-        ) fb ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT provider FROM external_metadata_links
-            WHERE series_id = s.id AND status = 'approved'
-            ORDER BY is_primary DESC, created_at DESC LIMIT 1
-        ) ml ON TRUE
-        LEFT JOIN anilist_series_links asl ON asl.series_id = s.id AND asl.provider = 'anilist'
-        LEFT JOIN series_user_ratings sur ON sur.series_id = s.id AND sur.user_id = $1
-        LEFT JOIN series_user_shelves sus ON sus.series_id = s.id AND sus.user_id = $1
-        WHERE f.user_id = $1
-          AND NOT EXISTS (
-              SELECT 1 FROM user_genre_restrictions ugr
-              WHERE ugr.user_id = $1 AND ugr.genre = ANY(s.genres)
-          )
-        GROUP BY f.created_at, s.id, s.name, s.library_id, s.status, fb.id, fb.updated_at,
-                 ml.provider, asl.anilist_id, asl.anilist_url, sur.rating, sus.created_at
-        ORDER BY f.created_at DESC
-        "#,
-    );
-
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(user_id)
-        .fetch_all(&state.pool)
-        .await?;
-
-    Ok(Json(rows.iter().map(series_item_from_row).collect()))
+    let request = SeriesRequest::for_favorites(require_user(user)?);
+    Ok(Json(catalog::query(&state.pool, request).await?.items))
 }
 
 #[utoipa::path(
@@ -141,32 +93,6 @@ pub async fn is_favorite(
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(exists))
-}
-
-fn series_item_from_row(row: &sqlx::postgres::PgRow) -> SeriesItem {
-    SeriesItem {
-        name: row.get("name"),
-        series_id: row.get("series_id"),
-        book_count: row.get("book_count"),
-        books_read_count: row.get("books_read_count"),
-        last_read_at: row.get("last_read_at"),
-        first_book_id: row.get("first_book_id"),
-        first_book_updated_at: row.get("first_book_updated_at"),
-        library_id: row.get("library_id"),
-        series_status: row.get("series_status"),
-        missing_count: None,
-        metadata_provider: row.get("metadata_provider"),
-        anilist_id: row.get("anilist_id"),
-        anilist_url: row.get("anilist_url"),
-        cover_url: row.get("cover_url"),
-        start_year: row.get("start_year"),
-        genres: row.get("genres"),
-        authors: row.get("authors"),
-        description: row.get("description"),
-        user_rating: row.get("user_rating"),
-        community_score: None,
-        shelved_at: row.get("shelved_at"),
-    }
 }
 
 #[cfg(test)]
@@ -418,6 +344,63 @@ mod tests {
         assert_eq!(ratings.provider_ratings[0].provider, "bdphile");
         assert_eq!(ratings.provider_ratings[0].rating_count, Some(1234));
         assert!((ratings.provider_ratings[0].rating - 4.2).abs() < 1e-6);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn list_favorites_requires_a_user(pool: sqlx::PgPool) {
+        let state = test_state(pool);
+
+        let Err(error) = list_favorites(State(state), None).await else {
+            panic!("favourites must reject a request without a user");
+        };
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert!(error.message.contains("no user selected"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn favorites_are_ordered_by_most_recent_first(pool: sqlx::PgPool) {
+        let state = test_state(pool.clone());
+        let user_id = create_user(&pool, "favorite-order").await;
+        let older_id = create_series(&pool, "Older favorite", &[]).await;
+        let newer_id = create_series(&pool, "Newer favorite", &[]).await;
+        let now = Utc::now();
+
+        for series_id in [older_id, newer_id] {
+            add_favorite(State(state.clone()), auth_user(user_id), Path(series_id))
+                .await
+                .unwrap();
+        }
+        // The scope owns the order: a favourite added later must come first,
+        // whatever the title order says.
+        sqlx::query(
+            "UPDATE series_user_favorites SET created_at = $3 \
+             WHERE user_id = $1 AND series_id = $2",
+        )
+        .bind(user_id)
+        .bind(older_id)
+        .bind(now - chrono::Duration::days(1))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE series_user_favorites SET created_at = $3 \
+             WHERE user_id = $1 AND series_id = $2",
+        )
+        .bind(user_id)
+        .bind(newer_id)
+        .bind(now)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let Json(favorites) = list_favorites(State(state), auth_user(user_id))
+            .await
+            .unwrap();
+
+        assert_eq!(favorites.len(), 2);
+        assert_eq!(favorites[0].series_id, newer_id);
+        assert_eq!(favorites[1].series_id, older_id);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

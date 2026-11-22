@@ -201,9 +201,3 @@ pub(crate) async fn create_series_with_metadata(
         metadata_link_id,
     })
 }
-
-/// Build the `missing_counts` CTE SQL fragment.
-/// `library_id_param`: e.g. "$1" to filter by library, or None for all libraries.
-pub(crate) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String {
-    crate::coverage::missing_counts_cte_for_library(library_id_param)
-}
