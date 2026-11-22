@@ -23,12 +23,13 @@ use sqlx::PgPool;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use stripstream_core::availability;
-
 use crate::downloads::blacklist;
-use crate::downloads::detection::AvailableReleaseDto;
+use crate::downloads::ingest::{
+    cleanup, store_releases, Cleanup, ReleaseTarget, StorePolicy, Stored,
+};
 use crate::downloads::missing;
-use crate::jobs::helpers::{insert_event, is_job_cancelled, set_total_files, update_progress};
+use crate::downloads::release::AvailableReleaseDto;
+use crate::jobs::helpers::{is_job_cancelled, set_total_files, update_progress};
 use crate::jobs::lifecycle::{cancel_job, finish_job, JobStatus};
 
 use super::service;
@@ -198,43 +199,34 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             continue;
         }
 
-        matched_series += 1;
-        matched_files += releases.len() as i64;
-
-        let detected_at = chrono::Utc::now().to_rfc3339();
-        for release in &mut releases {
-            release.detected_at = Some(detected_at.clone());
-        }
-
-        insert_event(
+        let release_target = ReleaseTarget {
+            library_id: target.library_id,
+            series_id: target.series_id,
+            series_name: &target.series_name,
+        };
+        match store_releases(
             pool,
             job_id,
-            "ddl_downloads_found",
-            "info",
-            Some("series"),
-            Some(&target.series_name),
-            None,
-            Some(json!({
-                "release_count": releases.len(),
-                "missing_count": missing.missing_count,
-            })),
-        )
-        .await;
-
-        availability::merge_releases(
-            pool,
-            target.library_id,
-            target.series_id,
+            &release_target,
             missing.missing_count,
-            &releases,
+            releases,
+            &blacklisted_titles,
+            &StorePolicy::ddl_catalogue(),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        {
+            Stored::Found(count) => {
+                matched_series += 1;
+                matched_files += count as i64;
+            }
+            Stored::Nothing => {}
+        }
     }
 
     // Rows emptied by the refresh step (a series that used to have DDL offers and
     // now matches nothing) are dropped, like the detection cleanup does.
-    let _ = availability::delete_empty(pool, None).await;
+    cleanup(pool, Cleanup::DeleteEmpty(None)).await;
 
     let status = ddl_search_status(attempted, errors);
     failed_providers.sort();
