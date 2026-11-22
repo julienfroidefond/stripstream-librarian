@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::lifecycle::{
     begin_analysis, begin_extraction, begin_thumbnail_generation, begin_thumbnail_job, cancel_job,
     classify_job, complete_job, fail_job, finish_job, job_in_flight, start_job, JobScope,
-    JobStatus,
+    JobStatus, JobTypes,
 };
 use crate::tests::support::{create_library, insert_job, job_row, status};
 use crate::JobState;
@@ -23,10 +23,12 @@ fn classification_maps_outcomes_to_terminal_statuses() {
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn job_in_flight_covers_all_active_states(pool: PgPool) {
     let library = create_library(&pool, "lib").await;
-    assert!(job_in_flight(&pool, JobScope::Any, &["scan"])
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        job_in_flight(&pool, JobScope::Any, JobTypes::Only(&["scan"]))
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     for state in [
         JobState::Pending,
@@ -36,7 +38,7 @@ async fn job_in_flight_covers_all_active_states(pool: PgPool) {
     ] {
         let job = insert_job(&pool, Some(library), "scan", state.as_str()).await;
         assert_eq!(
-            job_in_flight(&pool, JobScope::Any, &["scan"])
+            job_in_flight(&pool, JobScope::Any, JobTypes::Only(&["scan"]))
                 .await
                 .unwrap(),
             Some(job)
@@ -56,7 +58,7 @@ async fn job_in_flight_covers_all_active_states(pool: PgPool) {
     ] {
         let job = insert_job(&pool, Some(library), "scan", state.as_str()).await;
         assert!(
-            job_in_flight(&pool, JobScope::Any, &["scan"])
+            job_in_flight(&pool, JobScope::Any, JobTypes::Only(&["scan"]))
                 .await
                 .unwrap()
                 .is_none(),
@@ -80,19 +82,25 @@ async fn job_in_flight_respects_scope(pool: PgPool) {
     let global_job = insert_job(&pool, None, "prowlarr_rss", "running").await;
 
     assert_eq!(
-        job_in_flight(&pool, JobScope::Library(first), &["metadata_batch"])
-            .await
-            .unwrap(),
+        job_in_flight(
+            &pool,
+            JobScope::Library(first),
+            JobTypes::Only(&["metadata_batch"]),
+        )
+        .await
+        .unwrap(),
         Some(library_job)
     );
-    assert!(
-        job_in_flight(&pool, JobScope::Library(second), &["metadata_batch"])
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(job_in_flight(
+        &pool,
+        JobScope::Library(second),
+        JobTypes::Only(&["metadata_batch"]),
+    )
+    .await
+    .unwrap()
+    .is_none());
     assert_eq!(
-        job_in_flight(&pool, JobScope::Global, &["prowlarr_rss"])
+        job_in_flight(&pool, JobScope::Global, JobTypes::Only(&["prowlarr_rss"]))
             .await
             .unwrap(),
         Some(global_job)
@@ -351,15 +359,52 @@ async fn job_in_flight_accepts_owned_ids_only(pool: PgPool) {
     let library = create_library(&pool, "lib").await;
     let job = insert_job(&pool, Some(library), "scan", "running").await;
     assert_eq!(
-        job_in_flight(&pool, JobScope::Library(library), &["scan"])
+        job_in_flight(&pool, JobScope::Library(library), JobTypes::Only(&["scan"]))
+            .await
+            .unwrap(),
+        Some(job)
+    );
+    assert!(job_in_flight(
+        &pool,
+        JobScope::Library(Uuid::new_v4()),
+        JobTypes::Only(&["scan"])
+    )
+    .await
+    .unwrap()
+    .is_none());
+}
+
+/// `JobTypes::Any` is the rule "anything in flight blocks me": the type filter
+/// disappears, while the scope still applies.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn job_in_flight_any_type_matches_every_type(pool: PgPool) {
+    let library = create_library(&pool, "lib").await;
+    let job = insert_job(&pool, Some(library), "metadata_batch", "extracting_pages").await;
+
+    assert_eq!(
+        job_in_flight(&pool, JobScope::Any, JobTypes::Any)
+            .await
+            .unwrap(),
+        Some(job)
+    );
+    assert_eq!(
+        job_in_flight(&pool, JobScope::Library(library), JobTypes::Any)
             .await
             .unwrap(),
         Some(job)
     );
     assert!(
-        job_in_flight(&pool, JobScope::Library(Uuid::new_v4()), &["scan"])
+        job_in_flight(&pool, JobScope::Global, JobTypes::Any)
             .await
             .unwrap()
-            .is_none()
+            .is_none(),
+        "the global scope still ignores library jobs"
+    );
+    assert!(
+        job_in_flight(&pool, JobScope::Any, JobTypes::Only(&["scan"]))
+            .await
+            .unwrap()
+            .is_none(),
+        "Only still narrows the lookup to the listed types"
     );
 }

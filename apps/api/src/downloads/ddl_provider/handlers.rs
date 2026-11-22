@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::jobs::lifecycle::{job_in_flight, JobScope};
+use crate::jobs::lifecycle::{job_in_flight, JobScope, JobTypes};
 use crate::state::AppState;
 
 use super::service;
@@ -256,7 +256,13 @@ pub async fn start_ddl_search_all(State(state): State<AppState>) -> Result<Json<
         return Err(ApiError::bad_request("no DDL provider is enabled"));
     }
 
-    if let Some(existing) = job_in_flight(&state.pool, JobScope::Global, &["ddl_search"]).await? {
+    if let Some(existing) = job_in_flight(
+        &state.pool,
+        JobScope::Global,
+        JobTypes::Only(&["ddl_search"]),
+    )
+    .await?
+    {
         return Ok(Json(json!({
             "id": existing.to_string(),
             "status": "already_running",

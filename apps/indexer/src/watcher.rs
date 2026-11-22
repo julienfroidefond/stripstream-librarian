@@ -7,16 +7,37 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+use stripstream_jobs::{job_in_flight, JobScope, JobTypes};
+
 use crate::AppState;
 
-/// Check if any indexing job is currently active.
-async fn has_active_jobs(pool: &sqlx::PgPool) -> bool {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails'))",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false)
+/// True when any job holds a slot, whatever its type or library.
+///
+/// A failed lookup lets the poll proceed: the snapshot comparison is cheap and
+/// the next poll retries. The watcher never aborts on a transient database
+/// error just because it could not ask the queue.
+async fn any_job_in_flight(pool: &sqlx::PgPool) -> bool {
+    match job_in_flight(pool, JobScope::Any, JobTypes::Any).await {
+        Ok(job) => job.is_some(),
+        Err(error) => {
+            warn!("[WATCHER] Cannot check in-flight jobs, polling anyway: {error}");
+            false
+        }
+    }
+}
+
+/// True when `library_id` already has a job in flight, whatever its type.
+///
+/// A failed lookup is treated as busy so the watcher never queues a duplicate
+/// rebuild; the next poll retries.
+async fn library_is_busy(pool: &sqlx::PgPool, library_id: Uuid) -> bool {
+    match job_in_flight(pool, JobScope::Library(library_id), JobTypes::Any).await {
+        Ok(job) => job.is_some(),
+        Err(error) => {
+            warn!("[WATCHER] Cannot check jobs for library {library_id}, assuming busy: {error}");
+            true
+        }
+    }
 }
 
 /// Snapshot: set of book file paths found in a library.
@@ -104,7 +125,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
         tokio::time::sleep(poll_interval).await;
 
         // Skip if any job is active — avoid competing for file descriptors
-        if has_active_jobs(&pool).await {
+        if any_job_in_flight(&pool).await {
             debug!(target: "watcher", "[WATCHER] Skipping poll — job active");
             continue;
         }
@@ -171,7 +192,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
             }
 
             // Re-check between libraries in case a job was created
-            if has_active_jobs(&pool).await {
+            if any_job_in_flight(&pool).await {
                 debug!(target: "watcher", "[WATCHER] Job became active during poll, stopping");
                 break;
             }
@@ -222,15 +243,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
                     );
                 } else {
                     // Check if a job already exists for this library
-                    let job_exists = sqlx::query_scalar::<_, bool>(
-                        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id = $1 AND status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails'))",
-                    )
-                    .bind(library_id)
-                    .fetch_one(&pool)
-                    .await
-                    .unwrap_or(true);
-
-                    if !job_exists {
+                    if !library_is_busy(&pool, *library_id).await {
                         let job_id = Uuid::new_v4();
                         match sqlx::query(
                             "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'rebuild', 'pending')",
@@ -300,6 +313,68 @@ mod tests {
 
     fn snapshot(paths: &[&str]) -> LibrarySnapshot {
         paths.iter().map(|p| p.to_string()).collect()
+    }
+
+    async fn insert_watch_job(
+        pool: &sqlx::PgPool,
+        library_id: Uuid,
+        job_type: &str,
+        status: &str,
+    ) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(library_id)
+        .bind(job_type)
+        .bind(status)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn terminate(pool: &sqlx::PgPool, job_id: Uuid) {
+        sqlx::query("UPDATE index_jobs SET status = 'success' WHERE id = $1")
+            .bind(job_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// The watcher's "any job holds a slot" rule comes from the shared predicate
+    /// and covers every in-flight phase, whatever the job type or library.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn any_job_in_flight_covers_every_phase(pool: sqlx::PgPool) {
+        assert!(!any_job_in_flight(&pool).await);
+
+        let lib_id = create_test_library(&pool, "watch_any").await;
+        for status in [
+            "pending",
+            "running",
+            "extracting_pages",
+            "generating_thumbnails",
+        ] {
+            let job_id = insert_watch_job(&pool, lib_id, "metadata_batch", status).await;
+            assert!(any_job_in_flight(&pool).await, "status={status}");
+            terminate(&pool, job_id).await;
+        }
+        assert!(!any_job_in_flight(&pool).await);
+    }
+
+    /// A busy library blocks only its own rebuild, and a terminal job frees it.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn library_is_busy_is_scoped_and_ignores_terminal_jobs(pool: sqlx::PgPool) {
+        let first = create_test_library(&pool, "watch_busy").await;
+        let second = create_test_library(&pool, "watch_idle").await;
+        let job_id = insert_watch_job(&pool, first, "metadata_batch", "running").await;
+
+        assert!(library_is_busy(&pool, first).await);
+        assert!(!library_is_busy(&pool, second).await);
+
+        terminate(&pool, job_id).await;
+        assert!(!library_is_busy(&pool, first).await);
     }
 
     fn library_root() -> stripstream_core::paths::LibraryRoot {
