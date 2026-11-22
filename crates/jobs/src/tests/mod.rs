@@ -41,4 +41,11 @@ fn job_state_classification_is_consistent() {
     assert_eq!(as_strings(&JobState::ACTIVE).len(), 3);
     assert_eq!(as_strings(&JobState::IN_FLIGHT).len(), 4);
     assert_eq!(as_strings(&JobState::TERMINAL).len(), 4);
+    assert_eq!(
+        JobState::in_flight_strings(),
+        as_strings(&JobState::IN_FLIGHT)
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    );
 }

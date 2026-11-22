@@ -84,6 +84,12 @@ impl JobState {
                 | JobState::GeneratingThumbnails
         )
     }
+
+    /// SQL-friendly strings for every in-flight status, for the set-based
+    /// queries that must also filter on their target (the scheduler).
+    pub fn in_flight_strings() -> Vec<&'static str> {
+        Self::IN_FLIGHT.iter().map(|state| state.as_str()).collect()
+    }
 }
 
 impl std::fmt::Display for JobState {

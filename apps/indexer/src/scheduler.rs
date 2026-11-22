@@ -6,16 +6,6 @@ use uuid::Uuid;
 
 use stripstream_jobs::JobState;
 
-/// Every status in which a job still holds its slot (queued or running, including the
-/// `extracting_pages` / `generating_thumbnails` phases): a scheduled job must not be
-/// duplicated while one of these exists.
-fn in_flight_statuses() -> Vec<&'static str> {
-    JobState::IN_FLIGHT
-        .iter()
-        .map(|state| state.as_str())
-        .collect()
-}
-
 pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
     let libraries = sqlx::query(
         r#"
@@ -33,7 +23,7 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
           )
         "#,
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_all(pool)
     .await?;
 
@@ -104,7 +94,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
           )
         "#,
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_all(pool)
     .await?;
 
@@ -176,7 +166,7 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
           )
         "#,
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_all(pool)
     .await?;
 
@@ -248,7 +238,7 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     let already_active: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status = ANY($1))"
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -309,7 +299,7 @@ pub async fn check_and_schedule_telegram_sync_incremental(pool: &PgPool) -> Resu
     let already_active: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'telegram_sync_incremental' AND status = ANY($1))"
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -369,7 +359,7 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
           )
         "#,
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_all(pool)
     .await?;
 
@@ -451,7 +441,7 @@ pub async fn check_and_schedule_ddl_search(pool: &PgPool) -> Result<()> {
     let already_active: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'ddl_search' AND status = ANY($1))"
     )
-    .bind(in_flight_statuses())
+    .bind(JobState::in_flight_strings())
     .fetch_one(pool)
     .await?;
 

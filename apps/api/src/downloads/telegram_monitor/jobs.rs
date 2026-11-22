@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::jobs::helpers::{set_total_files, update_progress};
 use crate::jobs::lifecycle::{
-    classify_job, complete_job, finish_job, job_in_flight, JobScope, JobStatus,
+    classify_job, complete_job, finish_job, job_in_flight, JobScope, JobStatus, JobTypes,
 };
 use crate::state::AppState;
 
@@ -75,7 +75,7 @@ pub async fn start_incremental_sync_job(
     let existing = job_in_flight(
         &state.pool,
         JobScope::Global,
-        &["telegram_sync_incremental"],
+        JobTypes::Only(&["telegram_sync_incremental"]),
     )
     .await?;
 
@@ -114,7 +114,12 @@ pub async fn start_sync_job(
         return Err(ApiError::bad_request("Telegram not authorized"));
     }
 
-    let existing = job_in_flight(&state.pool, JobScope::Global, &["telegram_sync"]).await?;
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Global,
+        JobTypes::Only(&["telegram_sync"]),
+    )
+    .await?;
 
     if let Some(existing_id) = existing {
         return Ok(Json(serde_json::json!({

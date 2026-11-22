@@ -20,7 +20,7 @@ use tracing::warn;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use stripstream_jobs::lifecycle::{job_in_flight, JobScope};
+use stripstream_jobs::lifecycle::{job_in_flight, JobScope, JobTypes};
 
 use crate::error::ApiError;
 use crate::jobs::lifecycle::fail_job;
@@ -210,7 +210,8 @@ async fn insert_unless_in_flight(
         Some(id) => JobScope::Library(id),
         None => JobScope::Global,
     };
-    let existing = job_in_flight(&mut *tx, scope, &spec.blocking_types()).await?;
+    let blocking_types = spec.blocking_types();
+    let existing = job_in_flight(&mut *tx, scope, JobTypes::Only(&blocking_types)).await?;
     if let Some(existing) = existing {
         return Ok(Launch::AlreadyRunning(existing));
     }

@@ -63,35 +63,56 @@ impl JobScope {
     }
 }
 
-/// Return the id of a job of one of `types` that is already in flight
-/// (`pending`, `running`, `extracting_pages` or `generating_thumbnails`)
-/// within `scope`, if any.
+/// Which job types count when looking for an in-flight job.
+#[derive(Debug, Clone, Copy)]
+pub enum JobTypes<'a> {
+    /// Any job type in flight counts.
+    Any,
+    /// Only the listed job types count.
+    Only(&'a [&'a str]),
+}
+
+impl JobTypes<'_> {
+    /// SQL array of the blocked types; empty means "any type".
+    fn as_sql(self) -> Vec<String> {
+        match self {
+            JobTypes::Any => Vec::new(),
+            JobTypes::Only(types) => types.iter().map(|t| (*t).to_string()).collect(),
+        }
+    }
+}
+
+/// Return the id of a job in flight (`pending`, `running`, `extracting_pages`
+/// or `generating_thumbnails`) within `scope` and `types`, if any.
+///
+/// `JobTypes::Any` is the rule "anything in flight blocks me" (the file
+/// watcher); `JobTypes::Only` scopes the lookup to the types that conflict
+/// (the API launcher and the manual triggers).
 ///
 /// Takes any executor, so a caller can run the check inside its own
 /// transaction (e.g. the API launcher's check-then-insert under a lock).
 pub async fn job_in_flight<'e, E>(
     executor: E,
     scope: JobScope,
-    types: &[&str],
+    types: JobTypes<'_>,
 ) -> Result<Option<Uuid>, sqlx::Error>
 where
     E: sqlx::PgExecutor<'e>,
 {
     let (scope, library_id) = scope.parts();
-    let types: Vec<String> = types.iter().map(|t| (*t).to_string()).collect();
 
     sqlx::query_scalar(
         "SELECT id FROM index_jobs \
          WHERE ($1 = 'any' \
                 OR ($1 = 'library' AND library_id = $2) \
                 OR ($1 = 'global' AND library_id IS NULL)) \
-           AND type = ANY($3) \
+           AND (cardinality($3::text[]) = 0 OR type = ANY($3)) \
            AND status = ANY($4) \
          LIMIT 1",
     )
     .bind(scope)
     .bind(library_id)
-    .bind(types)
+    .bind(types.as_sql())
     .bind(as_strings(&JobState::IN_FLIGHT))
     .fetch_optional(executor)
     .await
