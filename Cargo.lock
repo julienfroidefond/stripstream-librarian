@@ -2037,6 +2037,7 @@ dependencies = [
  "stripstream-jobs",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3377,6 +3378,7 @@ name = "stripstream-jobs"
 version = "3.32.174"
 dependencies = [
  "chrono",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

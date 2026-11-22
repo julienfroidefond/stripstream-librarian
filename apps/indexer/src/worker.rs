@@ -82,217 +82,6 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         }
     });
 
-    struct JobInfo {
-        job_type: String,
-        library_name: Option<String>,
-        book_title: Option<String>,
-        thumbnail_path: Option<String>,
-    }
-
-    struct ScanSeriesNotification {
-        series_name: String,
-        thumbnail_path: Option<String>,
-        book_titles: Vec<String>,
-    }
-
-    async fn load_job_info(pool: &sqlx::PgPool, job_id: Uuid, library_id: Option<Uuid>) -> JobInfo {
-        let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
-            .bind(job_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-        let (job_type, book_id): (String, Option<Uuid>) = match row {
-            Some(r) => (r.get("type"), r.get("book_id")),
-            None => ("unknown".to_string(), None),
-        };
-
-        let library_name: Option<String> = if let Some(lib_id) = library_id {
-            sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(lib_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-        } else {
-            None
-        };
-
-        let (book_title, thumbnail_path): (Option<String>, Option<String>) =
-            if let Some(bid) = book_id {
-                let row = sqlx::query("SELECT title, thumbnail_path FROM books WHERE id = $1")
-                    .bind(bid)
-                    .fetch_optional(pool)
-                    .await
-                    .ok()
-                    .flatten();
-                match row {
-                    Some(r) => (r.get("title"), r.get("thumbnail_path")),
-                    None => (None, None),
-                }
-            } else {
-                (None, None)
-            };
-
-        JobInfo {
-            job_type,
-            library_name,
-            book_title,
-            thumbnail_path,
-        }
-    }
-
-    async fn load_scan_stats(pool: &sqlx::PgPool, job_id: Uuid) -> notifications::ScanStats {
-        let row = sqlx::query("SELECT stats_json FROM index_jobs WHERE id = $1")
-            .bind(job_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-        if let Some(row) = row {
-            if let Ok(val) = row.try_get::<serde_json::Value, _>("stats_json") {
-                return notifications::ScanStats {
-                    scanned_files: val
-                        .get("scanned_files")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize,
-                    indexed_files: val
-                        .get("indexed_files")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize,
-                    removed_files: val
-                        .get("removed_files")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize,
-                    new_series: val.get("new_series").and_then(|v| v.as_u64()).unwrap_or(0)
-                        as usize,
-                    errors: val.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                    new_series_names: val
-                        .get("new_series_names")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default(),
-                    new_book_titles: val
-                        .get("new_book_titles")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default(),
-                };
-            }
-        }
-
-        notifications::ScanStats {
-            scanned_files: 0,
-            indexed_files: 0,
-            removed_files: 0,
-            new_series: 0,
-            errors: 0,
-            new_series_names: Vec::new(),
-            new_book_titles: Vec::new(),
-        }
-    }
-
-    async fn load_scan_series_notifications(
-        pool: &sqlx::PgPool,
-        job_id: Uuid,
-    ) -> Vec<ScanSeriesNotification> {
-        let rows = sqlx::query(
-            "SELECT \
-                COALESCE(s.name, 'Non classé') AS series_name, \
-                b.title, \
-                b.thumbnail_path \
-             FROM index_job_events e \
-             JOIN books b ON b.id = e.entity_id \
-             LEFT JOIN series s ON s.id = b.series_id \
-             WHERE e.job_id = $1 AND e.event_type = 'book_added' \
-             ORDER BY COALESCE(s.name, 'Non classé'), b.volume NULLS LAST, b.title",
-        )
-        .bind(job_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-
-        let mut groups: HashMap<String, ScanSeriesNotification> = HashMap::new();
-        for row in rows {
-            let series_name: String = row.get("series_name");
-            let title: String = row.get("title");
-            let thumbnail_path: Option<String> = row.get("thumbnail_path");
-
-            let group =
-                groups
-                    .entry(series_name.clone())
-                    .or_insert_with(|| ScanSeriesNotification {
-                        series_name,
-                        thumbnail_path: None,
-                        book_titles: Vec::new(),
-                    });
-
-            if group.thumbnail_path.is_none() && thumbnail_path.is_some() {
-                group.thumbnail_path = thumbnail_path;
-            }
-            group.book_titles.push(title);
-        }
-
-        let mut grouped: Vec<_> = groups.into_values().collect();
-        grouped.sort_by(|a, b| a.series_name.cmp(&b.series_name));
-        grouped
-    }
-
-    fn build_completed_event(
-        job_type: &str,
-        library_name: Option<String>,
-        book_title: Option<String>,
-        thumbnail_path: Option<String>,
-        stats: notifications::ScanStats,
-        duration_seconds: u64,
-    ) -> notifications::NotificationEvent {
-        match notifications::job_type_category(job_type) {
-            JobCategory::Thumbnail => notifications::NotificationEvent::ThumbnailCompleted {
-                job_type: job_type.to_string(),
-                library_name,
-                duration_seconds,
-            },
-            JobCategory::Conversion => notifications::NotificationEvent::ConversionCompleted {
-                library_name,
-                book_title,
-                thumbnail_path,
-            },
-            _ => notifications::NotificationEvent::ScanCompleted {
-                job_type: job_type.to_string(),
-                library_name,
-                stats,
-                duration_seconds,
-            },
-        }
-    }
-
-    fn build_failed_event(
-        job_type: &str,
-        library_name: Option<String>,
-        book_title: Option<String>,
-        thumbnail_path: Option<String>,
-        error: String,
-    ) -> notifications::NotificationEvent {
-        match notifications::job_type_category(job_type) {
-            JobCategory::Thumbnail => notifications::NotificationEvent::ThumbnailFailed {
-                job_type: job_type.to_string(),
-                library_name,
-                error,
-            },
-            JobCategory::Conversion => notifications::NotificationEvent::ConversionFailed {
-                library_name,
-                book_title,
-                thumbnail_path,
-                error,
-            },
-            _ => notifications::NotificationEvent::ScanFailed {
-                job_type: job_type.to_string(),
-                library_name,
-                error,
-            },
-        }
-    }
-
     loop {
         match claim_next(&state.pool, JobOwner::Indexer).await {
             Ok(Some(claimed)) => {
@@ -311,17 +100,16 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                     }
                 };
                 let started_at = std::time::Instant::now();
-                let info = load_job_info(&state.pool, job_id, library_id).await;
 
                 let failure = match job::process_job(&state, job_id, library_id).await {
                     Err(RunError::Cancelled) => {
                         info!("[INDEXER] Job {} was cancelled by user", job_id);
-                        notifications::notify(
-                            state.pool.clone(),
-                            notifications::NotificationEvent::ScanCancelled {
-                                job_type: info.job_type.clone(),
-                                library_name: info.library_name.clone(),
-                            },
+                        notify_job(
+                            &state,
+                            job_id,
+                            library_id,
+                            notifications::JobOutcome::Cancelled,
+                            started_at,
                         );
                         continue;
                     }
@@ -352,66 +140,29 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                 job_lease.release().await;
 
                 if let Some(error) = failure {
-                    notifications::notify(
-                        state.pool.clone(),
-                        build_failed_event(
-                            &info.job_type,
-                            info.library_name.clone(),
-                            info.book_title.clone(),
-                            info.thumbnail_path.clone(),
-                            error,
-                        ),
+                    notify_job(
+                        &state,
+                        job_id,
+                        library_id,
+                        notifications::JobOutcome::Failed { error },
+                        started_at,
                     );
                 } else {
-                    let stats = load_scan_stats(&state.pool, job_id).await;
-                    if notifications::job_type_category(&info.job_type) == JobCategory::Scan {
-                        if let Some(lid) = library_id {
-                            cleanup_available_downloads(&state.pool, lid).await;
+                    // A scan makes the volumes it just imported disappear from the
+                    // download offers; the availability module owns the pruning.
+                    if notifications::job_type_category(&claimed.job_type) == JobCategory::Scan {
+                        if let Some(library_id) = library_id {
+                            cleanup_available_downloads(&state.pool, library_id).await;
                         }
-                        let series_notifications =
-                            load_scan_series_notifications(&state.pool, job_id).await;
-
-                        for series in &series_notifications {
-                            notifications::notify(
-                                state.pool.clone(),
-                                notifications::NotificationEvent::ScanSeriesDiscovered {
-                                    library_name: info.library_name.clone(),
-                                    series_name: series.series_name.clone(),
-                                    thumbnail_path: series.thumbnail_path.clone(),
-                                    book_titles: series.book_titles.clone(),
-                                },
-                            );
-                        }
-
-                        if series_notifications.is_empty()
-                            || stats.removed_files > 0
-                            || stats.errors > 0
-                        {
-                            notifications::notify(
-                                state.pool.clone(),
-                                build_completed_event(
-                                    &info.job_type,
-                                    info.library_name.clone(),
-                                    info.book_title.clone(),
-                                    info.thumbnail_path.clone(),
-                                    stats,
-                                    started_at.elapsed().as_secs(),
-                                ),
-                            );
-                        }
-                    } else {
-                        notifications::notify(
-                            state.pool.clone(),
-                            build_completed_event(
-                                &info.job_type,
-                                info.library_name.clone(),
-                                info.book_title.clone(),
-                                info.thumbnail_path.clone(),
-                                stats,
-                                started_at.elapsed().as_secs(),
-                            ),
-                        );
                     }
+
+                    notify_job(
+                        &state,
+                        job_id,
+                        library_id,
+                        notifications::JobOutcome::Completed,
+                        started_at,
+                    );
                 }
             }
             Ok(None) => {
@@ -424,6 +175,26 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             }
         }
     }
+}
+
+/// Hand a terminal job to the notification module, which owns the policy of
+/// which messages a job produces and loads everything it needs.
+fn notify_job(
+    state: &AppState,
+    job_id: Uuid,
+    library_id: Option<Uuid>,
+    outcome: notifications::JobOutcome,
+    started_at: std::time::Instant,
+) {
+    notifications::notify_job(
+        state.pool.clone(),
+        notifications::JobFinished {
+            job_id,
+            library_id,
+            outcome,
+            duration_seconds: started_at.elapsed().as_secs(),
+        },
+    );
 }
 
 /// After a scan completes, prune `available_downloads` entries by removing volumes
