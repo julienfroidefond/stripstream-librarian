@@ -14,6 +14,7 @@ pub mod cleanup;
 pub mod helpers;
 pub mod lifecycle;
 pub mod registry;
+pub mod stats;
 pub mod status;
 
 pub use claim::{claim_next, ClaimedJob};
@@ -30,6 +31,7 @@ pub use registry::{
     claimable_types, definition, definitions, exclusive_types, optional_library_types,
     types_for_owner, JobCategory, JobDefinition, JobLibraryPolicy, JobOwner,
 };
+pub use stats::ScanStats;
 pub use status::JobState;
 
 #[cfg(test)]

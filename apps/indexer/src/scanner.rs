@@ -1,4 +1,3 @@
-use serde::Serialize;
 use uuid::Uuid;
 
 mod archive;
@@ -10,17 +9,11 @@ mod writer;
 pub use archive::restore_archived_data;
 pub use discovery::scan_library_discovery;
 
-#[derive(Serialize)]
-pub struct JobStats {
-    pub scanned_files: usize,
-    pub indexed_files: usize,
-    pub removed_files: usize,
-    pub errors: usize,
-    pub warnings: usize,
-    pub new_series: usize,
-    pub new_series_names: Vec<String>,
-    pub new_book_titles: Vec<String>,
-}
+/// The discovery counters written to `index_jobs.stats_json`.
+///
+/// The schema lives in `stripstream_jobs` because the notifications and the
+/// admin UI read the same value back: one type, one set of field names.
+pub use stripstream_jobs::ScanStats as JobStats;
 
 const BATCH_SIZE: usize = 100;
 

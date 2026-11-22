@@ -5,6 +5,10 @@ use stripstream_core::http::build_http_client;
 use stripstream_core::settings::load_setting;
 use tracing::{info, warn};
 
+mod job;
+
+pub use job::{job_events, notify_job, JobFinished, JobOutcome};
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -181,16 +185,8 @@ pub async fn send_test_message(config: &TelegramConfig) -> Result<()> {
 // Notification events
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
-pub struct ScanStats {
-    pub scanned_files: usize,
-    pub indexed_files: usize,
-    pub removed_files: usize,
-    pub new_series: usize,
-    pub errors: usize,
-    pub new_series_names: Vec<String>,
-    pub new_book_titles: Vec<String>,
-}
+/// The `index_jobs.stats_json` schema, shared with the indexer that writes it.
+pub use stripstream_jobs::ScanStats;
 
 pub enum NotificationEvent {
     // Scan jobs (rebuild, full_rebuild, rescan, scan)
@@ -402,6 +398,9 @@ fn format_event(event: &NotificationEvent) -> String {
             ];
             if stats.errors > 0 {
                 lines.push(format!("  ⚠️ Errors: <b>{}</b>", stats.errors));
+            }
+            if stats.warnings > 0 {
+                lines.push(format!("  🔶 Warnings: <b>{}</b>", stats.warnings));
             }
             if !stats.new_series_names.is_empty() {
                 lines.push(String::new());
@@ -1159,38 +1158,43 @@ fn event_thumbnail(event: &NotificationEvent) -> Option<&str> {
 /// Load config + format + send in a spawned task. Errors are only logged.
 pub fn notify(pool: PgPool, event: NotificationEvent) {
     tokio::spawn(async move {
-        let config = match load_telegram_config(&pool).await {
-            Some(c) => c,
-            None => return, // disabled or not configured
+        let Some(config) = load_telegram_config(&pool).await else {
+            return; // disabled or not configured
         };
-
-        if !is_event_enabled(&config, &event) {
-            return;
-        }
-
-        if !is_noteworthy(&event) {
-            info!("[TELEGRAM] Skipping non-noteworthy event");
-            return;
-        }
-
-        let text = format_event(&event);
-        let sent = if let Some(photo) = event_thumbnail(&event) {
-            match send_telegram_photo(&config, &text, photo).await {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    warn!("[TELEGRAM] Photo send failed, falling back to text: {e}");
-                    send_telegram(&config, &text).await
-                }
-            }
-        } else {
-            send_telegram(&config, &text).await
-        };
-
-        match sent {
-            Ok(()) => info!("[TELEGRAM] Notification sent"),
-            Err(e) => warn!("[TELEGRAM] Failed to send notification: {e}"),
-        }
+        deliver(&config, event).await;
     });
+}
+
+/// Record one event for an already-loaded config: the config gate, the
+/// noteworthy gate, formatting, photo fallback and the send. `notify` and
+/// `notify_job` are the only callers — they differ in how they obtain events.
+pub(crate) async fn deliver(config: &TelegramConfig, event: NotificationEvent) {
+    if !is_event_enabled(config, &event) {
+        return;
+    }
+
+    if !is_noteworthy(&event) {
+        info!("[TELEGRAM] Skipping non-noteworthy event");
+        return;
+    }
+
+    let text = format_event(&event);
+    let sent = if let Some(photo) = event_thumbnail(&event) {
+        match send_telegram_photo(config, &text, photo).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                warn!("[TELEGRAM] Photo send failed, falling back to text: {e}");
+                send_telegram(config, &text).await
+            }
+        }
+    } else {
+        send_telegram(config, &text).await
+    };
+
+    match sent {
+        Ok(()) => info!("[TELEGRAM] Notification sent"),
+        Err(e) => warn!("[TELEGRAM] Failed to send notification: {e}"),
+    }
 }
 
 #[cfg(test)]
@@ -1227,6 +1231,35 @@ mod tests {
         assert!(!config.events.scan_completed);
         assert!(config.events.scan_failed);
         assert!(config.events.torrent_import_completed);
+    }
+
+    #[test]
+    fn scan_completed_shows_the_warnings_of_the_run() {
+        let text = format_event(&NotificationEvent::ScanCompleted {
+            job_type: "scan".to_string(),
+            library_name: None,
+            stats: ScanStats {
+                warnings: 2,
+                ..ScanStats::default()
+            },
+            duration_seconds: 3,
+        });
+
+        assert!(text.contains("Warnings: <b>2</b>"));
+    }
+
+    #[test]
+    fn scan_stats_reads_a_legacy_json_without_warnings() {
+        let stats: ScanStats = serde_json::from_value(serde_json::json!({
+            "scanned_files": 3,
+            "indexed_files": 1
+        }))
+        .unwrap();
+
+        assert_eq!(stats.scanned_files, 3);
+        assert_eq!(stats.indexed_files, 1);
+        assert_eq!(stats.warnings, 0);
+        assert!(stats.new_book_titles.is_empty());
     }
 
     #[test]
