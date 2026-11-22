@@ -34,7 +34,7 @@ pub use update::*;
 pub use volumes::*;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -43,7 +43,17 @@ use stripstream_core::series_identity;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
+
+/// The reader a personal surface (favourites, ongoing) belongs to.
+///
+/// Without one there is nothing personal to read, and returning an empty page
+/// would look like "no favourites" instead of "pick a user".
+pub(crate) fn require_user(user: Option<Extension<AuthUser>>) -> Result<Uuid, ApiError> {
+    user.map(|user| user.0.user_id).ok_or_else(|| {
+        ApiError::bad_request("no user selected — choose a user in the backoffice settings")
+    })
+}
 
 // ─── Structs ─────────────────────────────────────────────────────────────────
 

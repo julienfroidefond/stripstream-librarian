@@ -22,8 +22,9 @@ pub(crate) fn counted_volume_types_sql() -> String {
 /// The canonical `missing_counts` CTE.
 ///
 /// `where_clause` is the predicate applied to `series` before aggregation, for
-/// example `s.library_id = $1` or `s.id = $1`.
-fn missing_counts_cte(where_clause: Option<&str>) -> String {
+/// example `s.library_id = $1`, `s.id = $1`, or a set membership test such as
+/// `s.id IN (SELECT series_id FROM active_series)`. `None` counts every series.
+pub(crate) fn missing_counts_cte_for_predicate(where_clause: Option<&str>) -> String {
     let counted = counted_volume_types_sql();
     let where_clause = where_clause
         .map(|clause| format!("WHERE {clause}"))
@@ -46,17 +47,6 @@ fn missing_counts_cte(where_clause: Option<&str>) -> String {
             GROUP BY s.id
         )"#
     )
-}
-
-/// Missing counts for every series, optionally scoped to one library.
-pub(crate) fn missing_counts_cte_for_library(library_id_param: Option<&str>) -> String {
-    let where_clause = library_id_param.map(|param| format!("s.library_id = {param}"));
-    missing_counts_cte(where_clause.as_deref())
-}
-
-/// Missing count for one series.
-pub(crate) fn missing_counts_cte_for_series(series_id_param: &str) -> String {
-    missing_counts_cte(Some(&format!("s.id = {series_id_param}")))
 }
 
 /// Load the coverage facts of several series at once.
@@ -175,7 +165,7 @@ mod tests {
 
     #[test]
     fn missing_counts_cte_uses_the_canonical_rule() {
-        let cte = missing_counts_cte_for_library(Some("$1"));
+        let cte = missing_counts_cte_for_predicate(Some("s.library_id = $1"));
 
         assert!(cte.contains("b.volume_type IN ('regular', 'integral')"));
         assert!(cte.contains("b.volume >= 1"));
@@ -185,10 +175,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_counts_cte_for_series_filters_on_the_series() {
-        let cte = missing_counts_cte_for_series("$1");
+    fn missing_counts_cte_without_a_predicate_counts_every_series() {
+        let cte = missing_counts_cte_for_predicate(None);
 
-        assert!(cte.contains("s.id = $1"));
-        assert!(!cte.contains("s.library_id"));
+        assert!(
+            !cte.contains("WHERE s."),
+            "no series predicate is injected: {cte}"
+        );
     }
 }

@@ -120,7 +120,7 @@ pub async fn list_series(
         "AND (${user_id_p}::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_genre_restrictions ugr WHERE ugr.user_id = ${user_id_p} AND ugr.genre = ANY(s.genres)))"
     );
 
-    let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
+    let missing_cte = crate::coverage::missing_counts_cte_for_predicate(Some("s.library_id = $1"));
 
     let title_order_clause = "lower(name) ASC";
     let series_order_clause = match query.sort.as_deref() {

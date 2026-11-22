@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::super::{
-    get_series_by_id, list_all_series, list_series, ongoing_books, ongoing_series,
+    get_series_by_id, list_all_series, list_favorites, list_series, ongoing_books, ongoing_series,
     ListAllSeriesQuery, ListSeriesQuery, OngoingQuery,
 };
 use crate::auth::AuthUser;
@@ -843,6 +843,102 @@ async fn hs_only_series_falls_back_to_total_counts(pool: PgPool) {
     .unwrap();
     assert_eq!(read.total, 1);
     assert_eq!(read.items[0].books_read_count, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn every_reader_of_a_series_fills_the_same_projection(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let user = create_user(&pool, "reader").await;
+    let read_at = DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    sqlx::query("UPDATE series SET total_volumes = 4, status = 'ongoing' WHERE id = $1")
+        .bind(series)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    // One tome read out of two: the series is ongoing for this reader.
+    set_read(&pool, vol1, user, read_at).await;
+
+    sqlx::query(
+        "INSERT INTO series_user_favorites (user_id, series_id) VALUES ($1, $2) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user)
+    .bind(series)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO external_metadata_links \
+             (library_id, provider, external_id, status, provider_rating, \
+              provider_rating_count, provider_rating_scale, series_id) \
+         VALUES ($1, 'bdphile', 'ext-1', 'approved', 4.0, 10, 5.0, $2)",
+    )
+    .bind(library)
+    .bind(series)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let Json(page) = list_all_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        all_query(None, None),
+    )
+    .await
+    .unwrap();
+    let Json(detail) = get_series_by_id(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Path(series),
+    )
+    .await
+    .unwrap();
+    let Json(ongoing) = ongoing_series(
+        State(state.clone()),
+        Some(Extension(AuthUser { user_id: user })),
+        Query(OngoingQuery { limit: None }),
+    )
+    .await
+    .unwrap();
+    let Json(favorites) = list_favorites(State(state), Some(Extension(AuthUser { user_id: user })))
+        .await
+        .unwrap();
+
+    // Four readers, one projection: a column can no longer be filled by three
+    // of them and silently left `None` by the fourth.
+    let items = [&page.items[0], &detail, &ongoing[0], &favorites[0]];
+    for item in items {
+        assert_eq!(item.series_id, series);
+        assert_eq!(item.library_id, library);
+        assert_eq!(item.book_count, 2);
+        assert_eq!(item.books_read_count, 1);
+        assert_eq!(item.last_read_at, Some(read_at));
+        assert_eq!(item.first_book_id, Some(vol1));
+        assert_eq!(item.series_status.as_deref(), Some("ongoing"));
+        assert_eq!(item.missing_count, Some(2), "4 volumes, 2 owned");
+        assert_eq!(item.community_score, Some(4.0), "the approved link rating");
+        assert_eq!(item.metadata_provider.as_deref(), Some("bdphile"));
+    }
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn ongoing_series_requires_a_user(pool: PgPool) {
+    let state = test_state(pool);
+
+    let Err(error) = ongoing_series(State(state), None, Query(OngoingQuery { limit: None })).await
+    else {
+        panic!("ongoing series must reject a request without a user");
+    };
+
+    assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    assert!(error.message.contains("no user selected"));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
