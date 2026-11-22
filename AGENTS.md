@@ -228,6 +228,16 @@ The counter decrements by the number of **distinct volumes actually removed** fr
 release — never by the number of imported files or release matches. Do not re-implement the
 release JSON filtering in the API or the indexer.
 
+### Series Catalogue Read Model (`apps/api/src/series/catalog/`, ADR 0030)
+
+`catalog::query(pool, SeriesRequest)` is the only read that projects a `SeriesItem`: `/series`,
+`/libraries/{id}/series`, `/favorites`, `/series/ongoing` and `/series/{id}/details` all go through
+it. A `SeriesScope` owns the staging CTEs, the `series_counts` body, the order and the predicate the
+missing count aggregates on; filters, shelf/rating/progress joins and the row projection are shared.
+Handlers translate their DTO into a typed `SeriesRequest` and only shape the response. Never add a
+query that projects `SeriesItem` elsewhere, and never silently ignore an unknown filter value — it is
+a 400 listing the accepted values.
+
 ### Series Identity (`crates/core/src/series_identity.rs`)
 
 The SQL `norm_text` key (lowercase + unaccent) is the only series-name key. A raw name matches a

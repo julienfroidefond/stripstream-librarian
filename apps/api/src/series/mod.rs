@@ -108,34 +108,17 @@ pub struct SeriesPage {
     pub limit: i64,
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct ListSeriesQuery {
-    #[schema(value_type = Option<String>, example = "dragon")]
-    pub q: Option<String>,
-    #[schema(value_type = Option<String>, example = "unread,reading")]
-    pub reading_status: Option<String>,
-    /// Filter by series status (e.g. "ongoing", "ended")
-    #[schema(value_type = Option<String>, example = "ongoing")]
-    pub series_status: Option<String>,
-    /// Filter series with missing books: "true" to show only series with missing books
-    #[schema(value_type = Option<String>, example = "true")]
-    pub has_missing: Option<String>,
-    /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
-    #[schema(value_type = Option<String>, example = "google_books")]
-    pub metadata_provider: Option<String>,
-    /// Only return series with at least one book: "true" to exclude empty series
-    #[schema(value_type = Option<String>, example = "true")]
-    pub has_books: Option<String>,
-    /// Filter by shelf state for the current user: "true" for series set aside, "false" for the others
-    #[schema(value_type = Option<String>, example = "true")]
-    pub shelved: Option<String>,
-    #[schema(value_type = Option<i64>, example = 1)]
-    pub page: Option<i64>,
-    #[schema(value_type = Option<i64>, example = 50)]
-    pub limit: Option<i64>,
-    /// Sort order: "title" (default), "latest" (most recently added first), or "release_date" (series start year descending)
-    #[schema(value_type = Option<String>, example = "release_date")]
-    pub sort: Option<String>,
+/// The catalogue's page is the handler-facing page: no field is added or
+/// dropped on the way out.
+impl From<catalog::CatalogPage> for SeriesPage {
+    fn from(page: catalog::CatalogPage) -> Self {
+        Self {
+            items: page.items,
+            total: page.total,
+            page: page.page,
+            limit: page.limit,
+        }
+    }
 }
 
 #[derive(Deserialize, ToSchema)]
