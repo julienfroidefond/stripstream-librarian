@@ -30,9 +30,10 @@ index d'unicité à perdre.
   - `CompletedAdopted { content_path }` — le client détient déjà les fichiers finis : `completed`,
     progression 1. Le chemin de contenu est **dans la variante**, donc une naissance `completed`
     sans chemin est irreprésentable.
-- **`TorrentClient::{Qbittorrent, Alldebrid}`** porte le `client` de la contrainte de la
-  migration 0125 et la règle de propriété : `owns_qb_torrent` n'est vrai que pour
-  `Qbittorrent` + `Queued`. Une ligne AllDebrid stocke donc `qb_owned = FALSE` — délibérément,
+- **`TorrentBackend::{Qbittorrent, Alldebrid}`** (nommé `TorrentClient` à l'écriture de cet
+  ADR, renommé en `TorrentBackend` par l'[ADR 0039](./0039-torrent-client-port.md)) porte le
+  `client` de la contrainte de la migration 0125 et la règle de propriété : `owns_qb_torrent`
+  n'est vrai que pour `Qbittorrent` + `Queued`. Une ligne AllDebrid stocke donc `qb_owned = FALSE` — délibérément,
   aucun lecteur ne consulte cette colonne hors des lignes qBittorrent (`fail_qb_torrent`,
   `release_qb_torrent` dans `torrent_import.rs`).
 - **`NewTorrentDownload::new(id, library_id, series_name, client, birth)`** fixe l'identité, la
@@ -60,5 +61,6 @@ index d'unicité à perdre.
 - Chaque naissance est couverte par un `#[sqlx::test]` (statut, progression, `qb_owned`, hash,
   chemin de contenu), plus la course perdue, la frontière de l'index actif et l'absence de garde
   côté qBittorrent.
-- La fabrique est le point d'entrée naturel d'un futur port `TorrentClient` : les deux clients
-  partagent déjà la forme de leur ligne, seule la collecte du transfert diffère encore.
+- La fabrique est le point d'entrée naturel du port de transfert de l'
+  [ADR 0039](./0039-torrent-client-port.md) : les deux clients partagent déjà la forme de leur
+  ligne, seule la collecte du transfert diffère encore.
