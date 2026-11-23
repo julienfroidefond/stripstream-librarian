@@ -4,6 +4,24 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.179 — 2026-11-23
+
+### Refactoring
+
+- **downloads** — report the AllDebrid transfer through the reporter
+- **downloads** — queue the post-import scan through target
+- **metadata** — own the provider execution policy
+- **downloads** — put the qBittorrent protocol behind a port
+- **backoffice** — share the search write store between the two search modals
+- **downloads** — create torrent ledger rows through one factory
+
+### Documentation
+
+- **adr** — record the provider run policy
+- **adr** — record the torrent client port
+- record the search write store
+- **adr** — record the torrent ledger create factory
+
 ## v3.32.178 — 2026-11-23
 
 ### Corrections
