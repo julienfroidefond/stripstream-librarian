@@ -628,7 +628,7 @@ async fn a_queued_birth_is_a_fresh_owned_transfer(pool: PgPool) {
                 id,
                 library_id,
                 "Amulet",
-                TorrentClient::Qbittorrent,
+                TorrentBackend::Qbittorrent,
                 Birth::Queued,
             )
         },
@@ -666,7 +666,7 @@ async fn a_downloading_birth_adopts_without_claiming(pool: PgPool) {
                 id,
                 library_id,
                 "Amulet",
-                TorrentClient::Qbittorrent,
+                TorrentBackend::Qbittorrent,
                 Birth::Downloading,
             )
         },
@@ -697,7 +697,7 @@ async fn a_completed_adopted_birth_starts_at_full_progress(pool: PgPool) {
                 id,
                 library_id,
                 "Amulet",
-                TorrentClient::Qbittorrent,
+                TorrentBackend::Qbittorrent,
                 Birth::CompletedAdopted {
                     content_path: "/downloads/manga/Amulet",
                 },
@@ -733,7 +733,7 @@ async fn an_alldebrid_birth_records_the_magnet(pool: PgPool) {
                 id,
                 library_id,
                 "Amulet",
-                TorrentClient::Alldebrid,
+                TorrentBackend::Alldebrid,
                 Birth::Downloading,
             )
         },
@@ -769,7 +769,7 @@ async fn an_active_alldebrid_hash_is_a_lost_race(pool: PgPool) {
             id,
             library_id,
             "Amulet",
-            TorrentClient::Alldebrid,
+            TorrentBackend::Alldebrid,
             Birth::Downloading,
         )
     };
@@ -801,7 +801,7 @@ async fn a_finished_alldebrid_row_does_not_block_a_new_snatch(pool: PgPool) {
             id,
             library_id,
             "Amulet",
-            TorrentClient::Alldebrid,
+            TorrentBackend::Alldebrid,
             Birth::Downloading,
         )
     };
@@ -825,7 +825,7 @@ async fn a_qbittorrent_hash_is_not_a_uniqueness_guard(pool: PgPool) {
             id,
             library_id,
             "Amulet",
-            TorrentClient::Qbittorrent,
+            TorrentBackend::Qbittorrent,
             Birth::Queued,
         )
     };

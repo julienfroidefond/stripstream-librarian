@@ -288,12 +288,12 @@ async fn expect_transition(
 ///
 /// Mirrors the `torrent_downloads_client_check` constraint (migration 0125).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TorrentClient {
+pub(super) enum TorrentBackend {
     Qbittorrent,
     Alldebrid,
 }
 
-impl TorrentClient {
+impl TorrentBackend {
     pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Qbittorrent => "qbittorrent",
@@ -339,7 +339,7 @@ pub(super) struct NewTorrentDownload<'a> {
     pub id: Uuid,
     pub library_id: Uuid,
     pub series_name: &'a str,
-    pub client: TorrentClient,
+    pub client: TorrentBackend,
     pub birth: Birth<'a>,
     /// Tome numbers the import looks for; empty means "every file".
     pub expected_volumes: &'a [i32],
@@ -360,7 +360,7 @@ impl<'a> NewTorrentDownload<'a> {
         id: Uuid,
         library_id: Uuid,
         series_name: &'a str,
-        client: TorrentClient,
+        client: TorrentBackend,
         birth: Birth<'a>,
     ) -> Self {
         Self {

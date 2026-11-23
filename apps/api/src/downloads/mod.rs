@@ -20,6 +20,7 @@ pub mod rss_poll;
 pub mod settings;
 pub mod target;
 pub mod telegram_monitor;
+mod torrent_client;
 pub mod torrent_import;
 mod torrent_ledger;
 pub mod worker;
