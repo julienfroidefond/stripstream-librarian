@@ -1,11 +1,11 @@
 //! The `torrent_downloads` lifecycle.
 //!
 //! The table is the single ledger for both download clients (`qbittorrent` and
-//! `alldebrid`). This module owns the status vocabulary and every write that
-//! moves a row through it, so a caller asks for a transition and gets a typed
-//! error when the row is no longer in a state that allows it, instead of
-//! silently writing a status the poller, the retry button or the UI would
-//! misread.
+//! `alldebrid`). This module owns the status vocabulary, the single factory that
+//! creates a row ([`create`]) and every write that moves a row through it, so a
+//! caller asks for a transition and gets a typed error when the row is no longer
+//! in a state that allows it, instead of silently writing a status the poller,
+//! the retry button or the UI would misread.
 //!
 //! Progress writes live here too, but they are not transitions: they no-op on a
 //! row that is no longer `downloading`, because a poller racing with an import
@@ -282,6 +282,160 @@ async fn expect_transition(
             Err(_) => Err(TorrentTransitionError::UnknownStatus { id, status: raw }),
         },
     }
+}
+
+/// Which backend a row belongs to.
+///
+/// Mirrors the `torrent_downloads_client_check` constraint (migration 0125).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TorrentClient {
+    Qbittorrent,
+    Alldebrid,
+}
+
+impl TorrentClient {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Qbittorrent => "qbittorrent",
+            Self::Alldebrid => "alldebrid",
+        }
+    }
+
+    /// Whether a row born in this client makes Stripstream the owner of the
+    /// qBittorrent torrent (`qb_owned`).
+    ///
+    /// Only a torrent Stripstream queued itself is its own: an adopted one
+    /// belongs to the user, and an AllDebrid row owns nothing in qBittorrent.
+    fn owns_qb_torrent(self, birth: Birth<'_>) -> bool {
+        self == Self::Qbittorrent && matches!(birth, Birth::Queued)
+    }
+}
+
+/// What the backend already knows when the row is created.
+///
+/// A birth fixes the three columns the hand-written `INSERT`s used to disagree
+/// on — `status`, `progress` and `qb_owned` — so no caller spells them out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Birth<'a> {
+    /// Stripstream just handed the torrent to its client: the transfer is
+    /// `downloading` at zero progress and Stripstream owns the torrent. A
+    /// qBittorrent hash may still be unknown — a `.torrent` upload is matched
+    /// later through its `sl-{id}` category.
+    Queued,
+    /// The client already runs the transfer (an AllDebrid magnet, or a
+    /// qBittorrent torrent the user added). The row adopts it: `downloading` at
+    /// zero progress, which the next poll replaces with the real value, and
+    /// Stripstream owns nothing.
+    Downloading,
+    /// The client already holds the finished files: the row is born
+    /// `completed` at full progress, with the content path the import reads. It
+    /// is adopted, never claimed.
+    CompletedAdopted { content_path: &'a str },
+}
+
+/// A `torrent_downloads` row to create.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NewTorrentDownload<'a> {
+    pub id: Uuid,
+    pub library_id: Uuid,
+    pub series_name: &'a str,
+    pub client: TorrentClient,
+    pub birth: Birth<'a>,
+    /// Tome numbers the import looks for; empty means "every file".
+    pub expected_volumes: &'a [i32],
+    /// Import mode: overwrite the destination files instead of skipping them.
+    pub replace_existing: bool,
+    /// Magnet/torrent hash, when the backend reported it before the insert.
+    pub qb_hash: Option<&'a str>,
+    /// Backend identifier (the AllDebrid magnet id).
+    pub external_id: Option<&'a str>,
+    /// Torrent name reported by the backend.
+    pub name: Option<&'a str>,
+}
+
+impl<'a> NewTorrentDownload<'a> {
+    /// Identity, target and birth of a row; every backend-reported field stays
+    /// empty until the caller sets it.
+    pub(super) fn new(
+        id: Uuid,
+        library_id: Uuid,
+        series_name: &'a str,
+        client: TorrentClient,
+        birth: Birth<'a>,
+    ) -> Self {
+        Self {
+            id,
+            library_id,
+            series_name,
+            client,
+            birth,
+            expected_volumes: &[],
+            replace_existing: false,
+            qb_hash: None,
+            external_id: None,
+            name: None,
+        }
+    }
+}
+
+/// The one insert shape: every column the former `INSERT`s disagreed on is
+/// bound, so the factory owns the conventions.
+///
+/// `ON CONFLICT DO NOTHING` only ever fires on the partial unique index of an
+/// active AllDebrid hash — a qBittorrent row is unique by its own generated id,
+/// so a `None` there is a bug the caller reports.
+const CREATE_TORRENT_DOWNLOAD: &str = "INSERT INTO torrent_downloads \
+     (id, library_id, series_name, expected_volumes, client, status, progress, \
+      qb_hash, external_id, name, content_path, replace_existing, qb_owned) \
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+     ON CONFLICT DO NOTHING";
+
+/// Create a `torrent_downloads` row — the only production `INSERT` on the table.
+///
+/// Returns the new id, or `Ok(None)` when the insert lost a race: the partial
+/// unique index `torrent_downloads_alldebrid_active_hash_key` already holds an
+/// active AllDebrid row for this hash, so a concurrent request tracks the
+/// magnet. Only an AllDebrid row can lose that race; a qBittorrent row always
+/// inserts.
+pub(super) async fn create(
+    pool: &PgPool,
+    new: NewTorrentDownload<'_>,
+) -> sqlx::Result<Option<Uuid>> {
+    let status = match new.birth {
+        Birth::Queued | Birth::Downloading => TorrentStatus::Downloading,
+        Birth::CompletedAdopted { .. } => TorrentStatus::Completed,
+    };
+    let progress: f32 = match new.birth {
+        Birth::Queued | Birth::Downloading => 0.0,
+        Birth::CompletedAdopted { .. } => 1.0,
+    };
+    let content_path = match new.birth {
+        Birth::CompletedAdopted { content_path } => Some(content_path),
+        Birth::Queued | Birth::Downloading => None,
+    };
+
+    let result = sqlx::query(CREATE_TORRENT_DOWNLOAD)
+        .bind(new.id)
+        .bind(new.library_id)
+        .bind(new.series_name)
+        .bind(new.expected_volumes)
+        .bind(new.client.as_str())
+        .bind(status.as_str())
+        .bind(progress)
+        .bind(new.qb_hash)
+        .bind(new.external_id)
+        .bind(new.name)
+        .bind(content_path)
+        .bind(new.replace_existing)
+        .bind(new.client.owns_qb_torrent(new.birth))
+        .execute(pool)
+        .await?;
+
+    Ok(if result.rows_affected() == 0 {
+        None
+    } else {
+        Some(new.id)
+    })
 }
 
 /// The backend finished the transfer and the files are at `content_path`.

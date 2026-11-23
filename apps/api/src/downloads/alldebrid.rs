@@ -44,7 +44,10 @@ use super::qbittorrent::{
 use super::settings::DownloadSettings;
 use super::target::sanitize_filename;
 use super::torrent_import::process_torrent_import;
-use super::torrent_ledger::{self, RestartScope, TorrentStatus, TorrentTransitionError};
+use super::torrent_ledger::{
+    self, Birth, NewTorrentDownload, RestartScope, TorrentClient, TorrentStatus,
+    TorrentTransitionError,
+};
 use crate::error::ApiError;
 use crate::responses::OkResponse;
 use crate::state::AppState;
@@ -738,28 +741,30 @@ pub async fn add_torrent(
             // The guard above cannot see a row that a concurrent request is
             // inserting right now; the unique partial index
             // `torrent_downloads_alldebrid_active_hash_key` is what actually
-            // serialises two adds of the same magnet.
-            let inserted = sqlx::query(
-                "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, external_id, client, name, replace_existing) \
-                 VALUES ($1, $2, $3, $4, $5, $6, 'alldebrid', $7, $8) \
-                 ON CONFLICT DO NOTHING",
+            // serialises two adds of the same magnet, and `create` reports the
+            // lost race as `None`.
+            let created = torrent_ledger::create(
+                &state.pool,
+                NewTorrentDownload {
+                    id,
+                    library_id: managed.library_id,
+                    series_name: &managed.series_name,
+                    client: TorrentClient::Alldebrid,
+                    birth: Birth::Downloading,
+                    expected_volumes,
+                    replace_existing: body.replace_existing,
+                    qb_hash: resolved_hash.as_deref(),
+                    external_id: Some(&external_id),
+                    name: entry.name.as_deref(),
+                },
             )
-            .bind(id)
-            .bind(managed.library_id)
-            .bind(&managed.series_name)
-            .bind(expected_volumes)
-            .bind(resolved_hash.as_deref())
-            .bind(&external_id)
-            .bind(entry.name.as_deref())
-            .bind(body.replace_existing)
-            .execute(&state.pool)
             .await
             .map_err(|e| {
                 tracing::error!("[ALLDEBRID] Failed to insert torrent_downloads row: {e}");
                 ApiError::from(e)
             })?;
 
-            if inserted.rows_affected() == 0 {
+            if created.is_none() {
                 // Lost the race: another request tracked this magnet first.
                 // Drop the duplicate magnet and hand back the winning row.
                 info!("[ALLDEBRID] Magnet {external_id} was tracked concurrently");
