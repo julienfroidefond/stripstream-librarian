@@ -70,7 +70,9 @@ Prowlarr/TG en attente sont conservés) : pas d'accumulation entre deux passages
 | Erreur | **Relancer** |
 | Ignoré | **Télécharger** (relance) |
 
-Le bouton **Ignorer** masque une entrée sans la supprimer définitivement.
+Le bouton **Ignorer** masque une entrée sans la supprimer définitivement. Le statut demandé
+s'affiche immédiatement ; si le serveur refuse l'action ou si le réseau échoue, un message d'erreur
+s'affiche et la ligne retrouve son statut précédent — un *dismiss* refusé n'est jamais silencieux.
 
 ## Flux d'import
 
