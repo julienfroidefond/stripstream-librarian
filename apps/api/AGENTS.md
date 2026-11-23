@@ -16,7 +16,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `openapi.rs` | `ClientApiDoc` + `AdminApiDoc` (dual spec via utoipa) |
 | `books/` | `mod.rs` (CRUD livres), `pages.rs` (handlers page + miniature à la volée), `renderer.rs` (`PageRenderer` : double cache, verrou, permis, timeout), `files.rs` (fichier courant d'un livre), `download.rs`, `thumbnails.rs` (jobs), `rename.rs` |
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
-| `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
+| `metadata_providers/` | `mod.rs` (trait + `available_providers` + résolveur), `run.rs` (politique d'exécution : erreurs typées, disjoncteur, ADR 0037), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
 | `downloads/` | `prowlarr`, `qbittorrent`, `torrent_client` (port + adaptateur qBittorrent, ADR 0039), `torrent_import`, `torrent_ledger`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
 | `jobs/` | `index_jobs.rs` (suivi + SSE), `launcher.rs` (lancement des jobs in-process), `poller.rs`, `helpers.rs` |
@@ -122,6 +122,20 @@ la ligne (un entier stocké hors plage est borné, un champ illisible retombe su
 main ni re-clamper une valeur : dériver de `Limits` (`DownloadSettings::from(&limits)`,
 `DynamicSettings::apply_limits`). Tout rechargement à chaud passe par `settings::apply(state, key)`,
 y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
+
+### Politique d'exécution des providers (`metadata_providers/run.rs`, ADR 0037)
+Un adaptateur décrit *pourquoi* il n'a pas répondu avec `ProviderError::{RateLimited, Transient,
+Fatal}` (`Display` rend le message nu, `http_status` classe `429`/`5xx` en `Transient`, une erreur
+non classée est `Fatal`). Un `ProviderRun` (un par job) possède le disjoncteur : `call` n'exécute
+pas la closure d'un provider déjà bloqué, `record` n'ouvre un bloc que sur `RateLimited`, et les
+blocs sont indexés par id **canonique** (`senscritique`, jamais `senscritique_bd`) — canoniser le
+nom avant tout `block_for`. Un bloc ne concerne que le provider fautif : le secondaire continue
+d'être appelé quand le principal disjoncte. Ne jamais inspecter un message d'erreur ni un nom de
+provider pour décider de sauter un appel : passer par `ProviderRun`. La capacité de matching est
+une méthode de trait (`matching_policy()` → `MatchingPolicy::{Standard, HtmlScraper}`) consommée
+par `shared_sync::match_books_with`, pas une branche dans les flux. Le résolveur est unique :
+`resolve_provider` rejette un nom inconnu, `resolve_link_provider` applique l'unique repli
+`FALLBACK_PROVIDER` (`google_books`) pour les liens hérités.
 
 ## Gotchas
 

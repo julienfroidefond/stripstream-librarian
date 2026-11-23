@@ -45,7 +45,7 @@ Le job **Refresh complet** force la mise à jour de toutes les séries liées, y
 - Le refresh est **non-destructif** : il n'efface pas vos données, il ajoute ou met à jour seulement si le provider a de nouvelles informations
 
 :::note[Détails techniques]
-**Auto-match** : job `metadata_batch`. Séries triées par `updated_at ASC` (les moins récentes en premier). SensCritique : mode détaillé via `groupProducts`. Auto-match uniquement si confidence == 1.0, pour le provider principal comme pour le secondaire. Liens vérifiés par couple série + provider. Circuit breaker SensCritique sur HTTP 429 (seules les requêtes SensCritique sont sautées). Délai de 1s entre chaque série.
+**Auto-match** : job `metadata_batch`. Séries triées par `updated_at ASC` (les moins récentes en premier). SensCritique : mode détaillé via `groupProducts`. Auto-match uniquement si confidence == 1.0, pour le provider principal comme pour le secondaire. Liens vérifiés par couple série + provider. Disjoncteur : un HTTP 429 SensCritique est une erreur `RateLimited` ; ce provider est alors sauté jusqu'à la fin du job, tandis que les autres providers continuent d'être appelés (un incident passager ou une erreur fatale ne bloque rien). Délai de 1s entre chaque série.
 
 **Re-match** : job `metadata_batch_rematch`. Chaque provider est évalué séparément : seul un provider déjà lié est ignoré, pas la série entière. Après un match réussi, les liens des providers non configurés sont supprimés ; le principal et le secondaire configurés sont conservés.
 

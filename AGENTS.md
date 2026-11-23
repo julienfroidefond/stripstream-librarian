@@ -203,7 +203,7 @@ decoder. Never write, name or delete a thumbnail file outside this crate.
 ### Metadata Sync (`apps/api/src/metadata/shared_sync.rs`)
 
 All three sync paths (approve, batch auto-match, refresh) share factored code:
-`extract_series_fields()`, `upsert_series_metadata()`, `fetch_local_books()` + `match_books()`,
+`extract_series_fields()`, `upsert_series_metadata()`, `fetch_local_books()` + `match_books_with()`,
 `push_book_metadata()`, plus diff helpers. All providers must store `description` inside
 `metadata_json` (not only the struct field) so it survives the DB round-trip.
 
@@ -290,12 +290,20 @@ SensCritique uses a GraphQL API; BDTheque/BDphile scrape HTML. `bedetheque` was 
 blocking) — migration `0114` unlinks existing links. Discovery sources backed by SensCritique
 (`senscritique_bd`, `sc_trending_bd`, `sc_trending_manga`, `sc_best_bd`, `sc_best_manga`) are
 **not** metadata providers: `metadata_providers::canonical_provider_name()` maps them to
-`senscritique`. `metadata_providers::resolve_provider()` is the single chokepoint used by search,
-batch and refresh to canonicalize then reject unknown names with an explicit error (never a silent
-`google_books` fallback). The legacy link-sync path (`sync::resolve_link_provider_name`) also
-canonicalizes, but keeps the historic `google_books` fallback for links that were created outside
-the metadata providers (e.g. Prowlarr downloads). Migration `0129` heals legacy links that stored an
-alias.
+`senscritique`. `metadata_providers::resolve_provider()` is the strict chokepoint used by search,
+batch and refresh: it canonicalizes then rejects unknown names with an explicit error (never a
+silent `google_books` fallback). The legacy link path uses
+`metadata_providers::resolve_link_provider()`, the same resolver with the explicit
+`FALLBACK_PROVIDER` (`google_books`) policy for links created outside the metadata providers (e.g.
+Prowlarr downloads). Migration `0129` heals legacy links that stored an alias.
+
+`metadata_providers/run.rs` owns the provider execution policy (ADR 0037). Adapters report
+`ProviderError::{RateLimited, Transient, Fatal}`; a `ProviderRun` (one per job) skips a provider
+blocked earlier in the run and opens a block only on `RateLimited`, per provider — the secondary
+keeps being called after the primary trips (#150). Call `ProviderRun::call` instead of calling an
+adapter directly, and never inspect an error message to decide whether to skip. The matching policy
+is a provider capability: `matching_policy()` returns `MatchingPolicy::{Standard, HtmlScraper}` and
+`shared_sync::match_books_with` consumes it; never branch on the provider name.
 
 Match scores live in `metadata_providers/scoring.rs` (ADR 0015): providers build a `Score` with
 `Score::of_titles(title, query, cap)` (one normalized `title_similarity`), the book-count bonus is
