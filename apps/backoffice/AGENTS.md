@@ -204,6 +204,37 @@ Les lignes (`DownloadRow`, `TelegramDownloadRow`, `DdlProviderDownloadRow`,
 direct. `DownloadClientButton` garde son flux d'ajout manuel (ce n'est pas une action de ligne) et
 `ProwlarrSearchModal` ne fait que chercher.
 
+## Écritures des recherches (Search actions store)
+
+`lib/downloads/searchActions.ts` est la seule porte d'écriture des lignes des deux fenêtres de
+recherche d'acquisition — recherche live Telegram et recherche DDL
+([ADR 0036](../../docs/adr/0036-search-write-store.md)). Le module est pur, sans React :
+
+- un vocabulaire restreint (`SearchResultAction` : `telegram`/`ddl` × `start`/`dismiss`), une
+  identité de ligne `searchKey(provider, external_id)` (`provider:external_id`) et un badge
+  optimiste dérivé du verbe (`optimisticStatus`) ;
+- **une seule table de routes** : le store résout chaque action via `actionFor` de
+  `lib/downloads/actions.ts`, jamais une seconde table. `SearchActionContext` porte ce que la clé
+  ne dit pas — `ddlStart` (le corps snatché) et `downloadId` (la ligne de téléchargement qu'un
+  *dismiss* DDL retire) ;
+- un overlay écrit **synchronement** à l'appel de `run` (`status(key)`), conservé après un succès
+  jusqu'à ce qu'une lecture serveur le supersède ;
+- une file par clé : une rafale sur une même ligne est sérialisée, deux lignes distinctes partent
+  en parallèle ; `pending(key)` reste vrai jusqu'au règlement de toutes les écritures de la clé ;
+- une seule politique d'échec : retour au dernier badge acquitté (ou suppression de l'overlay),
+  erreur remontée à `onError`, jamais avalée ; un jeton par écriture empêche un échec ancien
+  d'effacer un badge plus récent ;
+- `clear(keys)` pour le poll DDL (ignore les clés en vol), `reset()` quand une nouvelle recherche
+  remplace les lignes.
+
+`app/components/useSearchActions.ts` expose `useTelegramSearchActions` et `useDdlSearchActions`
+(`useSyncExternalStore`, un store par modale) et branche `onError` sur le toast via
+`browserFailureMessage` (`lib/api/browser/transport.ts`, partagé avec la page Téléchargements).
+Les modales (`TelegramSearchModal`, `DdlProviderSearchModal`) ne gardent aucun `Set` en vol, aucun
+`prevStatus` ni `catch {}` : elles lisent `status = actions.status(key) ?? statutServeur` et
+`isActing = actions.pending(key)`. Le poll DDL (3 s tant qu'une ligne est `queued`/`downloading`)
+reste dans la modale et calcule `hasActive` sur le statut fusionné.
+
 ## Écritures des listes de lecture (Reading lists store)
 
 `lib/readingLists/actions.ts` est la seule porte d'écriture des listes de lecture

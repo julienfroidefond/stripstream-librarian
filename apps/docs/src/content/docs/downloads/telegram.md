@@ -82,7 +82,7 @@ Dans la fenêtre de recherche :
 | Erreur | ↺ pour relancer |
 | Ignoré | Aucune (ligne grisée) |
 
-Les résultats restent affichés après action et leur statut se met à jour sans fermer la fenêtre.
+Les résultats restent affichés après action et leur statut se met à jour sans fermer la fenêtre. Le badge du statut demandé s'affiche immédiatement ; si le serveur refuse l'action ou si le réseau échoue, un message d'erreur s'affiche et la ligne retrouve son statut précédent.
 
 :::note[Détails techniques]
 **Téléchargement parallèle** : le fichier est découpé en blocs de 512 Kio répartis sur plusieurs connexions Telegram (`upload.getFile` avec `precise=true`), chaque connexion faisant deux requêtes simultanées. Une connexion Telegram plafonne autour de 2 Mo/s quel que soit le débit local ; répartir le fichier sur plusieurs sockets est donc ce qui rend les gros fichiers rapides. Le nombre de connexions demandées par téléchargement se règle via `limits.telegram_download_connections` (défaut 4, borné à 8), mais les sockets sont prises dans un budget **partagé de 8 connexions** pour tout le processus : à partir de trois téléchargements simultanés, chacun en obtient moins plutôt que d'accumuler les connexions sur le compte.
