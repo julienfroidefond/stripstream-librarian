@@ -7,6 +7,7 @@ use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::torrent_ledger::{self, Birth, NewTorrentDownload, TorrentClient};
 use crate::{error::ApiError, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -327,23 +328,37 @@ pub async fn add_torrent(
                 if content_exists {
                     // Already downloaded: import right away, without adding.
                     let tid = download_id.unwrap();
-                    sqlx::query(
-                        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, content_path, status, replace_existing, progress, qb_owned) \
-                         VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, 1, FALSE)",
+                    let created = torrent_ledger::create(
+                        &state.pool,
+                        NewTorrentDownload {
+                            qb_hash: Some(&existing.hash),
+                            expected_volumes: body.expected_volumes.as_deref().unwrap_or(&[]),
+                            replace_existing: body.replace_existing,
+                            ..NewTorrentDownload::new(
+                                tid,
+                                managed.library_id,
+                                &managed.series_name,
+                                TorrentClient::Qbittorrent,
+                                Birth::CompletedAdopted {
+                                    content_path: &existing.content_path,
+                                },
+                            )
+                        },
                     )
-                    .bind(tid)
-                    .bind(managed.library_id)
-                    .bind(managed.series_name.as_str())
-                    .bind(body.expected_volumes.as_deref().unwrap_or(&[]))
-                    .bind(&existing.hash)
-                    .bind(&existing.content_path)
-                    .bind(body.replace_existing)
-                    .execute(&state.pool)
                     .await
                     .map_err(|e| {
-                        tracing::error!("[QBITTORRENT] Failed to insert torrent_downloads row: {e}");
+                        tracing::error!(
+                            "[QBITTORRENT] Failed to insert torrent_downloads row: {e}"
+                        );
                         ApiError::from(e)
                     })?;
+                    // Only an AllDebrid row has a uniqueness guard to lose.
+                    if created.is_none() {
+                        tracing::error!(
+                            "[QBITTORRENT] torrent_downloads row {tid} was not inserted"
+                        );
+                        return Err(ApiError::internal("torrent download row was not inserted"));
+                    }
 
                     tracing::info!("[QBITTORRENT] Duplicate torrent already completed, launching import immediately for {tid}");
                     super::torrent_import::spawn_import(
@@ -466,23 +481,38 @@ pub async fn add_torrent(
         }
 
         let id = download_id.unwrap();
-        sqlx::query(
-            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, replace_existing, qb_owned) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        // An adopted torrent belongs to the user: Stripstream must never
+        // delete it afterwards (`qb_owned = FALSE`).
+        let birth = if adopted_existing {
+            Birth::Downloading
+        } else {
+            Birth::Queued
+        };
+        let created = torrent_ledger::create(
+            &state.pool,
+            NewTorrentDownload {
+                qb_hash: qb_hash.as_deref(),
+                expected_volumes,
+                replace_existing: body.replace_existing,
+                ..NewTorrentDownload::new(
+                    id,
+                    library_id,
+                    series_name,
+                    TorrentClient::Qbittorrent,
+                    birth,
+                )
+            },
         )
-        .bind(id)
-        .bind(library_id)
-        .bind(series_name)
-        .bind(expected_volumes)
-        .bind(qb_hash.as_deref())
-        .bind(body.replace_existing)
-        .bind(!adopted_existing)
-        .execute(&state.pool)
         .await
         .map_err(|e| {
             tracing::error!("[QBITTORRENT] Failed to insert torrent_downloads row: {e}");
             ApiError::from(e)
         })?;
+        // Only an AllDebrid row has a uniqueness guard to lose.
+        if created.is_none() {
+            tracing::error!("[QBITTORRENT] torrent_downloads row {id} was not inserted");
+            return Err(ApiError::internal("torrent download row was not inserted"));
+        }
 
         tracing::info!(
             "[QBITTORRENT] Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}, adopted={adopted_existing}"

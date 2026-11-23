@@ -581,3 +581,255 @@ async fn a_retry_completes_a_partial_import(pool: PgPool) {
     volumes.sort_unstable();
     assert_eq!(volumes, vec![1, 2]);
 }
+
+// ─── Creation ───────────────────────────────────────────────────────────────
+
+/// A row as the factory left it, with every column a birth decides.
+#[derive(sqlx::FromRow)]
+struct Created {
+    client: String,
+    status: String,
+    progress: f32,
+    qb_hash: Option<String>,
+    external_id: Option<String>,
+    name: Option<String>,
+    content_path: Option<String>,
+    qb_owned: bool,
+    expected_volumes: Vec<i32>,
+    replace_existing: bool,
+}
+
+async fn created_row(pool: &PgPool, id: Uuid) -> Created {
+    sqlx::query_as(
+        "SELECT client, status, progress, qb_hash, external_id, name, content_path, \
+                qb_owned, expected_volumes, replace_existing \
+         FROM torrent_downloads WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// A torrent Stripstream just handed to qBittorrent: `downloading`, zero
+/// progress, and owned — the row may delete it later. A `.torrent` upload has
+/// no hash yet.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_queued_birth_is_a_fresh_owned_transfer(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = Uuid::new_v4();
+
+    let created = create(
+        &pool,
+        NewTorrentDownload {
+            expected_volumes: &[1, 2],
+            replace_existing: true,
+            ..NewTorrentDownload::new(
+                id,
+                library_id,
+                "Amulet",
+                TorrentClient::Qbittorrent,
+                Birth::Queued,
+            )
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(created, Some(id));
+    let row = created_row(&pool, id).await;
+    assert_eq!(row.client, "qbittorrent");
+    assert_eq!(row.status, "downloading");
+    assert_eq!(row.progress, 0.0);
+    assert_eq!(
+        row.qb_hash, None,
+        "the hash is resolved through the category"
+    );
+    assert_eq!(row.content_path, None);
+    assert!(row.qb_owned, "Stripstream queued the torrent itself");
+    assert_eq!(row.expected_volumes, vec![1, 2]);
+    assert!(row.replace_existing);
+}
+
+/// A qBittorrent torrent the user added: still `downloading`, but adopted —
+/// Stripstream must never claim (and later delete) it.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_downloading_birth_adopts_without_claiming(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = Uuid::new_v4();
+
+    let created = create(
+        &pool,
+        NewTorrentDownload {
+            qb_hash: Some("0123456789abcdef"),
+            ..NewTorrentDownload::new(
+                id,
+                library_id,
+                "Amulet",
+                TorrentClient::Qbittorrent,
+                Birth::Downloading,
+            )
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(created, Some(id));
+    let row = created_row(&pool, id).await;
+    assert_eq!(row.status, "downloading");
+    assert_eq!(row.progress, 0.0, "the next poll reports the real progress");
+    assert_eq!(row.qb_hash.as_deref(), Some("0123456789abcdef"));
+    assert!(!row.qb_owned, "an adopted torrent belongs to the user");
+}
+
+/// A qBittorrent torrent that is already complete on disk: the row is born
+/// `completed` at full progress so the import can start immediately.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_completed_adopted_birth_starts_at_full_progress(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = Uuid::new_v4();
+
+    let created = create(
+        &pool,
+        NewTorrentDownload {
+            qb_hash: Some("0123456789abcdef"),
+            ..NewTorrentDownload::new(
+                id,
+                library_id,
+                "Amulet",
+                TorrentClient::Qbittorrent,
+                Birth::CompletedAdopted {
+                    content_path: "/downloads/manga/Amulet",
+                },
+            )
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(created, Some(id));
+    let row = created_row(&pool, id).await;
+    assert_eq!(row.status, "completed");
+    assert_eq!(row.progress, 1.0);
+    assert_eq!(row.content_path.as_deref(), Some("/downloads/manga/Amulet"));
+    assert!(!row.qb_owned, "an adopted torrent belongs to the user");
+}
+
+/// An AllDebrid magnet: the debrid service already runs the transfer, and the
+/// row records the magnet id and the release name.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_alldebrid_birth_records_the_magnet(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = Uuid::new_v4();
+
+    let created = create(
+        &pool,
+        NewTorrentDownload {
+            qb_hash: Some("deadbeef"),
+            external_id: Some("42"),
+            name: Some("Amulet T01"),
+            expected_volumes: &[1],
+            ..NewTorrentDownload::new(
+                id,
+                library_id,
+                "Amulet",
+                TorrentClient::Alldebrid,
+                Birth::Downloading,
+            )
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(created, Some(id));
+    let row = created_row(&pool, id).await;
+    assert_eq!(row.client, "alldebrid");
+    assert_eq!(row.status, "downloading");
+    assert_eq!(row.progress, 0.0);
+    assert_eq!(row.qb_hash.as_deref(), Some("deadbeef"));
+    assert_eq!(row.external_id.as_deref(), Some("42"));
+    assert_eq!(row.name.as_deref(), Some("Amulet T01"));
+    assert!(
+        !row.qb_owned,
+        "an AllDebrid row owns nothing in qBittorrent"
+    );
+}
+
+/// The second request for a magnet already being tracked loses the race
+/// against the active-hash index and gets `None` — the first row is untouched.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn an_active_alldebrid_hash_is_a_lost_race(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    let magnet = |id| NewTorrentDownload {
+        qb_hash: Some("deadbeef"),
+        external_id: Some("42"),
+        ..NewTorrentDownload::new(
+            id,
+            library_id,
+            "Amulet",
+            TorrentClient::Alldebrid,
+            Birth::Downloading,
+        )
+    };
+
+    assert_eq!(create(&pool, magnet(first)).await.unwrap(), Some(first));
+    assert_eq!(
+        create(&pool, magnet(second)).await.unwrap(),
+        None,
+        "the partial unique index already holds an active row for this hash"
+    );
+
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM torrent_downloads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+}
+
+/// The index only covers active rows: a failed snatch can be retried.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_finished_alldebrid_row_does_not_block_a_new_snatch(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    let magnet = |id| NewTorrentDownload {
+        qb_hash: Some("deadbeef"),
+        external_id: Some("42"),
+        ..NewTorrentDownload::new(
+            id,
+            library_id,
+            "Amulet",
+            TorrentClient::Alldebrid,
+            Birth::Downloading,
+        )
+    };
+
+    assert_eq!(create(&pool, magnet(first)).await.unwrap(), Some(first));
+    fail(&pool, first, "magnet expired").await.unwrap();
+
+    assert_eq!(create(&pool, magnet(second)).await.unwrap(), Some(second));
+}
+
+/// qBittorrent has no active-hash guard: two rows may track the same hash, and
+/// only the id identifies a row.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_qbittorrent_hash_is_not_a_uniqueness_guard(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    let torrent = |id| NewTorrentDownload {
+        qb_hash: Some("deadbeef"),
+        ..NewTorrentDownload::new(
+            id,
+            library_id,
+            "Amulet",
+            TorrentClient::Qbittorrent,
+            Birth::Queued,
+        )
+    };
+
+    assert_eq!(create(&pool, torrent(first)).await.unwrap(), Some(first));
+    assert_eq!(create(&pool, torrent(second)).await.unwrap(), Some(second));
+}
