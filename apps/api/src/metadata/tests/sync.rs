@@ -813,31 +813,35 @@ async fn migration_0140_prunes_stale_lock_keys(pool: sqlx::PgPool) {
 /// through the provider that backs it, not rejected and not sent to Google
 /// Books.
 #[test]
-fn resolve_link_provider_name_canonicalizes_discovery_sources() {
+fn resolve_link_provider_canonicalizes_discovery_sources() {
+    for source in ["senscritique_bd", "sc_best_manga"] {
+        assert_eq!(
+            crate::metadata_providers::resolve_link_provider(source)
+                .expect("a discovery source must resolve")
+                .name(),
+            "senscritique",
+            "{source} must resolve to its backing provider"
+        );
+    }
     assert_eq!(
-        super::resolve_link_provider_name("senscritique_bd").as_deref(),
-        Some("senscritique")
-    );
-    assert_eq!(
-        super::resolve_link_provider_name("sc_best_manga").as_deref(),
-        Some("senscritique")
-    );
-    assert_eq!(
-        super::resolve_link_provider_name("anilist").as_deref(),
-        Some("anilist")
+        crate::metadata_providers::resolve_link_provider("anilist")
+            .expect("a real provider must resolve")
+            .name(),
+        "anilist"
     );
 }
 
 /// A link whose provider is not a metadata provider (e.g. a Prowlarr download)
 /// keeps the historic Google Books fallback instead of erroring out.
 #[test]
-fn resolve_link_provider_name_falls_back_to_google_books() {
-    assert_eq!(
-        super::resolve_link_provider_name("prowlarr").as_deref(),
-        Some("google_books")
-    );
-    assert_eq!(
-        super::resolve_link_provider_name("").as_deref(),
-        Some("google_books")
-    );
+fn resolve_link_provider_falls_back_to_google_books() {
+    for unknown in ["prowlarr", ""] {
+        assert_eq!(
+            crate::metadata_providers::resolve_link_provider(unknown)
+                .expect("the explicit fallback must resolve")
+                .name(),
+            crate::metadata_providers::FALLBACK_PROVIDER,
+            "{unknown:?} must fall back to Google Books"
+        );
+    }
 }

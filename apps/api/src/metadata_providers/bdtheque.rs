@@ -3,7 +3,9 @@ use serde::Deserialize;
 
 use super::scoring::{self, Score};
 use super::scraping::{self, absolute, text};
-use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use super::{
+    BookCandidate, MatchingPolicy, MetadataProvider, ProviderConfig, ProviderError, SeriesCandidate,
+};
 
 const BASE_URL: &str = "https://www.bdtheque.com";
 
@@ -18,28 +20,38 @@ impl MetadataProvider for BdthequeProvider {
         "bdtheque"
     }
 
+    fn matching_policy(&self) -> MatchingPolicy {
+        MatchingPolicy::HtmlScraper
+    }
+
     async fn search_series(
         &self,
         query: &str,
         _config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String> {
-        search_series_impl(query, BASE_URL).await
+    ) -> Result<Vec<SeriesCandidate>, ProviderError> {
+        search_series_impl(query, BASE_URL)
+            .await
+            .map_err(ProviderError::from)
     }
 
     async fn get_series(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String> {
-        get_series_impl(external_id, BASE_URL).await
+    ) -> Result<SeriesCandidate, ProviderError> {
+        get_series_impl(external_id, BASE_URL)
+            .await
+            .map_err(ProviderError::from)
     }
 
     async fn get_series_books(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String> {
-        get_series_books_impl(external_id, BASE_URL).await
+    ) -> Result<Vec<BookCandidate>, ProviderError> {
+        get_series_books_impl(external_id, BASE_URL)
+            .await
+            .map_err(ProviderError::from)
     }
 }
 

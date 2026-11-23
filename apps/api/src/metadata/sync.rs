@@ -61,22 +61,6 @@ pub(crate) async fn sync_series_from_links(
     Ok(report)
 }
 
-/// Resolve the effective metadata provider name for a stored link (#112).
-///
-/// Discovery source ids (`senscritique_bd`, `sc_trending_bd`, …) are
-/// canonicalized to the provider that implements them. A name that matches no
-/// provider — e.g. a link created from a Prowlarr download — falls back to
-/// Google Books, the historic behaviour. Returns `None` only when even the
-/// fallback provider is unavailable.
-fn resolve_link_provider_name(provider_name: &str) -> Option<String> {
-    let canonical = metadata_providers::canonical_provider_name(provider_name);
-    if metadata_providers::get_provider(canonical).is_some() {
-        Some(canonical.to_string())
-    } else {
-        metadata_providers::get_provider("google_books").map(|_| "google_books".to_string())
-    }
-}
-
 /// Fetch provider books for every approved link, match them, persist the
 /// external rows, then push the merged (primary-first) metadata to local books.
 async fn sync_books_from_links(
@@ -92,12 +76,12 @@ async fn sync_books_from_links(
     let local_books = shared_sync::fetch_local_books(pool, library_id, series_name).await?;
 
     for link in links {
-        // Legacy links may carry a discovery source id (#112); resolve it before
-        // looking up the provider so it does not silently fall back to Google Books.
-        let link_provider = resolve_link_provider_name(&link.provider)
-            .ok_or_else(|| ApiError::internal(format!("unknown provider: {}", link.provider)))?;
-        let provider = metadata_providers::get_provider(&link_provider)
-            .ok_or_else(|| ApiError::internal(format!("unknown provider: {link_provider}")))?;
+        // Legacy links may carry a discovery source id (#112); the link resolver
+        // canonicalizes it and keeps the explicit Google Books fallback for a
+        // provider created outside the metadata providers.
+        let provider = metadata_providers::resolve_link_provider(&link.provider)
+            .map_err(|name| ApiError::internal(format!("unknown provider: {name}")))?;
+        let link_provider = provider.name().to_string();
         let provider_config = super::config::load_provider_config(pool, &link_provider).await;
 
         let books = provider
@@ -107,11 +91,8 @@ async fn sync_books_from_links(
 
         shared_sync::delete_link_book_metadata(pool, link.id).await?;
 
-        let matched = if link_provider == "bdtheque" || link_provider == "bdphile" {
-            shared_sync::match_books_for_new_provider(&books, &local_books)
-        } else {
-            shared_sync::match_books(&books, &local_books)
-        };
+        let matched =
+            shared_sync::match_books_with(provider.matching_policy(), &books, &local_books);
 
         let mut matched_count: i64 = 0;
         for m in &matched {

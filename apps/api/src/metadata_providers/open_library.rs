@@ -2,7 +2,7 @@ use stripstream_core::http::build_http_client;
 
 use super::{
     scoring::{self, Score},
-    urlencoded, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
+    urlencoded, BookCandidate, MetadataProvider, ProviderConfig, ProviderError, SeriesCandidate,
 };
 
 const DEFAULT_BASE_URL: &str = "https://openlibrary.org";
@@ -19,7 +19,7 @@ impl MetadataProvider for OpenLibraryProvider {
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String> {
+    ) -> Result<Vec<SeriesCandidate>, ProviderError> {
         search_series_impl(query, config, DEFAULT_BASE_URL).await
     }
 
@@ -27,7 +27,7 @@ impl MetadataProvider for OpenLibraryProvider {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String> {
+    ) -> Result<SeriesCandidate, ProviderError> {
         get_series_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 
@@ -35,7 +35,7 @@ impl MetadataProvider for OpenLibraryProvider {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String> {
+    ) -> Result<Vec<BookCandidate>, ProviderError> {
         get_series_books_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 }
@@ -44,7 +44,7 @@ async fn search_series_impl(
     query: &str,
     config: &ProviderConfig,
     base_url: &str,
-) -> Result<Vec<SeriesCandidate>, String> {
+) -> Result<Vec<SeriesCandidate>, ProviderError> {
     let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -66,12 +66,15 @@ async fn search_series_impl(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Open Library request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("Open Library request failed: {e}")))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Open Library returned {status}: {text}"));
+        return Err(ProviderError::http_status(
+            status.as_u16(),
+            format!("Open Library returned {status}: {text}"),
+        ));
     }
 
     let data: serde_json::Value = resp
@@ -222,7 +225,7 @@ async fn get_series_impl(
     external_id: &str,
     _config: &ProviderConfig,
     base_url: &str,
-) -> Result<SeriesCandidate, String> {
+) -> Result<SeriesCandidate, ProviderError> {
     let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
     let url = format!("{base_url}{external_id}.json");
@@ -230,9 +233,12 @@ async fn get_series_impl(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Open Library request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("Open Library request failed: {e}")))?;
     if !response.status().is_success() {
-        return Err(format!("Open Library returned {}", response.status()));
+        return Err(ProviderError::http_status(
+            response.status().as_u16(),
+            format!("Open Library returned {}", response.status()),
+        ));
     }
     let work: serde_json::Value = response
         .json()
@@ -281,7 +287,7 @@ async fn get_series_books_impl(
     external_id: &str,
     _config: &ProviderConfig,
     base_url: &str,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -291,7 +297,7 @@ async fn get_series_books_impl(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Open Library request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("Open Library request failed: {e}")))?;
 
     let work: serde_json::Value = if resp.status().is_success() {
         resp.json()
@@ -314,7 +320,7 @@ async fn get_series_books_impl(
         .get(&search_url)
         .send()
         .await
-        .map_err(|e| format!("Open Library search failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("Open Library search failed: {e}")))?;
 
     if !resp.status().is_success() {
         return Ok(vec![]);

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::metadata_providers::BookCandidate;
+use crate::metadata_providers::{BookCandidate, MatchingPolicy};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,22 +116,17 @@ pub(crate) async fn fetch_local_books(
         .collect())
 }
 
-/// Match external books to local books using volume number then title containment.
+/// Match external books to local books using the provider's [`MatchingPolicy`].
+///
+/// The policy is a provider capability: the caller reads it from the adapter
+/// (`provider.matching_policy()`) instead of branching on the provider name.
 /// Returns matched pairs preserving the external book order.
-pub(crate) fn match_books<'a>(
+pub(crate) fn match_books_with<'a>(
+    policy: MatchingPolicy,
     ext_books: &'a [BookCandidate],
     local_books: &[LocalBookForMatching],
 ) -> Vec<MatchedBook<'a>> {
-    match_books_with_policy(ext_books, local_books, false)
-}
-
-/// Match books for the new HTML providers. This is deliberately opt-in so
-/// historical providers keep their existing regular/integral matching behavior.
-pub(crate) fn match_books_for_new_provider<'a>(
-    ext_books: &'a [BookCandidate],
-    local_books: &[LocalBookForMatching],
-) -> Vec<MatchedBook<'a>> {
-    match_books_with_policy(ext_books, local_books, true)
+    match_books_with_policy(ext_books, local_books, policy.allows_oneshots())
 }
 
 fn normalize_isbn(value: &str) -> String {
@@ -474,7 +469,7 @@ mod tests {
             local(isbn_match, 9, "ISBN tome", Some("9782000000000"), "regular"),
         ];
         let external_books = [ext];
-        let matched = match_books(&external_books, &books);
+        let matched = match_books_with(MatchingPolicy::Standard, &external_books, &books);
         assert_eq!(matched[0].local_book_id, Some(existing));
     }
 
@@ -490,7 +485,7 @@ mod tests {
             "regular",
         )];
         let external_books = [ext];
-        let matched = match_books_for_new_provider(&external_books, &books);
+        let matched = match_books_with(MatchingPolicy::HtmlScraper, &external_books, &books);
         assert_eq!(matched[0].local_book_id, Some(expected));
     }
 
@@ -504,7 +499,7 @@ mod tests {
             local(oneshot, 1, "Album unique", Some("9782000000000"), "oneshot"),
         ];
         let external_books = [ext];
-        let matched = match_books_for_new_provider(&external_books, &books);
+        let matched = match_books_with(MatchingPolicy::HtmlScraper, &external_books, &books);
         assert_eq!(matched[0].local_book_id, Some(oneshot));
     }
 
@@ -513,7 +508,7 @@ mod tests {
         let ext = external("", None, None, false);
         let books = vec![local(Uuid::new_v4(), 1, "Tome 1", None, "regular")];
         let external_books = [ext];
-        let matched = match_books(&external_books, &books);
+        let matched = match_books_with(MatchingPolicy::Standard, &external_books, &books);
         assert_eq!(matched[0].local_book_id, None);
     }
 
@@ -522,7 +517,7 @@ mod tests {
         let books = vec![local(Uuid::new_v4(), 5, "Le grand voyage", None, "regular")];
         for title in ["  ", "-", "Le", "!?"] {
             let external_books = [external(title, None, None, false)];
-            let matched = match_books(&external_books, &books);
+            let matched = match_books_with(MatchingPolicy::Standard, &external_books, &books);
             assert_eq!(matched[0].local_book_id, None, "title {title:?}");
         }
     }
@@ -540,7 +535,7 @@ mod tests {
             external("Hors serie special", None, None, false),
             external("Artbook officiel", None, None, false),
         ];
-        let matched = match_books(&external_books, &books);
+        let matched = match_books_with(MatchingPolicy::Standard, &external_books, &books);
         assert!(matched.iter().all(|m| m.local_book_id.is_none()));
     }
 
@@ -552,10 +547,16 @@ mod tests {
         let books = vec![book];
 
         let by_volume = [external("Autre titre", Some(1), None, false)];
-        assert_eq!(match_books(&by_volume, &books)[0].local_book_id, None);
+        assert_eq!(
+            match_books_with(MatchingPolicy::Standard, &by_volume, &books)[0].local_book_id,
+            None
+        );
 
         let by_title = [external("la serpe d’or", Some(2), None, false)];
-        assert_eq!(match_books(&by_title, &books)[0].local_book_id, Some(id));
+        assert_eq!(
+            match_books_with(MatchingPolicy::Standard, &by_title, &books)[0].local_book_id,
+            Some(id)
+        );
     }
 
     #[test]
@@ -563,12 +564,15 @@ mod tests {
         let id = Uuid::new_v4();
         let books = vec![local(id, 12, "Saga Tome 12", None, "regular")];
         let external_books = [external("Saga Tome 1", None, None, false)];
-        assert_eq!(match_books(&external_books, &books)[0].local_book_id, None);
+        assert_eq!(
+            match_books_with(MatchingPolicy::Standard, &external_books, &books)[0].local_book_id,
+            None
+        );
 
         let books = vec![local(id, 12, "Astérix - La Serpe d'Or", None, "regular")];
         let external_books = [external("La serpe d'or", None, None, false)];
         assert_eq!(
-            match_books(&external_books, &books)[0].local_book_id,
+            match_books_with(MatchingPolicy::Standard, &external_books, &books)[0].local_book_id,
             Some(id)
         );
     }

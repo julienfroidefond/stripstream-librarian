@@ -7,6 +7,7 @@ use stripstream_core::series_identity;
 
 use super::links;
 use crate::metadata_providers;
+use crate::metadata_providers::{ProviderBlock, ProviderCall, ProviderError, ProviderRun};
 
 // ---------------------------------------------------------------------------
 // Approved links, provider by provider
@@ -65,7 +66,9 @@ pub(super) enum SearchOutcome {
     AutoMatch(metadata_providers::SeriesCandidate),
     NoResults,
     LowConfidence(metadata_providers::SeriesCandidate),
-    Error(String),
+    Error(ProviderError),
+    /// The provider was blocked earlier in the job; it was not called.
+    Skipped(ProviderBlock),
 }
 
 /// Turn raw candidates into an outcome without touching the network or the DB.
@@ -92,22 +95,61 @@ pub(super) async fn search_and_evaluate(
     series_name: &str,
     provider_name: &str,
     detailed: bool,
+    run: &mut ProviderRun,
 ) -> SearchOutcome {
     // Canonicalize discovery source ids before lookup (#112) so a legacy name
     // does not produce a spurious "unknown provider" error. `resolve_provider`
     // reports the canonical name it rejected.
     let provider = match metadata_providers::resolve_provider(provider_name) {
         Ok(p) => p,
-        Err(unknown) => return SearchOutcome::Error(format!("Unknown provider: {unknown}")),
+        Err(unknown) => {
+            return SearchOutcome::Error(ProviderError::from(format!(
+                "Unknown provider: {unknown}"
+            )))
+        }
     };
     let provider_name = provider.name();
 
     let mut config = super::config::load_provider_config(pool, provider_name).await;
     config.detailed = detailed;
 
-    let candidates = match provider.search_series(series_name, &config).await {
-        Ok(c) => c,
-        Err(e) => return SearchOutcome::Error(e),
+    search_with_provider(
+        pool,
+        library_id,
+        series_name,
+        provider_name,
+        provider.as_ref(),
+        &config,
+        run,
+    )
+    .await
+}
+
+/// Search `provider` for `series_name` under the run's breaker.
+///
+/// Split from [`search_and_evaluate`] so the policy — skip a blocked provider
+/// without a call, open the block on a rate limit — is testable with a fake
+/// adapter instead of a real network provider.
+pub(super) async fn search_with_provider(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_name: &str,
+    provider_name: &str,
+    provider: &dyn metadata_providers::MetadataProvider,
+    config: &metadata_providers::ProviderConfig,
+    run: &mut ProviderRun,
+) -> SearchOutcome {
+    // The run owns the breaker: a blocked provider is skipped without a call,
+    // and a rate limit opens the block for the rest of the job.
+    let candidates = match run
+        .call(provider_name, || {
+            provider.search_series(series_name, config)
+        })
+        .await
+    {
+        ProviderCall::Skipped(block) => return SearchOutcome::Skipped(block),
+        ProviderCall::Answered(Err(e)) => return SearchOutcome::Error(e),
+        ProviderCall::Answered(Ok(candidates)) => candidates,
     };
 
     if candidates.is_empty() {
@@ -285,8 +327,10 @@ pub(super) async fn evaluate_provider(
     series_name: &str,
     provider_name: &str,
     fallback_used: bool,
+    run: &mut ProviderRun,
 ) -> ProviderOutcome {
-    let outcome = search_and_evaluate(pool, library_id, series_name, provider_name, true).await;
+    let outcome =
+        search_and_evaluate(pool, library_id, series_name, provider_name, true, run).await;
 
     match outcome {
         SearchOutcome::AutoMatch(candidate) => {
@@ -344,7 +388,17 @@ pub(super) async fn evaluate_provider(
             best_confidence: None,
             best_candidate: None,
             link_id: None,
-            message: Some(e),
+            message: Some(e.to_string()),
+        },
+        SearchOutcome::Skipped(block) => ProviderOutcome {
+            status: "error",
+            provider: provider_name.to_string(),
+            fallback_used,
+            candidates_count: 0,
+            best_confidence: None,
+            best_candidate: None,
+            link_id: None,
+            message: Some(block.skip_message()),
         },
     }
 }

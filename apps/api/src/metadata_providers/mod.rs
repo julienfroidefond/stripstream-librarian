@@ -4,6 +4,7 @@ pub mod bdtheque;
 pub mod comicvine;
 pub mod google_books;
 pub mod open_library;
+pub mod run;
 pub(crate) mod scoring;
 mod scraping;
 pub mod senscritique;
@@ -11,6 +12,8 @@ pub mod series_metadata;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+pub use run::{ProviderBlock, ProviderCall, ProviderError, ProviderRun};
 
 /// Configuration passed to providers (API keys, etc.)
 #[derive(Debug, Clone, Default)]
@@ -79,6 +82,18 @@ pub fn canonical_provider_name(name: &str) -> &str {
     }
 }
 
+/// Display label of a provider id (`senscritique` → `SensCritique`).
+///
+/// Falls back to the id itself for a provider that is not in the list, so a
+/// message never loses the name it was built from.
+pub fn provider_label(name: &str) -> String {
+    available_providers()
+        .into_iter()
+        .find(|descriptor| descriptor.id == name)
+        .map(|descriptor| descriptor.label)
+        .unwrap_or_else(|| name.to_string())
+}
+
 /// Resolve `name` to an implemented metadata provider.
 ///
 /// Discovery source ids are canonicalized first (`senscritique_bd` →
@@ -86,8 +101,44 @@ pub fn canonical_provider_name(name: &str) -> &str {
 /// report exactly what was rejected — the old code silently fell back to Google
 /// Books, which surfaced a confusing error and hid the real one (#112).
 pub fn resolve_provider(name: &str) -> Result<Box<dyn MetadataProvider>, String> {
+    resolve_provider_with(name, UnknownProvider::Reject)
+}
+
+/// Provider used when a legacy link names something that is not a provider.
+pub const FALLBACK_PROVIDER: &str = "google_books";
+
+/// What to do when a name matches no metadata provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnknownProvider {
+    /// Report the canonical name back (search, batch, refresh).
+    Reject,
+    /// Use [`FALLBACK_PROVIDER`] (links created outside the metadata providers).
+    Fallback,
+}
+
+/// The one resolver: canonicalize, then apply the caller's unknown-name policy.
+fn resolve_provider_with(
+    name: &str,
+    on_unknown: UnknownProvider,
+) -> Result<Box<dyn MetadataProvider>, String> {
     let canonical = canonical_provider_name(name);
-    get_provider(canonical).ok_or_else(|| canonical.to_string())
+    match (get_provider(canonical), on_unknown) {
+        (Some(provider), _) => Ok(provider),
+        (None, UnknownProvider::Fallback) => {
+            get_provider(FALLBACK_PROVIDER).ok_or_else(|| canonical.to_string())
+        }
+        (None, UnknownProvider::Reject) => Err(canonical.to_string()),
+    }
+}
+
+/// Resolve the provider behind a stored metadata link (#112).
+///
+/// Canonicalizes discovery source ids like [`resolve_provider`], but keeps the
+/// historic Google Books fallback for a link whose provider is not a metadata
+/// provider (e.g. a Prowlarr download). This is the explicit fallback policy,
+/// not a silent default: search, batch and refresh stay strict.
+pub fn resolve_link_provider(name: &str) -> Result<Box<dyn MetadataProvider>, String> {
+    resolve_provider_with(name, UnknownProvider::Fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -159,17 +210,45 @@ pub struct BookCandidate {
     pub metadata_json: serde_json::Value,
 }
 
+/// How a provider's books are matched against the local books of a series.
+///
+/// This is a provider capability, not a caller decision: the HTML scrapers
+/// expose a oneshot flag and must be allowed to match an unnumbered book,
+/// while the historic API providers keep the regular/integral matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchingPolicy {
+    /// Volume number, then title containment; oneshots never match.
+    Standard,
+    /// Same matching, but an unnumbered book flagged `oneshot` can match.
+    HtmlScraper,
+}
+
+impl MatchingPolicy {
+    /// Whether an unnumbered book flagged `oneshot` may match a local book.
+    pub fn allows_oneshots(&self) -> bool {
+        matches!(self, Self::HtmlScraper)
+    }
+}
+
 /// Trait that all metadata providers must implement
 #[async_trait::async_trait]
 pub trait MetadataProvider: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
 
+    /// How this provider's books are matched against local books.
+    ///
+    /// Defaults to [`MatchingPolicy::Standard`]; only the HTML scrapers that
+    /// flag oneshots override it.
+    fn matching_policy(&self) -> MatchingPolicy {
+        MatchingPolicy::Standard
+    }
+
     async fn search_series(
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String>;
+    ) -> Result<Vec<SeriesCandidate>, ProviderError>;
 
     /// Fetch the exact series previously linked to this provider.
     ///
@@ -179,13 +258,13 @@ pub trait MetadataProvider: Send + Sync {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String>;
+    ) -> Result<SeriesCandidate, ProviderError>;
 
     async fn get_series_books(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String>;
+    ) -> Result<Vec<BookCandidate>, ProviderError>;
 }
 
 /// Factory function to get a provider by name
@@ -347,5 +426,148 @@ mod helper_tests {
                 d.id.as_str()
             );
         }
+    }
+
+    /// The matching policy is a provider capability, not a caller decision.
+    #[test]
+    fn each_provider_declares_its_matching_policy() {
+        for id in [
+            "google_books",
+            "open_library",
+            "comicvine",
+            "anilist",
+            "senscritique",
+        ] {
+            assert_eq!(
+                get_provider(id).unwrap().matching_policy(),
+                MatchingPolicy::Standard,
+                "{id} keeps the standard matching"
+            );
+        }
+        for id in ["bdtheque", "bdphile"] {
+            assert_eq!(
+                get_provider(id).unwrap().matching_policy(),
+                MatchingPolicy::HtmlScraper,
+                "{id} exposes oneshot books"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_html_scraper_policy_allows_oneshots() {
+        assert!(MatchingPolicy::HtmlScraper.allows_oneshots());
+        assert!(!MatchingPolicy::Standard.allows_oneshots());
+    }
+
+    /// The legacy link fallback is an explicit, named policy: strict callers
+    /// reject an unknown name, the link path uses the one declared fallback.
+    #[test]
+    fn the_link_fallback_is_explicit_and_named() {
+        assert_eq!(FALLBACK_PROVIDER, "google_books");
+        assert_eq!(
+            resolve_provider("prowlarr")
+                .err()
+                .expect("strict callers reject an unknown name"),
+            "prowlarr"
+        );
+
+        for unknown in ["prowlarr", "senscritique_bd_typo", ""] {
+            assert_eq!(
+                resolve_link_provider(unknown).unwrap().name(),
+                FALLBACK_PROVIDER,
+                "{unknown} must use the declared fallback"
+            );
+        }
+    }
+
+    #[test]
+    fn the_link_fallback_still_resolves_real_providers() {
+        assert_eq!(resolve_link_provider("anilist").unwrap().name(), "anilist");
+        assert_eq!(
+            resolve_link_provider("senscritique_bd").unwrap().name(),
+            "senscritique",
+            "a discovery alias is canonicalized, never sent to the fallback"
+        );
+    }
+
+    /// Fake adapter with a fixed answer, to drive the run policy.
+    struct StubProvider {
+        outcome: Result<Vec<SeriesCandidate>, ProviderError>,
+    }
+
+    #[async_trait::async_trait]
+    impl MetadataProvider for StubProvider {
+        fn name(&self) -> &str {
+            "senscritique"
+        }
+
+        async fn search_series(
+            &self,
+            _query: &str,
+            _config: &ProviderConfig,
+        ) -> Result<Vec<SeriesCandidate>, ProviderError> {
+            self.outcome.clone()
+        }
+
+        async fn get_series(
+            &self,
+            _external_id: &str,
+            _config: &ProviderConfig,
+        ) -> Result<SeriesCandidate, ProviderError> {
+            Err(ProviderError::Fatal("not implemented".to_string()))
+        }
+
+        async fn get_series_books(
+            &self,
+            _external_id: &str,
+            _config: &ProviderConfig,
+        ) -> Result<Vec<BookCandidate>, ProviderError> {
+            Ok(vec![])
+        }
+    }
+
+    /// Each adapter error variant is answered as-is; only a rate limit blocks.
+    #[tokio::test]
+    async fn every_provider_error_variant_drives_the_run_policy() {
+        let config = ProviderConfig::default();
+
+        let provider = StubProvider {
+            outcome: Err(ProviderError::RateLimited("429".to_string())),
+        };
+        let mut run = ProviderRun::new();
+        match run
+            .call("senscritique", || provider.search_series("q", &config))
+            .await
+        {
+            ProviderCall::Answered(Err(error)) => assert!(error.is_rate_limited()),
+            _ => panic!("a rate limit is answered, not skipped"),
+        }
+        assert!(run.is_blocked("senscritique"));
+
+        let provider = StubProvider {
+            outcome: Err(ProviderError::transient("timeout")),
+        };
+        let mut run = ProviderRun::new();
+        match run
+            .call("senscritique", || provider.search_series("q", &config))
+            .await
+        {
+            ProviderCall::Answered(Err(error)) => assert!(!error.is_rate_limited()),
+            _ => panic!("a transient error is answered"),
+        }
+        assert!(!run.is_blocked("senscritique"));
+
+        let provider = StubProvider {
+            outcome: Err(ProviderError::Fatal("bad id".to_string())),
+        };
+        let mut run = ProviderRun::new();
+        match run
+            .call("senscritique", || provider.search_series("q", &config))
+            .await
+        {
+            ProviderCall::Answered(Err(error)) => assert!(!error.is_rate_limited()),
+            _ => panic!("a fatal error is answered"),
+        }
+        assert!(!run.is_blocked("senscritique"));
     }
 }

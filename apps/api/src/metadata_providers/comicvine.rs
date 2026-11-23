@@ -2,7 +2,7 @@ use stripstream_core::http::build_http_client_with_agent;
 
 use super::{
     scoring::{self, Score},
-    strip_html, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
+    strip_html, BookCandidate, MetadataProvider, ProviderConfig, ProviderError, SeriesCandidate,
 };
 
 const DEFAULT_BASE_URL: &str = "https://comicvine.gamespot.com";
@@ -25,7 +25,7 @@ impl MetadataProvider for ComicVineProvider {
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String> {
+    ) -> Result<Vec<SeriesCandidate>, ProviderError> {
         search_series_impl(query, config, DEFAULT_BASE_URL).await
     }
 
@@ -33,7 +33,7 @@ impl MetadataProvider for ComicVineProvider {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String> {
+    ) -> Result<SeriesCandidate, ProviderError> {
         get_series_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 
@@ -41,7 +41,7 @@ impl MetadataProvider for ComicVineProvider {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String> {
+    ) -> Result<Vec<BookCandidate>, ProviderError> {
         get_series_books_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 }
@@ -55,7 +55,7 @@ async fn search_series_impl(
     query: &str,
     config: &ProviderConfig,
     base_url: &str,
-) -> Result<Vec<SeriesCandidate>, String> {
+) -> Result<Vec<SeriesCandidate>, ProviderError> {
     let api_key = config
         .api_key
         .as_deref()
@@ -81,12 +81,15 @@ async fn search_series_impl(
         ])
         .send()
         .await
-        .map_err(|e| format!("ComicVine request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("ComicVine request failed: {e}")))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("ComicVine returned {status}: {text}"));
+        return Err(ProviderError::http_status(
+            status.as_u16(),
+            format!("ComicVine returned {status}: {text}"),
+        ));
     }
 
     let data: serde_json::Value = resp
@@ -162,7 +165,7 @@ async fn get_series_impl(
     external_id: &str,
     config: &ProviderConfig,
     base_url: &str,
-) -> Result<SeriesCandidate, String> {
+) -> Result<SeriesCandidate, ProviderError> {
     let api_key = config
         .api_key
         .as_deref()
@@ -175,9 +178,12 @@ async fn get_series_impl(
         .query(&[("api_key", api_key), ("format", "json")])
         .send()
         .await
-        .map_err(|e| format!("ComicVine request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("ComicVine request failed: {e}")))?;
     if !response.status().is_success() {
-        return Err(format!("ComicVine returned {}", response.status()));
+        return Err(ProviderError::http_status(
+            response.status().as_u16(),
+            format!("ComicVine returned {}", response.status()),
+        ));
     }
     let volume: serde_json::Value = response
         .json()
@@ -243,7 +249,7 @@ async fn get_series_books_impl(
     external_id: &str,
     config: &ProviderConfig,
     base_url: &str,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     let api_key = config
         .api_key
         .as_deref()
@@ -274,12 +280,15 @@ async fn get_series_books_impl(
             ])
             .send()
             .await
-            .map_err(|e| format!("ComicVine request failed: {e}"))?;
+            .map_err(|e| ProviderError::transient(format!("ComicVine request failed: {e}")))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(format!("ComicVine returned {status}: {text}"));
+            return Err(ProviderError::http_status(
+                status.as_u16(),
+                format!("ComicVine returned {status}: {text}"),
+            ));
         }
 
         let data: serde_json::Value = resp
