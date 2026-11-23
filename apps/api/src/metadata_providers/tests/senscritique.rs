@@ -427,7 +427,10 @@ async fn wiremock_graphql_error_response() {
     let body = serde_json::json!({ "query": "{ bad }" });
     let result = graphql_request_url(&client, &server.uri(), &body).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Something went wrong"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Something went wrong"));
 }
 
 #[tokio::test]
@@ -442,7 +445,7 @@ async fn wiremock_graphql_http_error() {
     let body = serde_json::json!({ "query": "{ test }" });
     let result = graphql_request_url(&client, &server.uri(), &body).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("HTTP 500"));
+    assert!(result.unwrap_err().to_string().contains("HTTP 500"));
 }
 
 #[tokio::test]

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
 use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, start_job, JobStatus};
 use crate::metadata_providers;
-use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
+use crate::metadata_providers::ProviderRun;
 use crate::{
     error::ApiError,
     job_helpers::{insert_event, is_job_cancelled, set_total_files, update_progress},
@@ -581,7 +581,7 @@ pub(crate) async fn process_metadata_batch(
         .map_err(|e| e.to_string())?;
 
     let mut processed = 0i32;
-    let mut sc_rate_limited = false;
+    let mut run = ProviderRun::for_job(job_id);
 
     for series_name in &series_names {
         // Check cancellation
@@ -617,41 +617,43 @@ pub(crate) async fn process_metadata_batch(
             .as_deref()
             .is_some_and(|p| has_approved_link(&approved_links, series_name, p));
 
-        // Circuit breaker: skip only the SensCritique lookup, not the whole
-        // series, so the other provider can still be matched.
-        let primary_is_sc = primary_name == "senscritique";
-        let secondary_is_sc = secondary_name.as_deref() == Some("senscritique");
-        let primary_skipped_sc = !primary_linked && sc_rate_limited && primary_is_sc;
-        let secondary_skipped_sc = !secondary_linked && sc_rate_limited && secondary_is_sc;
+        // Circuit breaker: a provider blocked earlier in the job is skipped on
+        // its own, so the other provider can still be matched.
+        let primary_skipped = !primary_linked && run.is_blocked(&primary_name);
+        let secondary_skipped = !secondary_linked
+            && secondary_name
+                .as_deref()
+                .is_some_and(|provider| run.is_blocked(provider));
 
-        let primary_outcome = if primary_linked || primary_skipped_sc {
+        let primary_outcome = if primary_linked || primary_skipped {
             None
         } else {
-            Some(evaluate_provider(pool, library_id, series_name, &primary_name, false).await)
+            Some(
+                evaluate_provider(
+                    pool,
+                    library_id,
+                    series_name,
+                    &primary_name,
+                    false,
+                    &mut run,
+                )
+                .await,
+            )
         };
 
         let secondary_outcome = match secondary_name.as_deref() {
-            Some(provider) if !secondary_linked && !(sc_rate_limited && secondary_is_sc) => {
-                Some(evaluate_provider(pool, library_id, series_name, provider, true).await)
-            }
+            Some(provider) if !secondary_linked && !run.is_blocked(provider) => Some(
+                evaluate_provider(pool, library_id, series_name, provider, true, &mut run).await,
+            ),
             _ => None,
         };
 
-        // Detect SensCritique 429 on either provider and trip the job circuit
-        // breaker for the remaining series.
-        for outcome in primary_outcome.iter().chain(secondary_outcome.iter()) {
-            if outcome.status == "error"
-                && outcome
-                    .message
-                    .as_deref()
-                    .is_some_and(|e| e.contains(RATE_LIMITED_ERROR))
-            {
-                sc_rate_limited = true;
-                warn!(
-                    "[METADATA_BATCH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC lookups"
-                );
-            }
-        }
+        // The block that explains a skipped lookup, if any: a rate-limited
+        // provider only fails a series with no link at all.
+        let skipped_block = [Some(primary_name.as_str()), secondary_name.as_deref()]
+            .into_iter()
+            .flatten()
+            .find_map(|provider| run.block_for(provider));
 
         // A confident primary wins; otherwise a confident secondary (fallback)
         // becomes the reported match. A series that already has its primary
@@ -660,7 +662,7 @@ pub(crate) async fn process_metadata_batch(
         let selected = select_series_outcome(
             primary_linked,
             secondary_linked,
-            primary_skipped_sc || secondary_skipped_sc,
+            primary_skipped || secondary_skipped,
             primary_outcome.as_ref(),
             secondary_outcome.as_ref(),
         );
@@ -678,7 +680,7 @@ pub(crate) async fn process_metadata_batch(
                 if let Some(secondary) = &secondary_outcome {
                     detail["secondary"] = secondary.detail();
                 }
-                if secondary_skipped_sc {
+                if secondary_skipped {
                     detail["secondary_skipped"] = serde_json::json!("rate_limited");
                 }
                 processed += 1;
@@ -699,9 +701,12 @@ pub(crate) async fn process_metadata_batch(
             SeriesOutcome::RateLimited => {
                 processed += 1;
                 update_progress(pool, job_id, processed, total, series_name).await;
-                warn!(
-                    "[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)"
-                );
+                let message = skipped_block
+                    .map(|block| block.skip_message())
+                    .unwrap_or_else(|| {
+                        "Skipped: provider rate-limited earlier in this job".to_string()
+                    });
+                warn!("[METADATA_BATCH] job={job_id} skipping '{series_name}' ({message})");
                 insert_event(
                     pool,
                     job_id,
@@ -709,7 +714,7 @@ pub(crate) async fn process_metadata_batch(
                     "error",
                     Some("series"),
                     Some(series_name),
-                    Some("Skipped: SensCritique rate-limited earlier in this job"),
+                    Some(&message),
                     None,
                 )
                 .await;

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::job_helpers::{is_job_cancelled, set_total_files, update_progress};
 use crate::jobs::launcher::{self, JobLaunchResponse, JobSpec};
 use crate::jobs::lifecycle::{cancel_job, classify_job, finish_job, start_job, JobStatus};
-use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
+use crate::metadata_providers::{self, ProviderRun};
 use crate::{error::ApiError, state::AppState};
 use notifications::NotificationEvent;
 
@@ -341,6 +341,7 @@ pub async fn refresh_single_link(
     let provider: String = row.get("provider");
     let external_id: String = row.get("external_id");
 
+    let mut run = ProviderRun::new();
     match refresh_link(
         &state.pool,
         link_id,
@@ -348,6 +349,7 @@ pub async fn refresh_single_link(
         &series_name,
         &provider,
         &external_id,
+        &mut run,
     )
     .await
     {
@@ -430,7 +432,7 @@ async fn process_metadata_refresh_inner(
     let mut errors = 0i32;
     let mut all_results: Vec<SeriesRefreshResult> = Vec::new();
 
-    let mut sc_rate_limited = false;
+    let mut run = ProviderRun::for_job(job_id);
     for (link_id, series_name, provider_name, external_id, series_id) in &links {
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
@@ -438,9 +440,16 @@ async fn process_metadata_refresh_inner(
             return Ok(());
         }
 
-        // Circuit breaker: skip remaining SensCritique links after a 429
-        if provider_name == "senscritique" && sc_rate_limited {
-            warn!("[METADATA_REFRESH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
+        // Blocks are keyed by canonical provider id: a legacy link may carry a
+        // discovery source id (`senscritique_bd`) that resolves to `senscritique`.
+        let provider_key = metadata_providers::canonical_provider_name(provider_name);
+
+        // Circuit breaker: a provider rate-limited earlier in this job is skipped
+        if let Some(block) = run.block_for(provider_key) {
+            warn!(
+                "[METADATA_REFRESH] job={job_id} skipping '{series_name}' ({})",
+                block.label
+            );
             errors += 1;
             all_results.push(SeriesRefreshResult {
                 series_id: Some(*series_id),
@@ -449,7 +458,7 @@ async fn process_metadata_refresh_inner(
                 status: "error".to_string(),
                 series_changes: vec![],
                 book_changes: vec![],
-                error: Some("Skipped: SensCritique rate-limited earlier in this job".to_string()),
+                error: Some(block.skip_message()),
             });
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
@@ -463,6 +472,7 @@ async fn process_metadata_refresh_inner(
             series_name,
             provider_name,
             external_id,
+            &mut run,
         )
         .await
         {
@@ -476,9 +486,11 @@ async fn process_metadata_refresh_inner(
                 all_results.push(result);
             }
             Err(e) => {
-                if provider_name == "senscritique" && e.contains(RATE_LIMITED_ERROR) {
-                    sc_rate_limited = true;
-                    warn!("[METADATA_REFRESH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC links");
+                if let Some(block) = run.block_for(provider_key) {
+                    warn!(
+                        "[METADATA_REFRESH] job={job_id} {} rate-limited on '{series_name}', skipping its remaining links",
+                        block.label
+                    );
                 } else {
                     warn!("[METADATA_REFRESH] job={job_id} error on series='{series_name}': {e}");
                 }

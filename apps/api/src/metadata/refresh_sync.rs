@@ -8,6 +8,7 @@ use super::shared_sync;
 use super::types::FieldChange;
 use crate::metadata_providers;
 use crate::metadata_providers::series_metadata;
+use crate::metadata_providers::{ProviderCall, ProviderRun};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +53,7 @@ pub(crate) async fn refresh_link(
     series_name: &str,
     provider_name: &str,
     external_id: &str,
+    run: &mut ProviderRun,
 ) -> Result<super::refresh::SeriesRefreshResult, String> {
     // Legacy links created before #112 may still carry a discovery source id
     // (`senscritique_bd`, `sc_trending_bd`, …). Resolve it to the metadata
@@ -72,10 +74,18 @@ pub(crate) async fn refresh_link(
     let mut book_changes: Vec<BookDiff> = Vec::new();
 
     // -- Series-level refresh --
-    let candidate = provider
-        .get_series(external_id, &config)
+    // A rate limit opens the run's block; the caller skips this provider for
+    // the rest of the job instead of inspecting the error message.
+    let candidate = match run
+        .call(provider_name, || provider.get_series(external_id, &config))
         .await
-        .map_err(|e| format!("provider lookup by external ID failed: {e}"))?;
+    {
+        ProviderCall::Skipped(block) => return Err(block.skip_message()),
+        ProviderCall::Answered(Err(e)) => {
+            return Err(format!("provider lookup by external ID failed: {e}"))
+        }
+        ProviderCall::Answered(Ok(candidate)) => candidate,
+    };
 
     // Store the provider's latest series data and rating notes on the link.
     store_refreshed_snapshot(pool, link_id, &candidate).await?;
@@ -97,10 +107,16 @@ pub(crate) async fn refresh_link(
         .collect();
 
     // -- Book-level refresh --
-    let books = provider
-        .get_series_books(external_id, &config)
+    let books = match run
+        .call(provider_name, || {
+            provider.get_series_books(external_id, &config)
+        })
         .await
-        .map_err(|e| format!("provider books error: {e}"))?;
+    {
+        ProviderCall::Skipped(block) => return Err(block.skip_message()),
+        ProviderCall::Answered(Err(e)) => return Err(format!("provider books error: {e}")),
+        ProviderCall::Answered(Ok(books)) => books,
+    };
 
     shared_sync::delete_link_book_metadata(pool, link_id)
         .await
@@ -110,11 +126,7 @@ pub(crate) async fn refresh_link(
         .await
         .map_err(|e| e.to_string())?;
 
-    let matched = if provider_name == "bdtheque" || provider_name == "bdphile" {
-        shared_sync::match_books_for_new_provider(&books, &local_books)
-    } else {
-        shared_sync::match_books(&books, &local_books)
-    };
+    let matched = shared_sync::match_books_with(provider.matching_policy(), &books, &local_books);
 
     for m in &matched {
         shared_sync::insert_external_book_metadata(pool, link_id, m.local_book_id, m.ext_book)

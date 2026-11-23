@@ -1,5 +1,8 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use super::*;
 use crate::metadata_providers::scoring::{apply_book_count, Score};
+use crate::metadata_providers::ProviderError;
 
 fn candidate(title: &str, confidence: f32) -> metadata_providers::SeriesCandidate {
     scored_candidate(title, None, Score::new(confidence))
@@ -431,6 +434,143 @@ async fn rematch_cleanup_promotes_the_remaining_link(pool: sqlx::PgPool) {
 
     assert_eq!(provider, "senscritique");
     assert!(is_primary, "the remaining link must become primary");
+}
+
+// ---------------------------------------------------------------------------
+// Circuit breaker: a blocked provider is skipped without a call
+// ---------------------------------------------------------------------------
+
+/// Fake adapter that counts calls and always answers `error`.
+struct FailingProvider {
+    error: ProviderError,
+    calls: AtomicUsize,
+}
+
+impl FailingProvider {
+    fn new(error: ProviderError) -> Self {
+        Self {
+            error,
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait::async_trait]
+impl metadata_providers::MetadataProvider for FailingProvider {
+    fn name(&self) -> &str {
+        "senscritique"
+    }
+
+    async fn search_series(
+        &self,
+        _query: &str,
+        _config: &metadata_providers::ProviderConfig,
+    ) -> Result<Vec<metadata_providers::SeriesCandidate>, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(self.error.clone())
+    }
+
+    async fn get_series(
+        &self,
+        _external_id: &str,
+        _config: &metadata_providers::ProviderConfig,
+    ) -> Result<metadata_providers::SeriesCandidate, ProviderError> {
+        unreachable!("a batch search never fetches a single series")
+    }
+
+    async fn get_series_books(
+        &self,
+        _external_id: &str,
+        _config: &metadata_providers::ProviderConfig,
+    ) -> Result<Vec<metadata_providers::BookCandidate>, ProviderError> {
+        unreachable!("a batch search never fetches the books of a series")
+    }
+}
+
+/// A rate limit from the adapter is reported and opens the run's block.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_rate_limited_search_opens_the_block(pool: sqlx::PgPool) {
+    let provider = FailingProvider::new(ProviderError::RateLimited("429".to_string()));
+    let config = metadata_providers::ProviderConfig::default();
+    let mut run = ProviderRun::new();
+
+    let outcome = search_with_provider(
+        &pool,
+        Uuid::new_v4(),
+        "Gon",
+        "senscritique",
+        &provider,
+        &config,
+        &mut run,
+    )
+    .await;
+
+    assert!(matches!(outcome, SearchOutcome::Error(e) if e.is_rate_limited()));
+    assert!(run.is_blocked("senscritique"));
+    assert_eq!(provider.calls(), 1);
+}
+
+/// A provider blocked earlier in the job is skipped without being called: the
+/// breaker costs nothing for the rest of the run.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_blocked_provider_is_skipped_without_calling_the_adapter(pool: sqlx::PgPool) {
+    let provider = FailingProvider::new(ProviderError::RateLimited("429".to_string()));
+    let config = metadata_providers::ProviderConfig::default();
+    let mut run = ProviderRun::new();
+    run.record(
+        "senscritique",
+        &ProviderError::RateLimited("429".to_string()),
+    );
+
+    let outcome = search_with_provider(
+        &pool,
+        Uuid::new_v4(),
+        "Gon",
+        "senscritique",
+        &provider,
+        &config,
+        &mut run,
+    )
+    .await;
+
+    match outcome {
+        SearchOutcome::Skipped(block) => assert_eq!(
+            block.skip_message(),
+            "Skipped: SensCritique rate-limited earlier in this job"
+        ),
+        _ => panic!("a blocked provider must be skipped"),
+    }
+    assert_eq!(
+        provider.calls(),
+        0,
+        "the blocked adapter must not be called"
+    );
+}
+
+/// A transient failure keeps the provider eligible for the next series.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_transient_search_error_does_not_block_the_provider(pool: sqlx::PgPool) {
+    let provider = FailingProvider::new(ProviderError::transient("timeout"));
+    let config = metadata_providers::ProviderConfig::default();
+    let mut run = ProviderRun::new();
+
+    let outcome = search_with_provider(
+        &pool,
+        Uuid::new_v4(),
+        "Gon",
+        "senscritique",
+        &provider,
+        &config,
+        &mut run,
+    )
+    .await;
+
+    assert!(matches!(outcome, SearchOutcome::Error(_)));
+    assert!(!run.is_blocked("senscritique"));
 }
 
 /// Providers such as AniList or Google Books only expose authors, publishers,

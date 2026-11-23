@@ -24,7 +24,7 @@ use super::torrent_client::{
 use super::torrent_ledger::{
     self, ImportOutcome, RestartScope, TorrentStatus, TorrentTransitionError,
 };
-use crate::{error::ApiError, metadata, state::AppState};
+use crate::{error::ApiError, metadata, metadata_providers, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1113,6 +1113,7 @@ async fn import_reserved(
                 let pool2 = pool.clone();
                 let sn = series_name.clone();
                 tokio::spawn(async move {
+                    let mut run = metadata_providers::ProviderRun::new();
                     let result = metadata::refresh_link(
                         &pool2,
                         link_id,
@@ -1120,6 +1121,7 @@ async fn import_reserved(
                         &sn,
                         &provider,
                         &external_id,
+                        &mut run,
                     )
                     .await;
                     if let Err(e) = result {

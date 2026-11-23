@@ -2,7 +2,7 @@ use stripstream_core::http::build_http_client;
 
 use super::{
     scoring::{self, Score},
-    BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate,
+    BookCandidate, MetadataProvider, ProviderConfig, ProviderError, SeriesCandidate,
 };
 
 pub struct AniListProvider;
@@ -17,7 +17,7 @@ impl MetadataProvider for AniListProvider {
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String> {
+    ) -> Result<Vec<SeriesCandidate>, ProviderError> {
         search_series_impl(query, config).await
     }
 
@@ -25,7 +25,7 @@ impl MetadataProvider for AniListProvider {
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String> {
+    ) -> Result<SeriesCandidate, ProviderError> {
         get_series_impl(external_id).await
     }
 
@@ -33,7 +33,7 @@ impl MetadataProvider for AniListProvider {
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String> {
+    ) -> Result<Vec<BookCandidate>, ProviderError> {
         get_series_books_impl(external_id, config).await
     }
 }
@@ -89,7 +89,7 @@ async fn graphql_request_url(
     url: &str,
     query: &str,
     variables: serde_json::Value,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ProviderError> {
     let resp = client
         .post(url)
         .header("Content-Type", "application/json")
@@ -99,27 +99,33 @@ async fn graphql_request_url(
         }))
         .send()
         .await
-        .map_err(|e| format!("AniList request failed: {e}"))?;
+        .map_err(|e| ProviderError::transient(format!("AniList request failed: {e}")))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("AniList returned {status}: {text}"));
+        return Err(ProviderError::http_status(
+            status.as_u16(),
+            format!("AniList returned {status}: {text}"),
+        ));
     }
 
     resp.json()
         .await
-        .map_err(|e| format!("Failed to parse AniList response: {e}"))
+        .map_err(|e| format!("Failed to parse AniList response: {e}").into())
 }
 
 async fn search_series_impl(
     query: &str,
     _config: &ProviderConfig,
-) -> Result<Vec<SeriesCandidate>, String> {
+) -> Result<Vec<SeriesCandidate>, ProviderError> {
     search_series_impl_url(query, ANILIST_GRAPHQL_URL).await
 }
 
-async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCandidate>, String> {
+async fn search_series_impl_url(
+    query: &str,
+    url: &str,
+) -> Result<Vec<SeriesCandidate>, ProviderError> {
     let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -230,7 +236,7 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
     Ok(candidates)
 }
 
-async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
+async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, ProviderError> {
     let id: i64 = external_id
         .parse()
         .map_err(|_| "invalid AniList ID".to_string())?;
@@ -250,19 +256,20 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
 
     parse_media_to_candidate(media, Score::exact())
         .ok_or_else(|| format!("AniList media {external_id} has invalid data"))
+        .map_err(ProviderError::from)
 }
 
 async fn get_series_books_impl(
     external_id: &str,
     _config: &ProviderConfig,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     get_series_books_impl_url(external_id, ANILIST_GRAPHQL_URL).await
 }
 
 async fn get_series_books_impl_url(
     external_id: &str,
     url: &str,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     let id: i64 = external_id
         .parse()
         .map_err(|_| "invalid AniList ID".to_string())?;
@@ -397,7 +404,8 @@ async fn fetch_trending_url(limit: i32, url: &str) -> Result<Vec<SeriesCandidate
         TRENDING_QUERY,
         serde_json::json!({ "perPage": limit.min(50) }),
     )
-    .await?;
+    .await
+    .map_err(|e| e.message().to_string())?;
 
     let media = match data
         .get("data")

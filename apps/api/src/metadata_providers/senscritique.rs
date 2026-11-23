@@ -4,7 +4,7 @@ use base64::Engine as _;
 use stripstream_core::http::build_http_client_with_custom_agent;
 
 use super::scoring::{self, Score};
-use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use super::{BookCandidate, MetadataProvider, ProviderConfig, ProviderError, SeriesCandidate};
 
 const GRAPHQL_URL: &str = "https://apollo.senscritique.com/";
 const POLL_ID_MANGA: i64 = 192836;
@@ -25,7 +25,7 @@ impl MetadataProvider for SensCritiqueProvider {
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> Result<Vec<SeriesCandidate>, String> {
+    ) -> Result<Vec<SeriesCandidate>, ProviderError> {
         search_series_impl(query, config.detailed).await
     }
 
@@ -33,7 +33,7 @@ impl MetadataProvider for SensCritiqueProvider {
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> Result<SeriesCandidate, String> {
+    ) -> Result<SeriesCandidate, ProviderError> {
         get_series_impl(external_id).await
     }
 
@@ -41,7 +41,7 @@ impl MetadataProvider for SensCritiqueProvider {
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> Result<Vec<BookCandidate>, String> {
+    ) -> Result<Vec<BookCandidate>, ProviderError> {
         get_series_books_impl(external_id).await
     }
 }
@@ -61,7 +61,10 @@ type FranchiseHit = (SeriesCandidate, Option<f64>, usize);
 /// Uses `searchAutocomplete` to find products, then deduplicates by franchise
 /// so each series appears only once (using the best-rated tome as representative).
 /// Candidates are scored by title similarity; the search rank only breaks ties.
-async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCandidate>, String> {
+async fn search_series_impl(
+    query: &str,
+    detailed: bool,
+) -> Result<Vec<SeriesCandidate>, ProviderError> {
     let client = build_client()?;
 
     let gql = search_autocomplete_body(query);
@@ -394,7 +397,7 @@ async fn fetch_franchise_editions(
 /// Get all volumes/books for a series identified by its external_id.
 ///
 /// external_id format: "franchise:{id}:edition:{encoded}" or "franchise:{id}" or "product:{id}"
-async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
+async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, ProviderError> {
     let books = get_series_books_impl(external_id).await?;
     let first = books
         .iter()
@@ -435,7 +438,7 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
     })
 }
 
-async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, String> {
+async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, ProviderError> {
     let client = build_client()?;
 
     if let Some(rest) = external_id.strip_prefix("franchise:") {
@@ -463,7 +466,7 @@ async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, 
             .map_err(|_| format!("invalid legacy franchise id: {external_id}"))?;
         fetch_franchise_books(&client, fid, None).await
     } else {
-        Err(format!("unrecognized external_id format: {external_id}"))
+        Err(format!("unrecognized external_id format: {external_id}").into())
     }
 }
 
@@ -472,7 +475,7 @@ async fn fetch_franchise_books(
     client: &reqwest::Client,
     franchise_id: i64,
     edition_filter: Option<&str>,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     let items = fetch_group_products(
         client,
         GRAPHQL_URL,
@@ -610,7 +613,7 @@ fn dedupe_volumes_by_edition(books: Vec<BookCandidate>) -> Vec<BookCandidate> {
 async fn fetch_single_book(
     client: &reqwest::Client,
     product_id: i64,
-) -> Result<Vec<BookCandidate>, String> {
+) -> Result<Vec<BookCandidate>, ProviderError> {
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ product(id: {product_id}) {{
@@ -691,7 +694,9 @@ pub async fn fetch_top_mangas(limit: usize) -> Result<Vec<SeriesCandidate>, Stri
     });
 
     let client = build_client()?;
-    let data = graphql_request(&client, &query).await?;
+    let data = graphql_request(&client, &query)
+        .await
+        .map_err(|e| e.message().to_string())?;
 
     let items = data
         .pointer("/data/poll/products")
@@ -712,7 +717,9 @@ pub async fn fetch_top_bd(limit: usize) -> Result<Vec<SeriesCandidate>, String> 
     });
 
     let client = build_client()?;
-    let data = graphql_request(&client, &query).await?;
+    let data = graphql_request(&client, &query)
+        .await
+        .map_err(|e| e.message().to_string())?;
 
     let items = data
         .pointer("/data/top")
@@ -744,7 +751,9 @@ pub async fn fetch_trending(
     });
 
     let client = build_client()?;
-    let data = graphql_request(&client, &query).await?;
+    let data = graphql_request(&client, &query)
+        .await
+        .map_err(|e| e.message().to_string())?;
 
     let items = data
         .pointer("/data/productsByRelease/items")
@@ -990,7 +999,7 @@ async fn fetch_group_products(
     url: &str,
     franchise_id: i64,
     fields: &str,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, ProviderError> {
     let mut items: Vec<serde_json::Value> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -1031,17 +1040,17 @@ async fn fetch_group_products(
 async fn graphql_request(
     client: &reqwest::Client,
     body: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ProviderError> {
     graphql_request_url(client, GRAPHQL_URL, body).await
 }
 
-pub const RATE_LIMITED_ERROR: &str = "SensCritique GraphQL: rate limited (429)";
+const RATE_LIMITED_ERROR: &str = "SensCritique GraphQL: rate limited (429)";
 
 async fn graphql_request_url(
     client: &reqwest::Client,
     url: &str,
     body: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ProviderError> {
     let max_retries = 3;
     let mut delay_ms = 1000u64;
 
@@ -1056,7 +1065,7 @@ async fn graphql_request_url(
 
         if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             // Don't retry on 429 — back off immediately so the caller can circuit-break
-            return Err(RATE_LIMITED_ERROR.to_string());
+            return Err(ProviderError::RateLimited(RATE_LIMITED_ERROR.to_string()));
         }
 
         if !resp.status().is_success() {
@@ -1065,9 +1074,9 @@ async fn graphql_request_url(
                 delay_ms *= 2;
                 continue;
             }
-            return Err(format!(
-                "SensCritique GraphQL returned HTTP {}",
-                resp.status()
+            return Err(ProviderError::http_status(
+                resp.status().as_u16(),
+                format!("SensCritique GraphQL returned HTTP {}", resp.status()),
             ));
         }
 
@@ -1082,14 +1091,16 @@ async fn graphql_request_url(
                     .get("message")
                     .and_then(|m| m.as_str())
                     .unwrap_or("unknown error");
-                return Err(format!("SensCritique GraphQL error: {msg}"));
+                return Err(format!("SensCritique GraphQL error: {msg}").into());
             }
         }
 
         return Ok(data);
     }
 
-    Err("SensCritique GraphQL: max retries exceeded".to_string())
+    Err("SensCritique GraphQL: max retries exceeded"
+        .to_string()
+        .into())
 }
 
 fn extract_names(product: &serde_json::Value, field: &str) -> Vec<String> {

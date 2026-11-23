@@ -1,4 +1,5 @@
 use super::*;
+use crate::metadata_providers::{ProviderError, ProviderRun};
 
 async fn seed_library_and_series(pool: &PgPool) -> (Uuid, Uuid) {
     let lib_id = Uuid::new_v4();
@@ -297,6 +298,7 @@ async fn migration_0129_merges_aliases_only_series(pool: sqlx::PgPool) {
 /// is enough to exercise the rejection.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn refresh_link_rejects_unknown_provider_without_fallback(pool: sqlx::PgPool) {
+    let mut run = ProviderRun::new();
     let err = refresh_link(
         &pool,
         Uuid::new_v4(),
@@ -304,6 +306,7 @@ async fn refresh_link_rejects_unknown_provider_without_fallback(pool: sqlx::PgPo
         "Gon",
         "prowlarr",
         "ext-1",
+        &mut run,
     )
     .await
     .err()
@@ -322,6 +325,7 @@ async fn refresh_link_rejects_unknown_provider_without_fallback(pool: sqlx::PgPo
 /// rather than rejected.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn refresh_link_accepts_discovery_source_alias(pool: sqlx::PgPool) {
+    let mut run = ProviderRun::new();
     let err = refresh_link(
         &pool,
         Uuid::new_v4(),
@@ -329,6 +333,7 @@ async fn refresh_link_accepts_discovery_source_alias(pool: sqlx::PgPool) {
         "Gon",
         "senscritique_bd",
         "franchise:1",
+        &mut run,
     )
     .await
     .err()
@@ -337,6 +342,78 @@ async fn refresh_link_accepts_discovery_source_alias(pool: sqlx::PgPool) {
     assert!(
         !err.contains("Unknown provider"),
         "a discovery source alias must resolve before the DB lookup: {err}"
+    );
+}
+
+/// A provider rate-limited earlier in the job is skipped before any provider
+/// call, and the series reports the block's message.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refresh_link_skips_a_blocked_provider(pool: sqlx::PgPool) {
+    let (lib_id, series_id) = seed_library_and_series(&pool).await;
+    let link_id = seed_link(&pool, lib_id, series_id).await;
+
+    let mut run = ProviderRun::new();
+    run.record(
+        "senscritique",
+        &ProviderError::RateLimited("429".to_string()),
+    );
+
+    let err = refresh_link(
+        &pool,
+        link_id,
+        lib_id,
+        "Gon",
+        "senscritique",
+        "franchise:1",
+        &mut run,
+    )
+    .await
+    .err()
+    .expect("a blocked provider must be skipped");
+
+    assert_eq!(
+        err,
+        "Skipped: SensCritique rate-limited earlier in this job"
+    );
+}
+
+/// Blocks are keyed by canonical provider id: a legacy link carrying a
+/// discovery source alias is skipped by the block opened on `senscritique`.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refresh_link_skips_a_blocked_discovery_alias(pool: sqlx::PgPool) {
+    let (lib_id, series_id) = seed_library_and_series(&pool).await;
+    let link_id = seed_link_with(
+        &pool,
+        lib_id,
+        series_id,
+        "senscritique_bd",
+        "franchise:1",
+        "approved",
+    )
+    .await;
+
+    let mut run = ProviderRun::new();
+    run.record(
+        "senscritique",
+        &ProviderError::RateLimited("429".to_string()),
+    );
+
+    let err = refresh_link(
+        &pool,
+        link_id,
+        lib_id,
+        "Gon",
+        "senscritique_bd",
+        "franchise:1",
+        &mut run,
+    )
+    .await
+    .err()
+    .expect("the canonical block must skip the alias link");
+
+    assert_eq!(
+        err,
+        "Skipped: SensCritique rate-limited earlier in this job"
     );
 }
 

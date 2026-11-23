@@ -142,7 +142,7 @@ async fn search_series_requires_api_key() {
 
     let result = search_series_impl("Blacksad", &config, "https://unused").await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("API key"));
+    assert!(result.unwrap_err().to_string().contains("API key"));
 }
 
 #[tokio::test]
@@ -155,7 +155,7 @@ async fn search_series_rejects_empty_api_key() {
 
     let result = search_series_impl("Blacksad", &config, "https://unused").await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("API key"));
+    assert!(result.unwrap_err().to_string().contains("API key"));
 }
 
 #[tokio::test]
@@ -280,7 +280,7 @@ async fn get_series_books_requires_api_key() {
 
     let result = get_series_books_impl("12345", &config, "https://unused").await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("API key"));
+    assert!(result.unwrap_err().to_string().contains("API key"));
 }
 
 fn issues_page(start: i64, count: i64, total: i64) -> serde_json::Value {

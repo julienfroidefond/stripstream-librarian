@@ -187,7 +187,7 @@ async fn wiremock_graphql_request_url_http_error() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("500"),
+        err.to_string().contains("500"),
         "error should mention status code: {err}"
     );
 }
@@ -204,7 +204,7 @@ async fn wiremock_graphql_request_url_invalid_json() {
     let result =
         graphql_request_url(&client, &server.uri(), "{ test }", serde_json::json!({})).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Failed to parse"));
+    assert!(result.unwrap_err().to_string().contains("Failed to parse"));
 }
 
 // ─── search_series tests ────────────────────────────────────────────────
@@ -376,7 +376,10 @@ async fn wiremock_get_series_books_ongoing_no_volumes() {
 async fn wiremock_get_series_books_invalid_id() {
     let result = get_series_books_impl_url("not_a_number", "https://unused").await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("invalid AniList ID"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("invalid AniList ID"));
 }
 
 #[tokio::test]
