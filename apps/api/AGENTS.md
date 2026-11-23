@@ -126,11 +126,13 @@ y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
 - **Torrent import, mode replace** : quand `replace_existing = true`, ne PAS filtrer par
   `expected_volumes` — importer tous les fichiers du torrent.
 - **Téléchargements torrent** : `torrent_downloads` est un ledger partagé par qBittorrent et
-  AllDebrid. Toutes ses écritures passent par `downloads/torrent_ledger.rs` : `TorrentStatus`
-  porte le vocabulaire des statuts et les transitions gardées (`mark_completed`, `begin_import`,
-  `finish_import`, `fail`, `restart`) refusent un statut inattendu. Ne pas écrire
-  `UPDATE torrent_downloads` ailleurs ; la progression (`record_progress`, `arm_stall`) est un
-  no-op sur une ligne qui n'est plus `downloading`.
+  AllDebrid. Toutes ses écritures passent par `downloads/torrent_ledger.rs` : `create` est le seul
+  `INSERT` de production — une `Birth` (`Queued`, `Downloading`, `CompletedAdopted`) fixe
+  `status`, `progress` et `qb_owned`, et `Ok(None)` signale la course perdue sur l'index AllDebrid
+  (ADR 0038). `TorrentStatus` porte le vocabulaire des statuts et les transitions gardées
+  (`mark_completed`, `begin_import`, `finish_import`, `fail`, `restart`) refusent un statut
+  inattendu. Ne pas écrire `INSERT`/`UPDATE torrent_downloads` ailleurs ; la progression
+  (`record_progress`, `arm_stall`) est un no-op sur une ligne qui n'est plus `downloading`.
 - **Progression de transfert** : `downloads/progress.rs` possède le contrat des colonnes
   (`bytes`, `progress` 0..=1, `download_speed`, `eta`) et la règle de taille : la colonne
   `file_size` n'est jamais effacée (`None` comme `0` conservent la valeur stockée, seule une
