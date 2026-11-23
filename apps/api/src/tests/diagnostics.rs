@@ -316,11 +316,19 @@ async fn diagnostics_separate_thumbnail_pending_failed_and_placeholders(pool: Pg
 async fn diagnostics_reports_online_and_offline_services(pool: PgPool) {
     let state = test_state(pool.clone());
 
+    // Feed the probe the application clock, like `services_diagnostics` reads
+    // it; `NOW()` would compare a database timestamp with `Utc::now()` and make
+    // the uptime and the "last seen" margin depend on clock drift.
+    let now = chrono::Utc::now();
     sqlx::query(
         "INSERT INTO service_heartbeats (service, version, started_at, last_seen_at) VALUES \
-         ('api', '1.2.3', NOW() - INTERVAL '2 hours', NOW()), \
-         ('indexer', '1.0.0', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '10 minutes')",
+         ('api', '1.2.3', $1, $2), \
+         ('indexer', '1.0.0', $3, $4)",
     )
+    .bind(now - chrono::Duration::hours(2))
+    .bind(now)
+    .bind(now - chrono::Duration::hours(3))
+    .bind(now - chrono::Duration::minutes(10))
     .execute(&pool)
     .await
     .unwrap();
