@@ -21,6 +21,7 @@ import { telegramApi } from "./telegram";
 
 export {
   browserErrorMessage,
+  browserFailureMessage,
   browserFetch,
   browserFetchRaw,
   browserFetchText,

@@ -1,21 +1,17 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Icon, Modal, toast } from "./ui";
+import { Icon, Modal } from "./ui";
+import { useTelegramSearchActions } from "./useSearchActions";
 import { useTranslation } from "@/lib/i18n/context";
-import { browserApi, browserErrorMessage } from "@/lib/api/browser";
-import { ApiError } from "@/lib/api/errors";
+import { browserApi } from "@/lib/api/browser";
 import { isTelegramDownloadRetryable } from "@/lib/downloads/file";
+import { searchKey } from "@/lib/downloads/searchActions";
 import { stripLeadingArticle } from "../../lib/series/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
-
-function failureMessage(error: unknown): string {
-  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
-  return error instanceof Error ? error.message : String(error);
-}
 
 function tgStatusClass(status: string): string {
   switch (status) {
@@ -74,13 +70,15 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<TelegramSearchResultDto[]>([]);
   const [searched, setSearched] = useState(false);
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
-  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
+  const actions = useTelegramSearchActions();
 
   const ownedVolumeSet = new Set(ownedVolumes ?? []);
 
   const doSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
+    // A new search replaces the rows: the overlays of the previous ones no
+    // longer describe anything on screen.
+    actions.reset();
     setIsSearching(true);
     setSearched(false);
     try {
@@ -92,7 +90,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     } finally {
       setIsSearching(false);
     }
-  }, []);
+  }, [actions]);
 
   function handleOpen() {
     setIsOpen(true);
@@ -106,30 +104,12 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     setIsOpen(false);
   }
 
-  async function handleDownload(bookId: string) {
-    const prevStatus = results.find(b => b.id === bookId)?.status ?? "available";
-    setDownloadingIds(prev => new Set(prev).add(bookId));
-    setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "queued" } : b));
-    try {
-      await browserApi.telegram.downloadBook(bookId);
-    } catch (error) {
-      toast(failureMessage(error), "error");
-      setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: prevStatus } : b));
-    } finally {
-      setDownloadingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
-    }
+  function handleDownload(bookId: string) {
+    void actions.run({ source: "telegram", verb: "start" }, searchKey("telegram", bookId));
   }
 
-  async function handleDismiss(bookId: string) {
-    setDismissingIds(prev => new Set(prev).add(bookId));
-    try {
-      await browserApi.telegram.deleteBook(bookId);
-      setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "dismissed" } : b));
-    } catch {
-      // keep the current status when the dismiss is rejected
-    } finally {
-      setDismissingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
-    }
+  function handleDismiss(bookId: string) {
+    void actions.run({ source: "telegram", verb: "dismiss" }, searchKey("telegram", bookId));
   }
 
   if (initialEnabled === false) return null;
@@ -240,11 +220,16 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                     <tbody>
                     {results.map(book => {
                       const isMissing = book.volume_number != null && ownedVolumes != null && !ownedVolumeSet.has(book.volume_number);
-                      const isActing = downloadingIds.has(book.id) || dismissingIds.has(book.id);
+                      const key = searchKey("telegram", book.id);
+                      // The overlay is the optimistic badge of the write in
+                      // flight or just accepted; the row's own status is the
+                      // server read it masks.
+                      const status = actions.status(key) ?? book.status;
+                      const isActing = actions.pending(key);
                       return (
                         <tr
                           key={book.id}
-                          className={`border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-success/10 hover:bg-success/15" : "hover:bg-muted/20"} ${book.status === "dismissed" ? "opacity-40" : ""}`}
+                          className={`border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-success/10 hover:bg-success/15" : "hover:bg-muted/20"} ${status === "dismissed" ? "opacity-40" : ""}`}
                         >
                           <td className="px-3 py-2.5 whitespace-nowrap w-12">
                             {book.volume_number != null ? (
@@ -268,13 +253,13 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                             {book.file_size ? formatSize(book.file_size) : ""}
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(book.status)}`}>
-                              {tgStatusLabel(book.status, t)}
+                            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(status)}`}>
+                              {tgStatusLabel(status, t)}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap w-16">
                             <div className="flex items-center gap-1">
-                              {book.status === "available" && (
+                              {status === "available" && (
                                 <>
                                   <button
                                     type="button"
@@ -283,7 +268,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                                     title={t("telegramMonitor.download")}
                                     className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
                                   >
-                                    {downloadingIds.has(book.id)
+                                    {isActing
                                       ? <Icon name="spinner" size="sm" className="animate-spin" />
                                       : <Icon name="download" size="sm" />}
                                   </button>
@@ -294,23 +279,23 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                                     title={t("telegramMonitor.dismiss")}
                                     className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
                                   >
-                                    {dismissingIds.has(book.id)
+                                    {isActing
                                       ? <Icon name="spinner" size="sm" className="animate-spin" />
                                       : <Icon name="trash" size="sm" />}
                                   </button>
                                 </>
                               )}
-                              {book.status === "queued" && <Icon name="clock" size="sm" className="text-muted-foreground" />}
-                              {book.status === "downloading" && <Icon name="spinner" size="sm" className="animate-spin text-primary" />}
-                              {isTelegramDownloadRetryable(book.status) && (
+                              {status === "queued" && <Icon name="clock" size="sm" className="text-muted-foreground" />}
+                              {status === "downloading" && <Icon name="spinner" size="sm" className="animate-spin text-primary" />}
+                              {isTelegramDownloadRetryable(status) && (
                                 <button
                                   type="button"
                                   onClick={() => handleDownload(book.id)}
-                                  disabled={downloadingIds.has(book.id)}
+                                  disabled={isActing}
                                   title={t("downloads.retry")}
                                   className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
                                 >
-                                  {downloadingIds.has(book.id)
+                                  {isActing
                                     ? <Icon name="spinner" size="sm" className="animate-spin" />
                                     : <Icon name="refresh" size="sm" />}
                                 </button>
