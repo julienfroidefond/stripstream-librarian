@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.180 — 2026-11-23
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- keep the probe and RSS assertions on the application clock
+
+</details>
+
 ## v3.32.179 — 2026-11-23
 
 ### Refactoring
