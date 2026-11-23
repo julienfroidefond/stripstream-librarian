@@ -13,8 +13,7 @@ import {
 } from "react";
 
 import { Button, Modal, toast } from "@/app/components/ui";
-import { browserErrorMessage } from "@/lib/api/browser";
-import { ApiError } from "@/lib/api/errors";
+import { browserFailureMessage } from "@/lib/api/browser";
 import {
   createDownloadActionStore,
   isStaleReleaseError,
@@ -25,12 +24,6 @@ import {
   type DownloadActionStore,
 } from "@/lib/downloads/actions";
 import { useTranslation } from "@/lib/i18n/context";
-
-/** Upstream message for a failed action, preserving `Error N` for HTTP errors. */
-export function browserFailureMessage(error: unknown): string {
-  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
-  return error instanceof Error ? error.message : String(error);
-}
 
 /** Copy of the confirmation dialog; the wording belongs to the row. */
 export interface DownloadConfirmPrompt {

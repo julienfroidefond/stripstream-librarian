@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Modal, toast } from "./ui";
+import { useDdlSearchActions } from "./useSearchActions";
 import { useTranslation } from "@/lib/i18n/context";
-import { browserApi, browserErrorMessage } from "@/lib/api/browser";
-import { ApiError } from "@/lib/api/errors";
+import { browserApi, browserFailureMessage } from "@/lib/api/browser";
+import { searchKey } from "@/lib/downloads/searchActions";
 import { stripLeadingArticle } from "../../lib/series/volumeRanges";
 import type { TranslationKey } from "../../lib/i18n/fr";
 import type {
@@ -14,11 +15,6 @@ import type {
 } from "../../lib/api";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
-
-function failureMessage(error: unknown): string {
-  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
-  return error instanceof Error ? error.message : String(error);
-}
 
 interface MissingBookItem {
   title: string | null;
@@ -69,11 +65,6 @@ function formatSize(bytes: number | null): string {
   return bytes + " B";
 }
 
-/** `provider:external_id` → download status. */
-function downloadKey(provider: string, externalId: string): string {
-  return `${provider}:${externalId}`;
-}
-
 export function DdlProviderSearchModal({
   seriesName,
   libraryId,
@@ -107,7 +98,7 @@ export function DdlProviderSearchModal({
   const searchAbort = useRef<AbortController | null>(null);
   const [searched, setSearched] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, string>>({});
-  const [actingKeys, setActingKeys] = useState<Set<string>>(new Set());
+  const actions = useDdlSearchActions();
 
   const enabledProviders = (providers ?? []).filter((p) => p.enabled);
 
@@ -135,17 +126,24 @@ export function DdlProviderSearchModal({
       const list = await browserApi.ddl.downloads();
       setStatuses((prev) => {
         const next = { ...prev };
-        for (const d of list) next[downloadKey(d.provider, d.external_id)] = d.status;
+        for (const d of list) next[searchKey(d.provider, d.external_id)] = d.status;
         return next;
       });
+      // The server read supersedes the optimistic badge of every download it
+      // knows; an in-flight write keeps its own (the store skips pending keys).
+      actions.clear(list.map((d) => searchKey(d.provider, d.external_id)));
     } catch {
       /* best-effort */
     }
-  }, []);
+  }, [actions]);
 
-  const hasActive = Object.values(statuses).some(
-    (s) => s === "queued" || s === "downloading"
-  );
+  // A write is optimistic: the queued badge exists before the server read, so
+  // polling starts from the merged status, not only from `statuses`.
+  const hasActive = results.some((result) => {
+    const key = searchKey(result.provider, result.external_id);
+    const status = actions.status(key) ?? statuses[key];
+    return status === "queued" || status === "downloading";
+  });
 
   useEffect(() => {
     if (!isOpen || !hasActive) return;
@@ -162,6 +160,9 @@ export function DdlProviderSearchModal({
       searchAbort.current = controller;
       const isCurrent = () => seq === searchSeq.current;
 
+      // A new search replaces the rows: the overlays of the previous ones no
+      // longer describe anything on screen.
+      actions.reset();
       setIsSearching(true);
       setSearched(false);
       try {
@@ -183,20 +184,20 @@ export function DdlProviderSearchModal({
         setStatuses((prev) => {
           const next = { ...prev };
           for (const r of found) {
-            if (r.download_status) next[downloadKey(r.provider, r.external_id)] = r.download_status;
+            if (r.download_status) next[searchKey(r.provider, r.external_id)] = r.download_status;
           }
           return next;
         });
         setSearched(true);
       } catch (error) {
         if (!isCurrent()) return;
-        toast(failureMessage(error), "error");
+        toast(browserFailureMessage(error), "error");
         setSearched(true);
       } finally {
         if (isCurrent()) setIsSearching(false);
       }
     },
-    [seriesName, libraryId, missingVolumes]
+    [seriesName, libraryId, missingVolumes, actions]
   );
 
   function handleOpen() {
@@ -211,6 +212,7 @@ export function DdlProviderSearchModal({
     // Drop any in-flight search: its answer must not land in a closed modal.
     searchSeq.current++;
     searchAbort.current?.abort();
+    actions.reset();
     setIsSearching(false);
     setIsOpen(false);
   }
@@ -230,56 +232,38 @@ export function DdlProviderSearchModal({
     []
   );
 
-  async function handleDownload(result: DdlProviderSearchResultDto) {
+  function handleDownload(result: DdlProviderSearchResultDto) {
     const resultProvider = result.provider || providerId;
     if (!resultProvider) return;
-    const key = downloadKey(resultProvider, result.external_id);
-    setActingKeys((prev) => new Set(prev).add(key));
-    setStatuses((prev) => ({ ...prev, [key]: "queued" }));
-    try {
-      await browserApi.ddl.startDownload(resultProvider, {
-        external_id: result.external_id,
-        filename: result.filename,
-        size: result.size,
-        library_id: libraryId,
-        // Always import into the series the user is browsing: the provider's own
-        // series label ("Astérix le Gaulois") would create a parallel directory/series.
-        series_name: seriesName,
-        volume_number: result.volume_number,
-      });
-    } catch (error) {
-      toast(failureMessage(error), "error");
-      setStatuses((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    } finally {
-      setActingKeys((prev) => {
-        const s = new Set(prev);
-        s.delete(key);
-        return s;
-      });
-    }
+    void actions.run(
+      { source: "ddl", verb: "start" },
+      searchKey(resultProvider, result.external_id),
+      {
+        ddlStart: {
+          provider: resultProvider,
+          body: {
+            external_id: result.external_id,
+            filename: result.filename,
+            size: result.size,
+            library_id: libraryId,
+            // Always import into the series the user is browsing: the provider's own
+            // series label ("Astérix le Gaulois") would create a parallel directory/series.
+            series_name: seriesName,
+            volume_number: result.volume_number,
+          },
+        },
+      }
+    );
   }
 
-  async function handleDismiss(result: DdlProviderSearchResultDto) {
+  function handleDismiss(result: DdlProviderSearchResultDto) {
     const resultProvider = result.provider || providerId;
     if (!resultProvider || !result.download_id) return;
-    const key = downloadKey(resultProvider, result.external_id);
-    setActingKeys((prev) => new Set(prev).add(key));
-    try {
-      await browserApi.ddl.dismissDownload(result.download_id);
-      setStatuses((prev) => ({ ...prev, [key]: "dismissed" }));
-    } catch {
-      // keep the current status when the dismiss is rejected
-    } finally {
-      setActingKeys((prev) => {
-        const s = new Set(prev);
-        s.delete(key);
-        return s;
-      });
-    }
+    void actions.run(
+      { source: "ddl", verb: "dismiss" },
+      searchKey(resultProvider, result.external_id),
+      { downloadId: result.download_id }
+    );
   }
 
   if (initialEnabled === false) return null;
@@ -426,10 +410,12 @@ export function DdlProviderSearchModal({
               <table className="w-full min-w-[720px] text-sm">
                 <tbody>
                   {results.map((result) => {
-                    const key = downloadKey(result.provider, result.external_id);
-                    const status = statuses[key] ?? null;
+                    const key = searchKey(result.provider, result.external_id);
+                    // The overlay is the optimistic badge of the write in flight
+                    // or just accepted; `statuses` is the server read it masks.
+                    const status = actions.status(key) ?? statuses[key] ?? null;
                     const isMissing = result.matched_missing_volumes.length > 0;
-                    const isActing = actingKeys.has(key);
+                    const isActing = actions.pending(key);
                     return (
                       <tr
                         key={key}

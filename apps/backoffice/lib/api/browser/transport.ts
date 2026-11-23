@@ -222,3 +222,13 @@ export function browserErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.detail) return error.detail;
   return fallback;
 }
+
+/**
+ * The message to toast for a failed browser request: the upstream detail when
+ * there is one, `Error N` for an HTTP failure without a detail, and the plain
+ * message for a transport/network error.
+ */
+export function browserFailureMessage(error: unknown): string {
+  if (error instanceof ApiError) return browserErrorMessage(error, `Error ${error.status}`);
+  return error instanceof Error ? error.message : String(error);
+}

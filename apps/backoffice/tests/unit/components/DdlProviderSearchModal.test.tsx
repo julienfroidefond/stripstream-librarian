@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/app/components/ui")>();
+  return { ...actual, toast: vi.fn() };
+});
+
+import { toast } from "@/app/components/ui";
+
 import { DdlProviderSearchModal } from "@/app/components/DdlProviderSearchModal";
 
 const fetchMock = vi.fn();
@@ -8,6 +15,7 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(toast).mockReset();
 });
 
 afterEach(() => {
@@ -206,5 +214,33 @@ describe("DdlProviderSearchModal", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
+  });
+
+  it("surfaces a refused dismiss instead of swallowing it", async () => {
+    const dismissable = { ...RESULT, download_id: "dl-9" };
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/ddl-providers") return ok([ENABLED_A]);
+      if (url.endsWith("/search")) {
+        return ok({ provider: "fourtoutici", query: "x", results: [dismissable] });
+      }
+      if (url === "/api/ddl-provider-downloads") return ok([]);
+      if (url.startsWith("/api/ddl-provider-downloads/") && init?.method === "DELETE") {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ error: "dismiss refused" }),
+          text: async () => "",
+        };
+      }
+      return ok({});
+    });
+    renderModal();
+
+    fireEvent.click(await screen.findByRole("button", { name: "open" }));
+    fireEvent.click(await screen.findByTitle("ddlProviders.dismiss"));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("dismiss refused", "error"));
+    // The optimistic "dismissed" badge is rolled back: the row is actionable again.
+    expect(await screen.findByTitle("ddlProviders.download")).toBeInTheDocument();
   });
 });
