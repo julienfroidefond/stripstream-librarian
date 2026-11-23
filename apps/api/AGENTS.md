@@ -18,7 +18,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `metadata/` | `shared_sync.rs`, `batch.rs`/`batch_sync.rs`, `refresh.rs`/`refresh_sync.rs`, `handlers.rs`, `config.rs`, `sync.rs` |
 | `metadata_providers/` | `mod.rs` (trait + `available_providers`), `scoring.rs` (score de correspondance + verdict d'auto-match), `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique` |
 | `integrations/` | `anilist*`, `komga`, `telegram`, `discovery/` |
-| `downloads/` | `prowlarr`, `qbittorrent`, `torrent_import`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
+| `downloads/` | `prowlarr`, `qbittorrent`, `torrent_client` (port + adaptateur qBittorrent, ADR 0039), `torrent_import`, `torrent_ledger`, `import_pipeline`, `detection`, `missing`, `telegram_monitor`, `rss_poll` |
 | `jobs/` | `index_jobs.rs` (suivi + SSE), `launcher.rs` (lancement des jobs in-process), `poller.rs`, `helpers.rs` |
 | `reading/` | `progress.rs`, `status_match.rs`, `status_pull.rs`, `status_push.rs` |
 | `series/` | `catalog/` (le seul modèle de lecture de `SeriesItem`, ADR 0030), `list`, `create`, `merge`, `update`, `archive`, `favorites`, `ratings`, `recommendations`, `related`, `ongoing`, `helpers` |
@@ -97,6 +97,23 @@ job passent par `new_releases_since`, `new_items_since` et `event_counts`. Ne pa
 l'horodatage, l'événement ou la fusion dans un flux, et ne pas réimplémenter le comptage des
 nouveaux : `merge_releases` conserve `detected_at`, c'est ce qui rend la requête fiable.
 
+### Port du client de torrent (`downloads/torrent_client.rs`, ADR 0039)
+`TorrentClient` est le port des opérations qBittorrent que consomment le poller et le nettoyage :
+torrents d'un ensemble de hashes, torrents d'une catégorie, hash unique d'une catégorie,
+suppression (avec ou sans fichiers), retrait d'une catégorie. `QbittorrentClient` en est le seul
+adaptateur : URL de base, client HTTP et cookie `SID` y vivent, `connect(pool)` charge la
+configuration puis se connecte. `TorrentInfo` normalise une entrée `torrents/info`, `state_kind()`
+la classe en `TorrentState` (complété, pause, stall, échec, en cours) et `decide(info, row, now,
+stall_timeout)` rend le verdict pur d'un poll (`Track`, `LeaveAlone`, `Stall`, `Fail`, `Complete`) —
+aucune de ces règles ne se réécrit dans un flux. `poll_qbittorrent_downloads` connecte puis délègue
+à `poll_with_client(pool, root, &dyn TorrentClient, now)` ; les tests injectent un
+`FakeTorrentClient`. `cleanup_sources(pool, ReleaseTarget, Option<&dyn TorrentClient>)` réutilise
+une connexion fournie ou se connecte lui-même, et garde les deux invariants : le torrent est
+supprimé **avant** son dossier `sl-{id}`, et un torrent `qb_owned = FALSE` n'est jamais supprimé.
+Ne pas écrire de nouvel appel `torrents/info` / `torrents/delete` ni de décodage ad hoc de la
+réponse dans un flux. AllDebrid n'implémente pas le port (pas de hash qBittorrent, pas de catégorie, pas de
+`qb_owned`) : il garde ses décisions dans `alldebrid.rs`.
+
 ### Réglage `limits` (ADR 0026)
 `stripstream_core::limits` (réexporté par `settings/limits.rs`) est le seul schéma de `app_settings.limits`, partagé avec l'indexer : chaque champ y a un `Spec`
 (défaut, min, max) et un type `NonZero*` dans `Limits`. `Limits::parse` valide à l'écriture
@@ -133,6 +150,8 @@ y compris `concurrent_renders` (les rendus en cours ne sont jamais interrompus).
   (`mark_completed`, `begin_import`, `finish_import`, `fail`, `restart`) refusent un statut
   inattendu. Ne pas écrire `INSERT`/`UPDATE torrent_downloads` ailleurs ; la progression
   (`record_progress`, `arm_stall`) est un no-op sur une ligne qui n'est plus `downloading`.
+  `TorrentBackend` nomme le client d'origine. Côté qBittorrent, le poll et son nettoyage passent
+  par `downloads/torrent_client.rs` (ADR 0039).
 - **Progression de transfert** : `downloads/progress.rs` possède le contrat des colonnes
   (`bytes`, `progress` 0..=1, `download_speed`, `eta`) et la règle de taille : la colonne
   `file_size` n'est jamais effacée (`None` comme `0` conservent la valeur stockée, seule une
