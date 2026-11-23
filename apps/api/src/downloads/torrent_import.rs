@@ -17,6 +17,7 @@ use stripstream_core::series_identity;
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::progress::{ProgressSink, TorrentSink, TransferProgress};
 use super::settings::DownloadSettings;
+use super::target::queue_scan_job;
 use super::torrent_client::{
     decide, missing_hashes, Decision, QbittorrentClient, TorrentClient, TorrentInfo, TorrentState,
     TrackedTorrent,
@@ -1044,14 +1045,7 @@ async fn import_reserved(
             torrent_ledger::finish_import(pool, torrent_id, outcome, &json).await?;
 
             // Queue a scan job so the indexer picks up the new files
-            let scan_job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
-            )
-            .bind(scan_job_id)
-            .bind(library_id)
-            .execute(pool)
-            .await?;
+            let scan_job_id = queue_scan_job(pool, library_id).await?;
 
             // Insert events for each imported file
             for imp in imported {
