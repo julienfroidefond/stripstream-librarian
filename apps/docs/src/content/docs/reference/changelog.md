@@ -8,6 +8,16 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.177 — 2026-11-23
+
+<details>
+<summary>Maintenance (2)</summary>
+
+- **deps** — bump sqlx from 0.9.0 to 0.9.1 ([#322](https://github.com/julienfroidefond/stripstream-librarian/pull/322))
+- **deps** — bump the rust-non-major group with 2 updates ([#320](https://github.com/julienfroidefond/stripstream-librarian/pull/320))
+
+</details>
+
 ## v3.32.176 — 2026-11-23
 
 <details>
