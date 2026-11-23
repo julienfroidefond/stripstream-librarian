@@ -72,6 +72,15 @@ impl DownloadProgress {
         }
         None
     }
+
+    /// Adds `len` bytes and returns the new total, marking it as reported even
+    /// below the threshold: a caller that wants a boundary visible (the end of
+    /// a file) flushes it instead of waiting for the next megabyte.
+    pub fn force(&mut self, len: i64) -> i64 {
+        self.written += len;
+        self.reported = self.written;
+        self.written
+    }
 }
 
 /// Turns successive byte counts into a smoothed transfer rate and an ETA.
@@ -414,9 +423,11 @@ impl Reporter {
     }
 }
 
-#[async_trait]
-impl ProgressReporter for Reporter {
-    async fn report(&self, bytes_written: i64) {
+impl Reporter {
+    /// Throttled report: writes at most once per [`PROGRESS_UPDATE_BYTES`],
+    /// sampling the rate at the same instant so the speed and the ETA describe
+    /// the same window.
+    pub async fn report(&self, bytes_written: i64) {
         // Scope the guard so it is released before the `await`: a `MutexGuard`
         // held across an await point would make this future non-`Send` and break
         // the engine's `JoinSet`.
@@ -435,6 +446,41 @@ impl ProgressReporter for Reporter {
         if let Err(err) = self.sink.report(&snapshot).await {
             tracing::debug!("download progress update failed: {err}");
         }
+    }
+
+    /// Writes a snapshot at `bytes_written` even when the throttle threshold is
+    /// not reached.
+    ///
+    /// Callers use it at a transfer boundary — the start of a local transfer, or
+    /// the end of a file — so small files still move the stored progress. When
+    /// no byte was added the snapshot keeps the current rate instead of sampling
+    /// a zero interval.
+    pub async fn flush(&self, bytes_written: i64) {
+        let snapshot = {
+            let Ok(mut state) = self.state.lock() else {
+                return;
+            };
+            let delta = bytes_written - state.bytes.written();
+            if delta < 0 {
+                return;
+            }
+            let bytes = state.bytes.force(delta);
+            if delta > 0 {
+                state.rate.sample(bytes);
+            }
+            TransferProgress::from_bytes(bytes, self.total, &state.rate)
+        };
+
+        if let Err(err) = self.sink.report(&snapshot).await {
+            tracing::debug!("download progress update failed: {err}");
+        }
+    }
+}
+
+#[async_trait]
+impl ProgressReporter for Reporter {
+    async fn report(&self, bytes_written: i64) {
+        Reporter::report(self, bytes_written).await;
     }
 }
 
@@ -512,6 +558,53 @@ mod tests {
             progress.advance(PROGRESS_UPDATE_BYTES),
             Some(2 * PROGRESS_UPDATE_BYTES + 10)
         );
+    }
+
+    #[test]
+    fn force_marks_the_boundary_as_reported() {
+        let mut progress = DownloadProgress::new();
+        assert_eq!(progress.advance(PROGRESS_UPDATE_BYTES - 1), None);
+        assert_eq!(progress.force(1), PROGRESS_UPDATE_BYTES);
+        // The flush already reported that total: the throttle starts over.
+        assert_eq!(progress.advance(PROGRESS_UPDATE_BYTES - 1), None);
+    }
+
+    #[derive(Clone, Default)]
+    struct RecordingSink {
+        snapshots: std::sync::Arc<std::sync::Mutex<Vec<TransferProgress>>>,
+    }
+
+    #[async_trait]
+    impl ProgressSink for RecordingSink {
+        async fn report(&self, progress: &TransferProgress) -> sqlx::Result<()> {
+            self.snapshots.lock().unwrap().push(*progress);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn flush_writes_a_boundary_below_the_threshold() {
+        let sink = RecordingSink::default();
+        let reporter = Reporter::new(Some(4 * MB), Box::new(sink.clone()));
+
+        reporter.report(10).await;
+        assert!(
+            sink.snapshots.lock().unwrap().is_empty(),
+            "below the threshold, the throttled report writes nothing"
+        );
+
+        reporter.flush(10).await;
+        {
+            let snapshots = sink.snapshots.lock().unwrap();
+            assert_eq!(snapshots.len(), 1);
+            assert_eq!(snapshots[0].bytes, 10);
+            assert_eq!(snapshots[0].total, Some(4 * MB));
+            assert!((snapshots[0].progress - 10.0 / (4 * MB) as f32).abs() < f32::EPSILON);
+        }
+
+        // A boundary without new bytes rewrites the snapshot, keeping the rate.
+        reporter.flush(10).await;
+        assert_eq!(sink.snapshots.lock().unwrap().len(), 2);
     }
 
     #[test]

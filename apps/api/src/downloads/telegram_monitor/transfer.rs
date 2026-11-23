@@ -265,7 +265,7 @@ mod tests {
 
     use super::*;
     use crate::downloads::progress::{Reporter, TelegramSink};
-    use crate::downloads::ranged::{FetchErrorKind, ProgressReporter};
+    use crate::downloads::ranged::FetchErrorKind;
 
     #[test]
     fn request_limits_are_rounded_up_to_the_telegram_block_size() {
