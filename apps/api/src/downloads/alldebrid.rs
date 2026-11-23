@@ -45,7 +45,7 @@ use super::settings::DownloadSettings;
 use super::target::sanitize_filename;
 use super::torrent_import::process_torrent_import;
 use super::torrent_ledger::{
-    self, Birth, NewTorrentDownload, RestartScope, TorrentClient, TorrentStatus,
+    self, Birth, NewTorrentDownload, RestartScope, TorrentBackend, TorrentStatus,
     TorrentTransitionError,
 };
 use crate::error::ApiError;
@@ -749,7 +749,7 @@ pub async fn add_torrent(
                     id,
                     library_id: managed.library_id,
                     series_name: &managed.series_name,
-                    client: TorrentClient::Alldebrid,
+                    client: TorrentBackend::Alldebrid,
                     birth: Birth::Downloading,
                     expected_volumes,
                     replace_existing: body.replace_existing,

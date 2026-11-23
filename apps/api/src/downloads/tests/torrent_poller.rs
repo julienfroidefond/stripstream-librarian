@@ -1,74 +1,17 @@
 //! qBittorrent poller, retry and source-retention rules of `torrent_import`.
+//!
+//! `poll_with_client` and `release_sources` take any `TorrentClient`, so every
+//! test below drives them with a `FakeTorrentClient`. Only the delete endpoint
+//! connects by itself, and its one test keeps a mock qBittorrent.
 
 use axum::http::StatusCode;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
+use crate::downloads::torrent_client::{FakeTorrentClient, TorrentInfo};
 
 // ─── Pure rules ─────────────────────────────────────────────────────────────
-
-#[test]
-fn qbittorrent_states_are_classified() {
-    for state in [
-        "uploading",
-        "stalledUP",
-        "pausedUP",
-        "stoppedUP",
-        "queuedUP",
-    ] {
-        assert_eq!(
-            classify_qb_state(state),
-            QbStateAction::Completed,
-            "{state}"
-        );
-    }
-    for state in ["pausedDL", "stoppedDL"] {
-        assert_eq!(classify_qb_state(state), QbStateAction::Paused, "{state}");
-    }
-    assert_eq!(classify_qb_state("stalledDL"), QbStateAction::Stalled);
-    for state in ["error", "missingFiles"] {
-        assert_eq!(classify_qb_state(state), QbStateAction::Failed, "{state}");
-    }
-    for state in [
-        "downloading",
-        "metaDL",
-        "queuedDL",
-        "checkingDL",
-        "forcedDL",
-        "moving",
-    ] {
-        assert_eq!(
-            classify_qb_state(state),
-            QbStateAction::InProgress,
-            "{state}"
-        );
-    }
-}
-
-#[test]
-fn a_stall_expires_only_after_the_timeout() {
-    let now = Utc::now();
-    let timeout = Duration::from_secs(30 * 60);
-    assert!(!stall_expired(now, now, timeout));
-    assert!(!stall_expired(
-        now - chrono::Duration::minutes(29),
-        now,
-        timeout
-    ));
-    assert!(stall_expired(
-        now - chrono::Duration::minutes(30),
-        now,
-        timeout
-    ));
-}
-
-#[test]
-fn missing_hashes_ignore_case() {
-    let tracked = vec!["AABB".to_string(), "ccdd".to_string(), "eeff".to_string()];
-    assert_eq!(missing_hashes(&tracked, &["aabb", "CCDD"]), vec!["eeff"]);
-    assert!(missing_hashes(&tracked, &["aabb", "ccdd", "eeff"]).is_empty());
-}
 
 #[test]
 fn retry_plan_refuses_a_row_without_files() {
@@ -171,58 +114,31 @@ async fn seed_qb_row(
     id
 }
 
+/// A `downloading` qBittorrent row whose hash qBittorrent has not given us yet
+/// (a `.torrent` upload matched later through its `sl-{id}` category), created
+/// `age` ago.
+async fn seed_hashless_row(pool: &PgPool, library_id: Uuid, age: chrono::Duration) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO torrent_downloads \
+         (id, library_id, series_name, client, status, created_at) \
+         VALUES ($1, $2, 'Amulet', 'qbittorrent', 'downloading', NOW() - make_interval(secs => $3))",
+    )
+    .bind(id)
+    .bind(library_id)
+    .bind(age.num_seconds() as f64)
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
 async fn row_state(pool: &PgPool, id: Uuid) -> (String, Option<DateTime<Utc>>) {
     sqlx::query_as("SELECT status, stall_started_at FROM torrent_downloads WHERE id = $1")
         .bind(id)
         .fetch_one(pool)
         .await
         .unwrap()
-}
-
-/// A fake qBittorrent answering `torrents/info` with `torrents`.
-async fn fake_qbittorrent(pool: &PgPool, torrents: serde_json::Value) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/auth/login"))
-        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v2/torrents/info"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(torrents))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/torrents/delete"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&server)
-        .await;
-    sqlx::query(
-        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-    )
-    .bind(serde_json::json!({
-        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
-    }))
-    .execute(pool)
-    .await
-    .unwrap();
-    server
-}
-
-async fn deleted_hashes(server: &MockServer) -> Vec<String> {
-    server
-        .received_requests()
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|r| r.url.path() == "/api/v2/torrents/delete")
-        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
-        .collect()
-}
-
-fn torrent(hash: &str, state: &str) -> serde_json::Value {
-    serde_json::json!({"hash": hash, "state": state, "progress": 0.4, "total_size": 100})
 }
 
 fn test_root() -> stripstream_core::paths::LibraryRoot {
@@ -236,17 +152,13 @@ async fn paused_and_fresh_stalled_torrents_are_kept(pool: PgPool) {
     let paused = seed_qb_row(&pool, library_id, "aa01", old, true).await;
     let stopped = seed_qb_row(&pool, library_id, "aa02", old, true).await;
     let stalled = seed_qb_row(&pool, library_id, "aa03", old, true).await;
-    let server = fake_qbittorrent(
-        &pool,
-        serde_json::json!([
-            torrent("aa01", "pausedDL"),
-            torrent("aa02", "stoppedDL"),
-            torrent("aa03", "stalledDL"),
-        ]),
-    )
-    .await;
+    let client = FakeTorrentClient::new(vec![
+        TorrentInfo::test("aa01", "pausedDL"),
+        TorrentInfo::test("aa02", "stoppedDL"),
+        TorrentInfo::test("aa03", "stalledDL"),
+    ]);
 
-    assert!(poll_qbittorrent_downloads(&pool, &test_root())
+    assert!(poll_with_client(&pool, &test_root(), &client, Utc::now())
         .await
         .unwrap());
 
@@ -255,7 +167,7 @@ async fn paused_and_fresh_stalled_torrents_are_kept(pool: PgPool) {
     let (status, stall) = row_state(&pool, stalled).await;
     assert_eq!(status, "downloading", "a fresh stall gets a grace period");
     assert!(stall.is_some(), "the stall start is recorded");
-    assert!(deleted_hashes(&server).await.is_empty());
+    assert!(client.deleted_hashes().is_empty());
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -272,13 +184,12 @@ async fn a_stall_past_the_timeout_fails_and_a_resumed_one_is_cleared(pool: PgPoo
     .execute(&pool)
     .await
     .unwrap();
-    let server = fake_qbittorrent(
-        &pool,
-        serde_json::json!([torrent("bb01", "stalledDL"), torrent("bb02", "downloading")]),
-    )
-    .await;
+    let client = FakeTorrentClient::new(vec![
+        TorrentInfo::test("bb01", "stalledDL"),
+        TorrentInfo::test("bb02", "downloading"),
+    ]);
 
-    poll_qbittorrent_downloads(&pool, &test_root())
+    poll_with_client(&pool, &test_root(), &client, Utc::now())
         .await
         .unwrap();
 
@@ -286,9 +197,12 @@ async fn a_stall_past_the_timeout_fails_and_a_resumed_one_is_cleared(pool: PgPoo
     let (status, stall) = row_state(&pool, resumed).await;
     assert_eq!(status, "downloading");
     assert!(stall.is_none(), "progress again clears the stall marker");
-    let deleted = deleted_hashes(&server).await;
-    assert_eq!(deleted.len(), 1);
-    assert!(deleted[0].contains("bb01"));
+    assert_eq!(
+        client.deleted_hashes(),
+        vec!["bb01"],
+        "the expired torrent is removed, with its partial files"
+    );
+    assert!(client.deletes()[0].delete_files);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -297,25 +211,22 @@ async fn failed_torrents_are_removed_only_when_stripstream_added_them(pool: PgPo
     let old = chrono::Duration::hours(1);
     let owned = seed_qb_row(&pool, library_id, "cc01", old, true).await;
     let adopted = seed_qb_row(&pool, library_id, "cc02", old, false).await;
-    let server = fake_qbittorrent(
-        &pool,
-        serde_json::json!([torrent("cc01", "error"), torrent("cc02", "missingFiles")]),
-    )
-    .await;
+    let client = FakeTorrentClient::new(vec![
+        TorrentInfo::test("cc01", "error"),
+        TorrentInfo::test("cc02", "missingFiles"),
+    ]);
 
-    poll_qbittorrent_downloads(&pool, &test_root())
+    poll_with_client(&pool, &test_root(), &client, Utc::now())
         .await
         .unwrap();
 
     assert_eq!(row_state(&pool, owned).await.0, "error");
     assert_eq!(row_state(&pool, adopted).await.0, "error");
-    let deleted = deleted_hashes(&server).await;
     assert_eq!(
-        deleted.len(),
-        1,
-        "the adopted torrent must stay: {deleted:?}"
+        client.deleted_hashes(),
+        vec!["cc01"],
+        "the adopted torrent must stay"
     );
-    assert!(deleted[0].contains("cc01"));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -325,9 +236,9 @@ async fn a_torrent_gone_from_qbittorrent_fails_after_a_grace_period(pool: PgPool
     let just_added = seed_qb_row(&pool, library_id, "dd02", chrono::Duration::zero(), true).await;
     // The stored hash is uppercase: qBittorrent's lowercase answer must match.
     let listed = seed_qb_row(&pool, library_id, "DD03", chrono::Duration::hours(1), true).await;
-    fake_qbittorrent(&pool, serde_json::json!([torrent("dd03", "downloading")])).await;
+    let client = FakeTorrentClient::new(vec![TorrentInfo::test("dd03", "downloading")]);
 
-    poll_qbittorrent_downloads(&pool, &test_root())
+    poll_with_client(&pool, &test_root(), &client, Utc::now())
         .await
         .unwrap();
 
@@ -340,32 +251,122 @@ async fn a_torrent_gone_from_qbittorrent_fails_after_a_grace_period(pool: PgPool
 async fn a_failed_qbittorrent_answer_never_fails_a_torrent(pool: PgPool) {
     let library_id = seed_library(&pool).await;
     let id = seed_qb_row(&pool, library_id, "ee01", chrono::Duration::hours(1), true).await;
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/auth/login"))
-        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v2/torrents/info"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&server)
-        .await;
-    sqlx::query(
-        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-    )
-    .bind(serde_json::json!({
-        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
-    }))
-    .execute(&pool)
-    .await
-    .unwrap();
+    let client = FakeTorrentClient::new(Vec::new()).failing_info();
 
-    assert!(poll_qbittorrent_downloads(&pool, &test_root())
+    assert!(poll_with_client(&pool, &test_root(), &client, Utc::now())
         .await
         .is_err());
+    assert_eq!("downloading", row_state(&pool, id).await.0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_torrent_without_a_hash_is_resolved_through_its_category(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = seed_hashless_row(&pool, library_id, chrono::Duration::minutes(1)).await;
+    let client = FakeTorrentClient::new(vec![TorrentInfo::test("ab01", "downloading")])
+        .with_resolution(&format!("sl-{id}"), "ab01");
+
+    poll_with_client(&pool, &test_root(), &client, Utc::now())
+        .await
+        .unwrap();
+
+    let hash: Option<String> =
+        sqlx::query_scalar("SELECT qb_hash FROM torrent_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(hash.as_deref(), Some("ab01"), "the category named the hash");
     assert_eq!(row_state(&pool, id).await.0, "downloading");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_torrent_still_without_a_hash_after_five_minutes_fails(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let id = seed_hashless_row(&pool, library_id, chrono::Duration::minutes(6)).await;
+    let client = FakeTorrentClient::new(Vec::new());
+
+    poll_with_client(&pool, &test_root(), &client, Utc::now())
+        .await
+        .unwrap();
+
+    assert_eq!(row_state(&pool, id).await.0, "error");
+}
+
+// ─── Completion is handed to the import ─────────────────────────────────────
+
+/// Poll until the row leaves the transfer statuses, letting the spawned import
+/// task run between polls. Returns the terminal status.
+async fn poll_until_terminal(
+    pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    client: &dyn TorrentClient,
+    id: Uuid,
+) -> String {
+    for _ in 0..100 {
+        let _ = poll_with_client(pool, library_root, client, Utc::now()).await;
+        let status = status_of(pool, id).await;
+        if !["downloading", "completed", "importing"].contains(&status.as_str()) {
+            return status;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("torrent download {id} never reached a terminal status");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_completed_torrent_is_handed_to_the_import(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let source = tempfile::tempdir().unwrap();
+    std::fs::write(source.path().join("Amulet T01.cbz"), b"pages").unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let id = seed_qb_row(&pool, library_id, "ff10", chrono::Duration::hours(1), true).await;
+    let content = source.path().to_string_lossy().into_owned();
+    let client = FakeTorrentClient::new(vec![
+        TorrentInfo::test("ff10", "uploading").with_content_path(&content)
+    ]);
+
+    let status = poll_until_terminal(
+        &pool,
+        &stripstream_core::paths::LibraryRoot::new(target.path()),
+        &client,
+        id,
+    )
+    .await;
+
+    assert_eq!(status, "imported", "the completed torrent was imported");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn a_foreign_completed_torrent_is_imported_and_left_in_qbittorrent(pool: PgPool) {
+    let library_id = seed_library(&pool).await;
+    let source = tempfile::tempdir().unwrap();
+    std::fs::write(source.path().join("Amulet T01.cbz"), b"pages").unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let id = seed_qb_row(&pool, library_id, "ff11", chrono::Duration::hours(1), false).await;
+    let content = source.path().to_string_lossy().into_owned();
+    // `stalledUP` is the completed state that used to be mistaken for a stall.
+    let client = FakeTorrentClient::new(vec![
+        TorrentInfo::test("ff11", "stalledUP").with_content_path(&content)
+    ]);
+
+    let status = poll_until_terminal(
+        &pool,
+        &stripstream_core::paths::LibraryRoot::new(target.path()),
+        &client,
+        id,
+    )
+    .await;
+
+    assert_eq!(status, "imported");
+    assert!(
+        client.deleted_hashes().is_empty(),
+        "a torrent the user added is never removed"
+    );
+    assert!(
+        client.removed_categories().is_empty(),
+        "its category is not ours to remove"
+    );
 }
 
 // ─── Resume of interrupted imports ──────────────────────────────────────────
@@ -386,12 +387,11 @@ async fn a_stale_completed_row_is_resumed(pool: PgPool) {
 
     resume_stale_completed(&pool, &test_root(), chrono::Duration::zero()).await;
 
-    let status: String = sqlx::query_scalar("SELECT status FROM torrent_downloads WHERE id = $1")
-        .bind(id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_ne!(status, "completed", "the import was reserved and started");
+    assert_ne!(
+        status_of(&pool, id).await,
+        "completed",
+        "the import was reserved and started"
+    );
 }
 
 // ─── Retry endpoint ─────────────────────────────────────────────────────────
@@ -468,10 +468,47 @@ async fn a_retry_reserves_the_row_before_answering(pool: PgPool) {
 
 // ─── Delete endpoint ────────────────────────────────────────────────────────
 
+/// A mock qBittorrent that logs in and accepts deletes.
+async fn fake_qbittorrent(pool: &PgPool) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/auth/login"))
+        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/torrents/delete"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(serde_json::json!({
+        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
+    }))
+    .execute(pool)
+    .await
+    .unwrap();
+    server
+}
+
+async fn deleted_hashes(server: &MockServer) -> Vec<String> {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| r.url.path() == "/api/v2/torrents/delete")
+        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+        .collect()
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn deleting_a_partial_row_removes_only_torrents_stripstream_added(pool: PgPool) {
     let library_id = seed_library(&pool).await;
-    let server = fake_qbittorrent(&pool, serde_json::json!([])).await;
+    let server = fake_qbittorrent(&pool).await;
     let state = crate::state::test_state(pool.clone());
 
     let mut ids = Vec::new();
@@ -514,46 +551,6 @@ async fn deleting_a_partial_row_removes_only_torrents_stripstream_added(pool: Pg
 
 // ─── Source cleanup order ───────────────────────────────────────────────────
 
-/// A fake qBittorrent whose `torrents/delete` answers `delete_status`.
-async fn fake_qbittorrent_with_delete(
-    pool: &PgPool,
-    torrents: serde_json::Value,
-    delete_status: u16,
-) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/auth/login"))
-        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "SID=abc; path=/"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v2/torrents/info"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(torrents))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/torrents/delete"))
-        .respond_with(ResponseTemplate::new(delete_status))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/api/v2/torrents/removeCategories"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&server)
-        .await;
-    sqlx::query(
-        "INSERT INTO app_settings (key, value) VALUES ('qbittorrent', $1) \
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-    )
-    .bind(serde_json::json!({
-        "url": server.uri(), "username": "admin", "password": "pw", "enabled": true
-    }))
-    .execute(pool)
-    .await
-    .unwrap();
-    server
-}
-
 fn staging_with_file(root: &tempfile::TempDir, id: Uuid) -> std::path::PathBuf {
     let dir = root.path().join(format!("sl-{id}"));
     std::fs::create_dir_all(&dir).unwrap();
@@ -561,29 +558,47 @@ fn staging_with_file(root: &tempfile::TempDir, id: Uuid) -> std::path::PathBuf {
     dir
 }
 
+fn release_target<'a>(
+    torrent_id: Uuid,
+    qb_hash: Option<&'a str>,
+    qb_owned: bool,
+) -> ReleaseTarget<'a> {
+    ReleaseTarget {
+        torrent_id,
+        backend: "qbittorrent",
+        qb_hash,
+        qb_owned,
+        log_prefix: "[T]",
+    }
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn an_owned_torrent_is_deleted_before_its_staging_dir(pool: PgPool) {
     let root = tempfile::tempdir().unwrap();
     let id = Uuid::new_v4();
     let dir = staging_with_file(&root, id);
-    let server = fake_qbittorrent_with_delete(&pool, serde_json::json!([]), 200).await;
+    let client = FakeTorrentClient::new(Vec::new()).observing(dir.as_path());
 
     release_sources(
         &pool,
         Some(dir.clone()),
-        id,
-        "qbittorrent",
-        Some("ab01"),
-        true,
-        "[T]",
+        release_target(id, Some("ab01"), true),
+        Some(&client),
     )
     .await;
 
-    assert_eq!(deleted_hashes(&server).await.len(), 1);
+    assert_eq!(client.deleted_hashes(), vec!["ab01"]);
+    let deletes = client.deletes();
+    assert_eq!(
+        deletes[0].dir_existed,
+        Some(true),
+        "the torrent goes while its directory still exists"
+    );
     assert!(
         !dir.exists(),
         "the staging dir goes once the torrent is gone"
     );
+    assert_eq!(client.removed_categories(), vec![format!("sl-{id}")]);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -591,23 +606,23 @@ async fn a_refused_torrent_delete_keeps_the_staging_dir(pool: PgPool) {
     let root = tempfile::tempdir().unwrap();
     let id = Uuid::new_v4();
     let dir = staging_with_file(&root, id);
-    let server = fake_qbittorrent_with_delete(&pool, serde_json::json!([]), 500).await;
+    let client = FakeTorrentClient::new(Vec::new()).refusing_delete();
 
     release_sources(
         &pool,
         Some(dir.clone()),
-        id,
-        "qbittorrent",
-        Some("ab01"),
-        true,
-        "[T]",
+        release_target(id, Some("ab01"), true),
+        Some(&client),
     )
     .await;
 
-    assert_eq!(deleted_hashes(&server).await.len(), 1);
     assert!(
         dir.join("Amulet T01.cbz").exists(),
         "files under a live torrent must stay"
+    );
+    assert!(
+        client.removed_categories().is_empty(),
+        "a kept torrent keeps its category"
     );
 }
 
@@ -616,16 +631,13 @@ async fn an_unreachable_qbittorrent_keeps_the_staging_dir(pool: PgPool) {
     let root = tempfile::tempdir().unwrap();
     let id = Uuid::new_v4();
     let dir = staging_with_file(&root, id);
-    // No qBittorrent configured at all.
+    // No qBittorrent configured at all: the cleanup connects by itself and fails.
 
     release_sources(
         &pool,
         Some(dir.clone()),
-        id,
-        "qbittorrent",
-        Some("ab01"),
-        true,
-        "[T]",
+        release_target(id, Some("ab01"), true),
+        None,
     )
     .await;
 
@@ -637,30 +649,22 @@ async fn an_adopted_torrent_storing_data_in_the_staging_dir_is_left_alone(pool: 
     let root = tempfile::tempdir().unwrap();
     let id = Uuid::new_v4();
     let dir = staging_with_file(&root, id);
-    let server = fake_qbittorrent_with_delete(
-        &pool,
-        serde_json::json!([{
-            "hash": "ab01", "state": "uploading",
-            "save_path": dir.to_string_lossy(),
-            "content_path": dir.join("Amulet T01.cbz").to_string_lossy(),
-        }]),
-        200,
-    )
-    .await;
+    let save_path = dir.to_string_lossy().into_owned();
+    let content_path = dir.join("Amulet T01.cbz").to_string_lossy().into_owned();
+    let client = FakeTorrentClient::new(vec![TorrentInfo::test("ab01", "uploading")
+        .with_save_path(&save_path)
+        .with_content_path(&content_path)]);
 
     release_sources(
         &pool,
         Some(dir.clone()),
-        id,
-        "qbittorrent",
-        Some("ab01"),
-        false,
-        "[T]",
+        release_target(id, Some("ab01"), false),
+        Some(&client),
     )
     .await;
 
     assert!(
-        deleted_hashes(&server).await.is_empty(),
+        client.deleted_hashes().is_empty(),
         "never delete the user's torrent"
     );
     assert!(
@@ -674,27 +678,18 @@ async fn an_adopted_torrent_stored_elsewhere_lets_the_staging_dir_go(pool: PgPoo
     let root = tempfile::tempdir().unwrap();
     let id = Uuid::new_v4();
     let dir = staging_with_file(&root, id);
-    let server = fake_qbittorrent_with_delete(
-        &pool,
-        serde_json::json!([{
-            "hash": "ab01", "state": "uploading",
-            "save_path": "/elsewhere/manga", "content_path": "/elsewhere/manga/Amulet",
-        }]),
-        200,
-    )
-    .await;
+    let client = FakeTorrentClient::new(vec![TorrentInfo::test("ab01", "uploading")
+        .with_save_path("/elsewhere/manga")
+        .with_content_path("/elsewhere/manga/Amulet")]);
 
     release_sources(
         &pool,
         Some(dir.clone()),
-        id,
-        "qbittorrent",
-        Some("ab01"),
-        false,
-        "[T]",
+        release_target(id, Some("ab01"), false),
+        Some(&client),
     )
     .await;
 
-    assert!(deleted_hashes(&server).await.is_empty());
+    assert!(client.deleted_hashes().is_empty());
     assert!(!dir.exists());
 }

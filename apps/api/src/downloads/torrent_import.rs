@@ -11,14 +11,16 @@ use tracing::{info, trace, warn};
 use uuid::Uuid;
 
 use stripstream_core::availability::{self, PresentVolumes};
-use stripstream_core::http::build_http_client;
 use stripstream_core::paths::normalize_lexically;
 use stripstream_core::series_identity;
 
 use super::alldebrid::{is_already_processing, load_alldebrid_client};
 use super::progress::{ProgressSink, TorrentSink, TransferProgress};
-use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
 use super::settings::DownloadSettings;
+use super::torrent_client::{
+    decide, missing_hashes, Decision, QbittorrentClient, TorrentClient, TorrentInfo, TorrentState,
+    TrackedTorrent,
+};
 use super::torrent_ledger::{
     self, ImportOutcome, RestartScope, TorrentStatus, TorrentTransitionError,
 };
@@ -338,11 +340,14 @@ pub async fn delete_torrent_download(
             } else {
                 cleanup_sources(
                     &state.pool,
-                    id,
-                    &client,
-                    qb_hash.as_deref(),
-                    qb_owned,
-                    "[DELETE]",
+                    ReleaseTarget {
+                        torrent_id: id,
+                        backend: &client,
+                        qb_hash: qb_hash.as_deref(),
+                        qb_owned,
+                        log_prefix: "[DELETE]",
+                    },
+                    None,
                 )
                 .await;
             }
@@ -350,11 +355,14 @@ pub async fn delete_torrent_download(
         Some(TorrentStatus::Partial | TorrentStatus::NoFilesImported | TorrentStatus::Error) => {
             cleanup_sources(
                 &state.pool,
-                id,
-                &client,
-                qb_hash.as_deref(),
-                qb_owned,
-                "[DELETE]",
+                ReleaseTarget {
+                    torrent_id: id,
+                    backend: &client,
+                    qb_hash: qb_hash.as_deref(),
+                    qb_owned,
+                    log_prefix: "[DELETE]",
+                },
+                None,
             )
             .await;
         }
@@ -490,49 +498,6 @@ fn should_restart_missing_alldebrid_source(client: &str) -> bool {
 
 // ─── Background poller ────────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-struct QbTorrentInfo {
-    hash: String,
-    state: String,
-    content_path: Option<String>,
-    save_path: Option<String>,
-    name: Option<String>,
-    #[serde(default)]
-    progress: f64,
-    #[serde(default)]
-    #[allow(dead_code)]
-    total_size: i64,
-    #[serde(default)]
-    dlspeed: i64,
-    #[serde(default)]
-    eta: i64,
-}
-
-/// Completed states in qBittorrent: torrent is fully downloaded (seeding,
-/// queued for seeding, or stopped after completion — `pausedUP` before 5.0,
-/// `stoppedUP` since).
-pub(super) const QB_COMPLETED_STATES: &[&str] = &[
-    "uploading",
-    "stalledUP",
-    "pausedUP",
-    "stoppedUP",
-    "queuedUP",
-    "checkingUP",
-    "forcedUP",
-];
-
-/// Download paused by the user (`pausedDL` before qBittorrent 5.0, `stoppedDL`
-/// since). Never a failure: the row waits for the user to resume it.
-const QB_PAUSED_STATES: &[&str] = &["pausedDL", "stoppedDL"];
-
-/// No peer is sending data. Transient by nature: the torrent only fails once
-/// it stayed there longer than the stall timeout.
-const QB_STALLED_STATES: &[&str] = &["stalledDL"];
-
-/// States qBittorrent cannot recover from without the user: the torrent fails
-/// immediately.
-const QB_FAILED_STATES: &[&str] = &["error", "missingFiles"];
-
 /// A tracked torrent absent from a successful `torrents/info` answer is only
 /// declared gone once its row is older than this: a torrent qBittorrent has
 /// just accepted may not be listed yet.
@@ -542,62 +507,30 @@ const QB_MISSING_GRACE: chrono::Duration = chrono::Duration::minutes(2);
 /// by the poller (the task spawned on completion died or never ran).
 const STALE_COMPLETED_GRACE: chrono::Duration = chrono::Duration::minutes(2);
 
-/// What the poller does with a torrent, from its qBittorrent state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum QbStateAction {
-    /// Fully downloaded: hand over to the import.
-    Completed,
-    /// Paused by the user: keep the row, never delete anything.
-    Paused,
-    /// No peer: fail only once the stall lasted longer than the timeout.
-    Stalled,
-    /// Unrecoverable: fail now.
-    Failed,
-    /// Downloading, fetching metadata, checking, queued…: just track progress.
-    InProgress,
-}
-
-pub(super) fn classify_qb_state(state: &str) -> QbStateAction {
-    if QB_COMPLETED_STATES.contains(&state) {
-        QbStateAction::Completed
-    } else if QB_PAUSED_STATES.contains(&state) {
-        QbStateAction::Paused
-    } else if QB_STALLED_STATES.contains(&state) {
-        QbStateAction::Stalled
-    } else if QB_FAILED_STATES.contains(&state) {
-        QbStateAction::Failed
-    } else {
-        QbStateAction::InProgress
-    }
-}
-
-/// Whether a torrent stalled since `stall_started` has exhausted `timeout`.
-pub(super) fn stall_expired(
-    stall_started: DateTime<Utc>,
-    now: DateTime<Utc>,
-    timeout: Duration,
-) -> bool {
-    let timeout = chrono::Duration::from_std(timeout).unwrap_or(chrono::Duration::MAX);
-    now - stall_started >= timeout
-}
-
-/// Tracked hashes that a successful `torrents/info` answer did not list.
-/// qBittorrent reports lowercase hex; the comparison ignores case so a hash
-/// stored from a magnet link in another case still matches.
-pub(super) fn missing_hashes<'a>(tracked: &'a [String], reported: &[&str]) -> Vec<&'a str> {
-    tracked
-        .iter()
-        .filter(|hash| !reported.iter().any(|r| r.eq_ignore_ascii_case(hash)))
-        .map(String::as_str)
-        .collect()
-}
-
-/// A `downloading` qBittorrent row the poller tracks.
-struct TrackedTorrent {
+/// A `downloading` qBittorrent row as one poll loaded it.
+///
+/// The hash is resolved lazily: a `.torrent` upload is only matched through
+/// its `sl-{id}` category once qBittorrent registered it, so the row is kept
+/// with `hash: None` and completed in place by [`resolve_missing_hashes`].
+struct PendingRow {
     id: Uuid,
-    hash: String,
+    hash: Option<String>,
     created_at: DateTime<Utc>,
     qb_owned: bool,
+    stall_started_at: Option<DateTime<Utc>>,
+}
+
+impl PendingRow {
+    /// The row as a tracked torrent, once its hash is known.
+    fn tracked(&self) -> Option<TrackedTorrent> {
+        self.hash.as_ref().map(|hash| TrackedTorrent {
+            id: self.id,
+            hash: hash.clone(),
+            created_at: self.created_at,
+            qb_owned: self.qb_owned,
+            stall_started_at: self.stall_started_at,
+        })
+    }
 }
 
 pub async fn run_torrent_poller(
@@ -668,106 +601,59 @@ async fn resume_stale_completed(
     }
 }
 
+/// Whether any qBittorrent download is in flight.
+async fn has_pending_rows(pool: &PgPool) -> anyhow::Result<bool> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent')",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(exists)
+}
+
+/// One poll of the qBittorrent downloads, against the configured qBittorrent.
+///
 /// Returns Ok(true) if there are active downloads, Ok(false) otherwise.
 async fn poll_qbittorrent_downloads(
     pool: &PgPool,
     library_root: &stripstream_core::paths::LibraryRoot,
 ) -> anyhow::Result<bool> {
-    let rows = sqlx::query(
-        "SELECT id, qb_hash, created_at FROM torrent_downloads \
-         WHERE status = 'downloading' AND client = 'qbittorrent'",
-    )
-    .fetch_all(pool)
-    .await?;
+    // An idle poll must not need a configured qBittorrent.
+    if !has_pending_rows(pool).await? {
+        trace!("[TORRENT_POLLER] No active downloads to poll");
+        return Ok(false);
+    }
 
+    let client = QbittorrentClient::connect(pool).await?;
+    poll_with_client(pool, library_root, &client, Utc::now()).await
+}
+
+/// [`poll_qbittorrent_downloads`] against any [`TorrentClient`].
+async fn poll_with_client(
+    pool: &PgPool,
+    library_root: &stripstream_core::paths::LibraryRoot,
+    client: &dyn TorrentClient,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let mut rows = load_pending_rows(pool).await?;
     if rows.is_empty() {
         trace!("[TORRENT_POLLER] No active downloads to poll");
         return Ok(false);
     }
 
-    let (base_url, username, password) = load_qbittorrent_config(pool)
-        .await
-        .map_err(|e| anyhow::anyhow!("qBittorrent config: {}", e.message))?;
+    resolve_missing_hashes(pool, client, &mut rows, now).await;
 
-    let client = build_http_client(Duration::from_secs(10))?;
-
-    let sid = qbittorrent_login(&client, &base_url, &username, &password)
-        .await
-        .map_err(|e| anyhow::anyhow!("qBittorrent login: {}", e.message))?;
-
-    // Try to resolve hash for rows that are missing it (category-based retry).
-    // Give up after 5 minutes — mark as error if hash can't be resolved.
-    for row in &rows {
-        let qb_hash: Option<String> = row.get("qb_hash");
-        if qb_hash.is_some() {
-            continue;
-        }
-        let tid: Uuid = row.get("id");
-        let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
-        let age = chrono::Utc::now() - created_at;
-
-        if age.num_minutes() > 5 {
-            warn!(
-                "[TORRENT_POLLER] Torrent {tid} has no qb_hash after 5 minutes, marking as error"
-            );
-            let _ = torrent_ledger::fail(
-                pool,
-                tid,
-                "Torrent not found in qBittorrent after 5 minutes",
-            )
-            .await;
-            continue;
-        }
-
-        let category = format!("sl-{tid}");
-        if let Some(hash) = resolve_hash_by_category(&client, &base_url, &sid, &category).await {
-            info!("[TORRENT_POLLER] Late-resolved hash {hash} for torrent {tid} via category {category}");
-            let _ = torrent_ledger::set_hash(pool, tid, &hash).await;
-        }
-    }
-
-    // Re-fetch rows to include newly resolved hashes; keep those with a hash.
-    let tracked: Vec<TrackedTorrent> = sqlx::query(
-        "SELECT id, qb_hash, created_at, qb_owned FROM torrent_downloads \
-         WHERE status = 'downloading' AND client = 'qbittorrent' AND qb_hash IS NOT NULL",
-    )
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|r| TrackedTorrent {
-        id: r.get("id"),
-        hash: r.get("qb_hash"),
-        created_at: r.get("created_at"),
-        qb_owned: r.get("qb_owned"),
-    })
-    .collect();
-
+    let tracked: Vec<TrackedTorrent> = rows.iter().filter_map(PendingRow::tracked).collect();
     if tracked.is_empty() {
         return Ok(true);
     }
 
     let hashes: Vec<String> = tracked.iter().map(|t| t.hash.clone()).collect();
-    let hashes_param = hashes.join("|");
-
-    let resp = client
-        .get(format!("{base_url}/api/v2/torrents/info"))
-        .query(&[("hashes", &hashes_param)])
-        .header("Cookie", format!("SID={sid}"))
-        .send()
-        .await?;
-
-    if !resp.status().is_success() {
-        return Err(anyhow::anyhow!(
-            "qBittorrent API returned {}",
-            resp.status()
-        ));
-    }
-
     // Only a fully decoded, successful answer may prove that a torrent is gone.
-    let infos: Vec<QbTorrentInfo> = resp.json().await?;
+    let infos = client.torrents_by_hash(&hashes).await?;
 
-    let reported: Vec<&str> = infos.iter().map(|i| i.hash.as_str()).collect();
-    let now = Utc::now();
+    let reported: Vec<&str> = infos.iter().map(|info| info.hash.as_str()).collect();
     for hash in missing_hashes(&hashes, &reported) {
         let Some(row) = tracked.iter().find(|t| t.hash == hash) else {
             continue;
@@ -802,7 +688,13 @@ async fn poll_qbittorrent_downloads(
             continue;
         };
         let tid = row.id;
-        let action = classify_qb_state(&info.state);
+
+        // The stall timeout is a setting: only read it when a torrent stalled.
+        let decision = if info.state_kind() == TorrentState::Stalled {
+            decide(info, row, now, stall_timeout(pool, &mut settings).await)
+        } else {
+            decide(info, row, now, Duration::ZERO)
+        };
 
         // qBittorrent reports its own fraction and ETA; the row stays at
         // zero transferred bytes so this poll never clears the stall marker.
@@ -810,83 +702,35 @@ async fn poll_qbittorrent_downloads(
             0,
             Some(info.total_size),
             info.progress as f32,
-            info.dlspeed,
+            info.speed,
             info.eta,
         );
         let sink = TorrentSink::new(pool.clone(), tid);
 
-        match action {
-            QbStateAction::Stalled => {
-                let stall_started =
-                    match torrent_ledger::arm_stall(pool, tid, &sink.update(&snapshot)).await {
-                        Ok(Some(started)) => started,
-                        Ok(None) => continue,
-                        Err(e) => {
-                            warn!("[TORRENT_POLLER] Failed to arm the stall marker for {tid}: {e}");
-                            continue;
-                        }
-                    };
-                let timeout = match settings {
-                    Some(loaded) => loaded,
-                    None => *settings.insert(DownloadSettings::load(pool).await),
-                }
-                .magnet_stall_timeout;
-                if stall_expired(stall_started, now, timeout) {
-                    let msg = format!(
-                        "Torrent stalled in qBittorrent for {} min (state: {})",
-                        (now - stall_started).num_minutes(),
-                        info.state
-                    );
-                    fail_qb_torrent(pool, &client, &base_url, &sid, row, &msg).await;
+        match decision {
+            Decision::Stall => {
+                if let Err(e) = torrent_ledger::arm_stall(pool, tid, &sink.update(&snapshot)).await
+                {
+                    warn!("[TORRENT_POLLER] Failed to arm the stall marker for {tid}: {e}");
                 }
                 continue;
             }
-            QbStateAction::Failed => {
+            Decision::Fail(message) => {
                 let _ = sink.report(&snapshot).await;
-                let msg = format!("Torrent failed in qBittorrent (state: {})", info.state);
-                fail_qb_torrent(pool, &client, &base_url, &sid, row, &msg).await;
+                fail_qb_torrent(pool, client, row, &message).await;
                 continue;
             }
-            QbStateAction::Paused | QbStateAction::InProgress => {
+            Decision::Track | Decision::LeaveAlone => {
                 let _ = sink.report(&snapshot).await;
                 let _ = torrent_ledger::clear_stall(pool, tid).await;
                 continue;
             }
-            QbStateAction::Completed => {
+            Decision::Complete => {
                 let _ = sink.report(&snapshot).await;
             }
         }
 
-        // content_path is available since qBittorrent 4.3.2; fall back to save_path + name.
-        // When a torrent's category is reassigned (duplicate detection), content_path may
-        // point to the new category's save_path while files are still in the original location.
-        // Try content_path first, then save_path + name, and verify the path exists.
-        let mut content_path: Option<String> = None;
-        let candidates = [info.content_path.clone(), {
-            let save = info
-                .save_path
-                .as_deref()
-                .unwrap_or("")
-                .trim_end_matches('/');
-            let name = info.name.as_deref().unwrap_or("");
-            if name.is_empty() {
-                None
-            } else {
-                Some(format!("{save}/{name}"))
-            }
-        }];
-        for candidate in candidates.into_iter().flatten() {
-            if !candidate.is_empty() && std::path::Path::new(&candidate).exists() {
-                content_path = Some(candidate);
-                break;
-            }
-        }
-        // If none exist on disk, fall back to whatever qBittorrent reports (will error later)
-        if content_path.is_none() {
-            content_path = info.content_path.clone().filter(|p| !p.is_empty());
-        }
-
-        let Some(content_path) = content_path else {
+        let Some(content_path) = completed_content_path(info) else {
             warn!(
                 "[TORRENT_POLLER] Torrent {} completed but content_path unknown",
                 info.hash
@@ -922,14 +766,108 @@ async fn poll_qbittorrent_downloads(
     Ok(still_active > 0)
 }
 
+/// The `downloading` qBittorrent rows, with everything the poll needs.
+async fn load_pending_rows(pool: &PgPool) -> anyhow::Result<Vec<PendingRow>> {
+    let rows = sqlx::query(
+        "SELECT id, qb_hash, created_at, qb_owned, stall_started_at FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent'",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PendingRow {
+            id: row.get("id"),
+            hash: row.get("qb_hash"),
+            created_at: row.get("created_at"),
+            qb_owned: row.get("qb_owned"),
+            stall_started_at: row.get("stall_started_at"),
+        })
+        .collect())
+}
+
+/// Resolve the hash of the rows that do not have one yet through their unique
+/// `sl-{id}` category, and fail those still unresolved after 5 minutes.
+async fn resolve_missing_hashes(
+    pool: &PgPool,
+    client: &dyn TorrentClient,
+    rows: &mut [PendingRow],
+    now: DateTime<Utc>,
+) {
+    for row in rows.iter_mut().filter(|row| row.hash.is_none()) {
+        if (now - row.created_at).num_minutes() > 5 {
+            warn!(
+                "[TORRENT_POLLER] Torrent {} has no qb_hash after 5 minutes, marking as error",
+                row.id
+            );
+            let _ = torrent_ledger::fail(
+                pool,
+                row.id,
+                "Torrent not found in qBittorrent after 5 minutes",
+            )
+            .await;
+            continue;
+        }
+
+        let category = format!("sl-{}", row.id);
+        if let Some(hash) = client.resolve_hash_by_category(&category).await {
+            info!(
+                "[TORRENT_POLLER] Late-resolved hash {hash} for torrent {} via category {category}",
+                row.id
+            );
+            let _ = torrent_ledger::set_hash(pool, row.id, &hash).await;
+            row.hash = Some(hash);
+        }
+    }
+}
+
+/// The configured stall timeout, read once per poll.
+async fn stall_timeout(pool: &PgPool, settings: &mut Option<DownloadSettings>) -> Duration {
+    let loaded = match *settings {
+        Some(loaded) => loaded,
+        None => {
+            let loaded = DownloadSettings::load(pool).await;
+            *settings = Some(loaded);
+            loaded
+        }
+    };
+    loaded.magnet_stall_timeout
+}
+
+/// Where a completed torrent's files live, verified on disk when possible.
+fn completed_content_path(info: &TorrentInfo) -> Option<String> {
+    // content_path is available since qBittorrent 4.3.2; fall back to save_path + name.
+    // When a torrent's category is reassigned (duplicate detection), content_path may
+    // point to the new category's save_path while files are still in the original location.
+    // Try content_path first, then save_path + name, and verify the path exists.
+    let candidates = [info.content_path.clone(), {
+        let save = info
+            .save_path
+            .as_deref()
+            .unwrap_or("")
+            .trim_end_matches('/');
+        let name = info.name.as_deref().unwrap_or("");
+        if name.is_empty() {
+            None
+        } else {
+            Some(format!("{save}/{name}"))
+        }
+    }];
+    for candidate in candidates.into_iter().flatten() {
+        if !candidate.is_empty() && std::path::Path::new(&candidate).exists() {
+            return Some(candidate);
+        }
+    }
+    // If none exist on disk, fall back to whatever qBittorrent reports (will error later)
+    info.content_path.clone().filter(|p| !p.is_empty())
+}
+
 /// Fail a tracked torrent and, when Stripstream added it, remove it (and its
 /// partial files) from qBittorrent. An adopted torrent belongs to the user and
 /// stays untouched.
 async fn fail_qb_torrent(
     pool: &PgPool,
-    client: &reqwest::Client,
-    base_url: &str,
-    sid: &str,
+    client: &dyn TorrentClient,
     row: &TrackedTorrent,
     message: &str,
 ) {
@@ -944,16 +882,16 @@ async fn fail_qb_torrent(
         );
         return;
     }
-    let _ = client
-        .post(format!("{base_url}/api/v2/torrents/delete"))
-        .header("Cookie", format!("SID={sid}"))
-        .form(&[("hashes", row.hash.as_str()), ("deleteFiles", "true")])
-        .send()
-        .await;
-    info!(
-        "[TORRENT_POLLER] Removed failed torrent {} from qBittorrent",
-        row.hash
-    );
+    match client.delete(&row.hash, true).await {
+        Ok(()) => info!(
+            "[TORRENT_POLLER] Removed failed torrent {} from qBittorrent",
+            row.hash
+        ),
+        Err(e) => warn!(
+            "[TORRENT_POLLER] Failed to remove torrent {} from qBittorrent: {e}",
+            row.hash
+        ),
+    }
 }
 
 // ─── Import processing ────────────────────────────────────────────────────────
@@ -1201,11 +1139,14 @@ async fn import_reserved(
             if should_clean_sources(outcome) {
                 cleanup_sources(
                     pool,
-                    torrent_id,
-                    &client,
-                    qb_hash.as_deref(),
-                    qb_owned,
-                    "[IMPORT]",
+                    ReleaseTarget {
+                        torrent_id,
+                        backend: &client,
+                        qb_hash: qb_hash.as_deref(),
+                        qb_owned,
+                        log_prefix: "[IMPORT]",
+                    },
+                    None,
                 )
                 .await;
             } else {
@@ -1282,28 +1223,30 @@ fn staging_dir(torrent_id: Uuid) -> Option<std::path::PathBuf> {
         .then_some(category_p)
 }
 
+/// What a download left behind, as the cleanup paths know it.
+pub(super) struct ReleaseTarget<'a> {
+    pub torrent_id: Uuid,
+    /// The backend the row belongs to (`qbittorrent` or `alldebrid`).
+    pub backend: &'a str,
+    pub qb_hash: Option<&'a str>,
+    pub qb_owned: bool,
+    /// Log prefix of the calling flow (`[IMPORT]`, `[DELETE]`).
+    pub log_prefix: &'a str,
+}
+
 /// Remove what a download left behind: its `sl-{id}` staging directory and,
 /// for a torrent Stripstream added itself, the qBittorrent torrent (with its
 /// files) and its category. AllDebrid magnets are deleted by their poller as
 /// soon as the local copy is complete.
+///
+/// `client` lets a caller reuse an already logged-in qBittorrent; without one
+/// the cleanup connects itself.
 async fn cleanup_sources(
     pool: &PgPool,
-    torrent_id: Uuid,
-    client: &str,
-    qb_hash: Option<&str>,
-    qb_owned: bool,
-    log_prefix: &str,
+    target: ReleaseTarget<'_>,
+    client: Option<&dyn TorrentClient>,
 ) {
-    release_sources(
-        pool,
-        staging_dir(torrent_id),
-        torrent_id,
-        client,
-        qb_hash,
-        qb_owned,
-        log_prefix,
-    )
-    .await;
+    release_sources(pool, staging_dir(target.torrent_id), target, client).await;
 }
 
 /// What qBittorrent leaves for the staging directory once the torrent was
@@ -1327,22 +1270,12 @@ enum StagingVerdict {
 async fn release_sources(
     pool: &PgPool,
     staging: Option<std::path::PathBuf>,
-    torrent_id: Uuid,
-    client: &str,
-    qb_hash: Option<&str>,
-    qb_owned: bool,
-    log_prefix: &str,
+    target: ReleaseTarget<'_>,
+    client: Option<&dyn TorrentClient>,
 ) {
-    let verdict = if client == "qbittorrent" {
-        release_qb_torrent(
-            pool,
-            staging.as_deref(),
-            torrent_id,
-            qb_hash,
-            qb_owned,
-            log_prefix,
-        )
-        .await
+    let log_prefix = target.log_prefix;
+    let verdict = if target.backend == "qbittorrent" {
+        release_qb_torrent(pool, staging.as_deref(), &target, client).await
     } else {
         StagingVerdict::Remove
     };
@@ -1372,76 +1305,59 @@ async fn release_sources(
 async fn release_qb_torrent(
     pool: &PgPool,
     staging: Option<&FsPath>,
-    torrent_id: Uuid,
-    qb_hash: Option<&str>,
-    qb_owned: bool,
-    log_prefix: &str,
+    target: &ReleaseTarget<'_>,
+    client: Option<&dyn TorrentClient>,
 ) -> StagingVerdict {
-    let Ok((base_url, username, password)) = load_qbittorrent_config(pool).await else {
-        warn!("{log_prefix} qBittorrent unavailable, cannot release torrent {torrent_id}");
-        return StagingVerdict::Keep;
-    };
-    let Ok(http) = build_http_client(Duration::from_secs(10)) else {
-        return StagingVerdict::Keep;
-    };
-    let Ok(sid) = qbittorrent_login(&http, &base_url, &username, &password).await else {
-        warn!("{log_prefix} qBittorrent login failed, cannot release torrent {torrent_id}");
-        return StagingVerdict::Keep;
+    let log_prefix = target.log_prefix;
+    let torrent_id = target.torrent_id;
+
+    let connected: QbittorrentClient;
+    let client = match client {
+        Some(client) => client,
+        None => match QbittorrentClient::connect(pool).await {
+            Ok(new_client) => {
+                connected = new_client;
+                &connected
+            }
+            Err(e) => {
+                warn!(
+                    "{log_prefix} qBittorrent unavailable, cannot release torrent {torrent_id}: {e}"
+                );
+                return StagingVerdict::Keep;
+            }
+        },
     };
 
     let cat = format!("sl-{torrent_id}");
     // A hash never resolved may still be found under our unique category —
     // such a torrent is necessarily ours.
-    let (hash, owned) = match qb_hash {
-        Some(hash) => (Some(hash.to_string()), qb_owned),
-        None => (
-            resolve_hash_by_category(&http, &base_url, &sid, &cat).await,
-            true,
-        ),
+    let (hash, owned) = match target.qb_hash {
+        Some(hash) => (Some(hash.to_string()), target.qb_owned),
+        None => (client.resolve_hash_by_category(&cat).await, true),
     };
 
     let verdict = match hash {
         None => StagingVerdict::Remove,
-        Some(hash) if owned => {
-            let deleted = http
-                .post(format!("{base_url}/api/v2/torrents/delete"))
-                .header("Cookie", format!("SID={sid}"))
-                .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
-                .send()
-                .await;
-            match deleted {
-                Ok(resp) if resp.status().is_success() => {
-                    info!("{log_prefix} Removed torrent {hash} from qBittorrent");
-                    StagingVerdict::Remove
-                }
-                Ok(resp) => {
-                    warn!(
-                        "{log_prefix} qBittorrent refused to remove torrent {hash}: {}",
-                        resp.status()
-                    );
-                    StagingVerdict::Keep
-                }
-                Err(e) => {
-                    warn!("{log_prefix} Failed to remove torrent {hash}: {e}");
-                    StagingVerdict::Keep
-                }
+        Some(hash) if owned => match client.delete(&hash, true).await {
+            Ok(()) => {
+                info!("{log_prefix} Removed torrent {hash} from qBittorrent");
+                StagingVerdict::Remove
             }
-        }
+            Err(e) => {
+                warn!("{log_prefix} {e}");
+                StagingVerdict::Keep
+            }
+        },
         Some(hash) => {
             info!(
                 "{log_prefix} Torrent {hash} was not added by Stripstream, leaving it in qBittorrent"
             );
-            adopted_staging_verdict(&http, &base_url, &sid, &hash, staging).await
+            adopted_staging_verdict(client, &hash, staging).await
         }
     };
 
     if verdict == StagingVerdict::Remove {
-        let _ = http
-            .post(format!("{base_url}/api/v2/torrents/removeCategories"))
-            .header("Cookie", format!("SID={sid}"))
-            .form(&[("categories", cat.as_str())])
-            .send()
-            .await;
+        client.remove_category(&cat).await;
     }
     verdict
 }
@@ -1449,27 +1365,16 @@ async fn release_qb_torrent(
 /// Whether the staging directory may go while an adopted torrent stays in
 /// qBittorrent: only when that torrent is gone, or stores nothing inside it.
 async fn adopted_staging_verdict(
-    http: &reqwest::Client,
-    base_url: &str,
-    sid: &str,
+    client: &dyn TorrentClient,
     hash: &str,
     staging: Option<&FsPath>,
 ) -> StagingVerdict {
     let Some(staging) = staging else {
         return StagingVerdict::Remove;
     };
-    let resp = http
-        .get(format!("{base_url}/api/v2/torrents/info"))
-        .query(&[("hashes", hash)])
-        .header("Cookie", format!("SID={sid}"))
-        .send()
-        .await;
-    let infos: Vec<QbTorrentInfo> = match resp {
-        Ok(resp) if resp.status().is_success() => match resp.json().await {
-            Ok(infos) => infos,
-            Err(_) => return StagingVerdict::Keep,
-        },
-        _ => return StagingVerdict::Keep,
+    let infos = match client.torrents_by_hash(&[hash.to_string()]).await {
+        Ok(infos) => infos,
+        Err(_) => return StagingVerdict::Keep,
     };
     let Some(info) = infos.iter().find(|i| i.hash.eq_ignore_ascii_case(hash)) else {
         return StagingVerdict::Remove;
