@@ -34,9 +34,7 @@ use stripstream_core::settings::load_setting;
 
 use super::http_error::describe_http_failure;
 use super::import_pipeline::remap_downloads_path;
-use super::progress::{
-    DownloadProgress, ProgressSink, TorrentSink, TransferProgress, TransferRate,
-};
+use super::progress::{ProgressSink, Reporter, TorrentSink, TransferProgress};
 use super::qbittorrent::{
     extract_magnet_hash, infer_managed_context, resolve_torrent_url, QBittorrentAddRequest,
     QBittorrentAddResponse, QBittorrentTestResponse, ResolvedTorrent,
@@ -1342,12 +1340,12 @@ async fn download_files_to(
     } else {
         0
     };
-    let mut progress = DownloadProgress::new();
-    let mut rate = TransferRate::new();
-    let mut last_sample = std::time::Instant::now();
     let mut used_names: HashSet<String> = HashSet::new();
     let sink = TorrentSink::new(pool.clone(), tid);
-    report_progress(&sink, tid, 0, total, &rate).await;
+    let reporter = Reporter::new(Some(total), Box::new(sink));
+    let mut written: i64 = 0;
+    // Show the size before the first megabyte lands.
+    reporter.flush(0).await;
 
     for (index, file) in files.iter().enumerate() {
         let link = resolve_unlocked_link(client, &file.link).await?;
@@ -1378,13 +1376,8 @@ async fn download_files_to(
             out.write_all(&chunk)
                 .await
                 .with_context(|| format!("cannot write to {}", tmp.display()))?;
-            if let Some(written) = progress.advance(chunk.len() as i64) {
-                if last_sample.elapsed() >= Duration::from_secs(1) {
-                    rate.sample(written);
-                    last_sample = std::time::Instant::now();
-                }
-                report_progress(&sink, tid, written, total, &rate).await;
-            }
+            written += chunk.len() as i64;
+            reporter.report(written).await;
         }
         out.flush()
             .await
@@ -1392,11 +1385,8 @@ async fn download_files_to(
         tokio::fs::rename(&tmp, &dest)
             .await
             .with_context(|| format!("cannot move {} into place", tmp.display()))?;
-        if last_sample.elapsed() >= Duration::from_secs(1) {
-            rate.sample(progress.written());
-            last_sample = std::time::Instant::now();
-        }
-        report_progress(&sink, tid, progress.written(), total, &rate).await;
+        // Make the file boundary visible even when it is below the throttle.
+        reporter.flush(written).await;
     }
 
     Ok(())
@@ -1454,19 +1444,6 @@ fn unique_name(original: &str, index: usize, used: &mut HashSet<String>) -> Stri
     };
     used.insert(fallback.clone());
     fallback
-}
-
-async fn report_progress(
-    sink: &TorrentSink,
-    tid: Uuid,
-    written: i64,
-    total: i64,
-    rate: &TransferRate,
-) {
-    let snapshot = TransferProgress::from_bytes(written, Some(total), rate);
-    if let Err(e) = sink.report(&snapshot).await {
-        warn!("[ALLDEBRID] Failed to report progress for torrent {tid}: {e}");
-    }
 }
 
 async fn mark_error(pool: &PgPool, tid: Uuid, message: &str) {
@@ -2042,9 +2019,15 @@ mod tests {
     async fn local_transfer_reports_size_speed_and_eta(pool: PgPool) {
         let id = seed_downloading_row(&pool).await;
         let sink = TorrentSink::new(pool.clone(), id);
-        let mut rate = TransferRate::new();
-        rate.sample_after(400, Duration::from_secs(2));
-        report_progress(&sink, id, 500, 1000, &rate).await;
+        sink.report(&TransferProgress {
+            bytes: 500,
+            total: Some(1000),
+            progress: 0.5,
+            speed: 200,
+            eta: 3,
+        })
+        .await
+        .unwrap();
 
         let (progress, size, speed, eta): (f32, Option<i64>, i64, i64) = sqlx::query_as(
             "SELECT progress, file_size, download_speed, eta FROM torrent_downloads WHERE id = $1",
@@ -2056,7 +2039,15 @@ mod tests {
         assert_eq!((progress, size, speed, eta), (0.5, Some(1000), 200, 3));
 
         // A transfer that stops knowing its size keeps the stored one.
-        report_progress(&sink, id, 500, 0, &rate).await;
+        sink.report(&TransferProgress {
+            bytes: 500,
+            total: None,
+            progress: 0.0,
+            speed: 0,
+            eta: 0,
+        })
+        .await
+        .unwrap();
         let (size, eta): (Option<i64>, i64) =
             sqlx::query_as("SELECT file_size, eta FROM torrent_downloads WHERE id = $1")
                 .bind(id)

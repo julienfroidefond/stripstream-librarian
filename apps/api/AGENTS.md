@@ -171,8 +171,10 @@ par `shared_sync::match_books_with`, pas une branche dans les flux. Le résolveu
   `file_size` n'est jamais effacée (`None` comme `0` conservent la valeur stockée, seule une
   valeur positive la remplace). Chaque flux compose `TransferRate` +
   `TransferProgress::{from_bytes, from_reported}` avec un `ProgressSink` (`TorrentSink`,
-  `DdlSink`, `TelegramSink`) ; `Reporter` porte le throttle et le calcul d'ETA du moteur ranged.
-  Ne pas réécrire de throttle, de formule d'ETA ni d'`UPDATE` de progression dans un flux.
+  `DdlSink`, `TelegramSink`) ; `Reporter` porte le throttle et le calcul d'ETA, et son `flush`
+  rend une frontière visible (début de transfert, fin de fichier) — le moteur ranged comme le
+  transfert local AllDebrid passent par lui. Ne pas réécrire de throttle, de formule d'ETA ni
+  d'`UPDATE` de progression dans un flux.
 - **Compteurs d'import** : `ImportedFile.already_existed`
   (`downloads/torrent_import.rs`) distingue les fichiers réellement copiés de ceux déjà sur
   disque. Les compteurs et les notifications n'incluent que les vrais nouveaux fichiers.
