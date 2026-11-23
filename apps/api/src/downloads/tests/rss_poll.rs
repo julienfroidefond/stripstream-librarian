@@ -33,11 +33,16 @@ async fn configure_prowlarr(pool: &sqlx::PgPool, url: &str) {
 }
 
 async fn create_job(pool: &sqlx::PgPool, library_id: Option<Uuid>) -> Uuid {
+    // Use the application clock: `store_releases` stamps `detected_at` with
+    // `Utc::now()`, and `new_releases_since` compares the two. A `NOW()` here
+    // would put the start on the database clock and make the assertion depend
+    // on how far the two clocks drift.
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO index_jobs (id, library_id, type, status, started_at) \
-         VALUES (gen_random_uuid(), $1, 'prowlarr_rss', 'running', NOW()) RETURNING id",
+         VALUES (gen_random_uuid(), $1, 'prowlarr_rss', 'running', $2) RETURNING id",
     )
     .bind(library_id)
+    .bind(chrono::Utc::now())
     .fetch_one(pool)
     .await
     .unwrap()
