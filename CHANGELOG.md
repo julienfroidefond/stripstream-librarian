@@ -4,6 +4,39 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.178 — 2026-11-23
+
+### Corrections
+
+- **backoffice** — await the selection reload after a genre write
+
+### Refactoring
+
+- **backoffice** — route genre writes through one store
+- **jobs** — make the in-flight type filter explicit
+- **indexer** — give book analysis a typed verdict and one recorder
+- **notifications** — own the messages of a finished job
+- **downloads** — one release ingestion path for the three sources
+- **series** — read the per-library list through the catalogue
+- **series** — read favourites, ongoing and the detail through the catalogue
+- **series** — one read model for the series catalogue
+
+### Documentation
+
+- **adr** — record the genre write store
+- **adr** — record the single in-flight predicate
+- **adr** — record the book analysis verdict pipeline
+- **adr** — record the job notification policy
+- **adr** — record the single release ingestion pipeline
+
+<details>
+<summary>Maintenance (2)</summary>
+
+- **backoffice** — repair the genres actions E2E
+- **backoffice** — cover the genre write store
+
+</details>
+
 ## v3.32.177 — 2026-11-23
 
 <details>
