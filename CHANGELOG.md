@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.182 — 2026-11-24
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump lru from 0.19.0 to 0.19.1 ([#327](https://github.com/julienfroidefond/stripstream-librarian/pull/327))
+
+</details>
+
 ## v3.32.181 — 2026-11-24
 
 <details>
