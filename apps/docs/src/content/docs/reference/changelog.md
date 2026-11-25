@@ -8,6 +8,15 @@ tableOfContents: false
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.183 — 2026-11-25
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump pdfium-render from 0.9.5 to 0.9.6 ([#328](https://github.com/julienfroidefond/stripstream-librarian/pull/328))
+
+</details>
+
 ## v3.32.182 — 2026-11-24
 
 <details>
