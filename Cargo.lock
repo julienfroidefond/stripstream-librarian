@@ -77,7 +77,7 @@ checksum = "2cb931c189b85683d69a5cfad41d4d418671e1ac413dd209f3f2fc31e3cfd902"
 
 [[package]]
 name = "api"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1589,7 +1589,7 @@ dependencies = [
 
 [[package]]
 name = "indexer"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "axum",
@@ -2035,7 +2035,7 @@ dependencies = [
 
 [[package]]
 name = "notifications"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -2323,7 +2323,7 @@ dependencies = [
 
 [[package]]
 name = "parsers"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "stripstream-core"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3393,7 +3393,7 @@ dependencies = [
 
 [[package]]
 name = "stripstream-jobs"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "chrono",
  "serde",
@@ -3405,7 +3405,7 @@ dependencies = [
 
 [[package]]
 name = "stripstream-thumbnails"
-version = "3.32.184"
+version = "3.32.185"
 dependencies = [
  "anyhow",
  "image",
