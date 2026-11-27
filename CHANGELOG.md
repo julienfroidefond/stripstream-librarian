@@ -4,6 +4,15 @@
 
 Historique des versions publiées, de la plus récente à la plus ancienne.
 
+## v3.32.184 — 2026-11-27
+
+<details>
+<summary>Maintenance (1)</summary>
+
+- **deps** — bump recharts ([#330](https://github.com/julienfroidefond/stripstream-librarian/pull/330))
+
+</details>
+
 ## v3.32.183 — 2026-11-25
 
 <details>
